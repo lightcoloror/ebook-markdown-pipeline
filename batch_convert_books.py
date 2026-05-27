@@ -973,6 +973,8 @@ def postprocess_text_output(
 def clean_epub_markdown(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
+    text = strip_st_tags(text)
+
     # Drop EPUB nav landmarks blocks before line-based cleanup.
     text = re.sub(
         r"<nav\b[^>]*epub:type=\"landmarks\"[^>]*>.*?</nav>",
@@ -1074,7 +1076,65 @@ def clean_epub_markdown(text: str) -> str:
     text = re.sub(r"(?m)^\d+\.\s+\[(.*?)\]\((.*?)\)\s*$", r"- [\1](\2)", text)
     text = re.sub(r"\[\s*(\d+)\s*\]", r"[\1]", text)
 
+    text = promote_plain_chinese_book_headings(text)
+
     return clean_generic_markdown(text)
+
+
+def strip_st_tags(text: str) -> str:
+    # Some EPUBs generated from PDF/OCR wrap nearly every text span in
+    # non-standard <st c="..."> tags. Pandoc preserves them as raw HTML,
+    # which makes otherwise valid headings look broken.
+    text = re.sub(r"<st\b[^>]*>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"</st>", "", text, flags=re.IGNORECASE)
+    return text
+
+
+def promote_plain_chinese_book_headings(text: str) -> str:
+    lines = text.split("\n")
+    promoted: list[str] = []
+    index = 0
+    chapter_re = re.compile(r"^第[一二三四五六七八九十百零〇\d]+章[\s　]*(.+)?$")
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+        previous_blank = not promoted or not promoted[-1].strip()
+        next_line = lines[index + 1].strip() if index + 1 < len(lines) else ""
+        next_next_blank = index + 2 >= len(lines) or not lines[index + 2].strip()
+
+        if not stripped or stripped.startswith("#"):
+            promoted.append(line)
+            index += 1
+            continue
+
+        if chapter_re.match(stripped) and (previous_blank or next_line == "" or len(stripped) <= 80):
+            heading = stripped
+            if next_line and len(next_line) <= 48 and next_next_blank and not next_line.startswith(("-", ">", "#")):
+                heading = f"{heading}　{next_line}"
+                index += 1
+            promoted.append(f"## {heading}")
+            index += 1
+            continue
+
+        if stripped in {"致谢", "结语", "后记"} and (previous_blank or next_line == ""):
+            promoted.append(f"## {stripped}")
+            index += 1
+            continue
+
+        if stripped.startswith("附录") and len(stripped) <= 80 and (previous_blank or next_line == ""):
+            promoted.append(f"## {stripped}")
+            index += 1
+            continue
+
+        if stripped == "学习要点" and (previous_blank or next_line == ""):
+            promoted.append("### 学习要点")
+            index += 1
+            continue
+
+        promoted.append(line)
+        index += 1
+
+    return "\n".join(promoted)
 
 
 def clean_generic_markdown(text: str) -> str:
