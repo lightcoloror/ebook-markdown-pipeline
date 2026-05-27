@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+
+# Local conversion outputs and extracted test fixtures
+test-output*/
+dialogue_epub_extract/
+
+# Tool caches, model artifacts, and temporary outputs
+.mineru/
+.marker/
+*.quality.md
+*.log
+*.tmp
+
+# Local environment files
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
