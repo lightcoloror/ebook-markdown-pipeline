@@ -94,6 +94,22 @@ class MarkdownQuality:
     reasons: list[str]
 
 
+@dataclass
+class PdfPreflight:
+    page_count: int
+    sampled_pages: int
+    text_page_ratio: float
+    avg_text_chars: float
+    image_page_ratio: float
+    avg_image_area_ratio: float
+    toc_like_pages: int
+    table_like_pages: int
+    scanned_likely: bool
+    complex_layout_likely: bool
+    recommended_pipeline: str
+    reasons: list[str]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -616,6 +632,15 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace) 
             "kind": "file",
             "status": "ok" if Path(getattr(args, "umi_paddle_module", suggested_umi_paddle_module())).exists() else "missing",
             "detail": getattr(args, "umi_paddle_module", suggested_umi_paddle_module()),
+        }
+    )
+    cache_status, cache_detail = mineru_model_cache_status()
+    checks.append(
+        {
+            "name": "MinerU model cache",
+            "kind": "model",
+            "status": cache_status,
+            "detail": cache_detail,
         }
     )
     checks.append(
@@ -1636,6 +1661,8 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
         quality = analyze_markdown_quality(Path(result.output))
         if quality:
             payload["quality"] = asdict(quality)
+    if Path(result.source).suffix.lower() == ".pdf":
+        payload["pdf_preflight"] = asdict(pdf_preflight(Path(result.source), args))
     report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     result.report = str(report_path)
 
@@ -1918,6 +1945,40 @@ def torch_cuda_detail() -> str:
         return f"torch not importable: {exc}"
 
 
+def mineru_model_cache_status() -> tuple[str, str]:
+    cache_root = Path.home() / ".cache" / "huggingface" / "hub"
+    expected = [
+        cache_root / "models--opendatalab--PDF-Extract-Kit-1.0",
+        cache_root / "models--opendatalab--MinerU2.5-Pro-2604-1.2B",
+    ]
+    existing = [path for path in expected if path.exists()]
+    if len(existing) == len(expected):
+        return "ok", "; ".join(f"{path.name} ({format_bytes(directory_size(path))})" for path in existing)
+    if existing:
+        return "warning", "partial cache: " + "; ".join(path.name for path in existing)
+    return "warning", f"not found under {cache_root}; MinerU may download models on first run"
+
+
+def directory_size(path: Path) -> int:
+    total = 0
+    try:
+        for item in path.rglob("*"):
+            if item.is_file():
+                total += item.stat().st_size
+    except Exception:
+        return total
+    return total
+
+
+def format_bytes(size: int) -> str:
+    value = float(size)
+    for unit in ("B", "KB", "MB", "GB"):
+        if value < 1024 or unit == "GB":
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} GB"
+
+
 def suggested_umi_ocr_command() -> str:
     candidate = Path(r"D:\Umi-OCR\Umi-OCR_Paddle_v2.1.5\Umi-OCR.exe")
     return str(candidate) if candidate.exists() else "Umi-OCR.exe"
@@ -1934,15 +1995,184 @@ def suggested_umi_paddle_module() -> str:
 
 
 def get_pdf_page_count(source: Path) -> int:
+    return pdf_preflight(source, default_options()).page_count
+
+
+def pdf_preflight(source: Path, args: argparse.Namespace, sample_pages: int = 8) -> PdfPreflight:
+    cache = getattr(args, "_pdf_preflight_cache", None)
+    if cache is None:
+        cache = {}
+        setattr(args, "_pdf_preflight_cache", cache)
+    cache_key = str(source)
+    if cache_key in cache:
+        return cache[cache_key]
+
+    result = inspect_pdf_preflight(source, args, sample_pages=sample_pages)
+    cache[cache_key] = result
+    return result
+
+
+def inspect_pdf_preflight(source: Path, args: argparse.Namespace, sample_pages: int = 8) -> PdfPreflight:
+    doc = None
     try:
         import pymupdf
 
-        document = pymupdf.open(str(source))
-        count = len(document)
-        document.close()
-        return count
+        doc = pymupdf.open(str(source))
+        page_count = len(doc)
+        if page_count == 0:
+            return empty_pdf_preflight()
+
+        sample_indexes = pdf_sample_indexes(page_count, sample_pages)
+        text_pages = 0
+        image_pages = 0
+        text_chars = 0
+        image_area_ratios: list[float] = []
+        toc_like_pages = 0
+        table_like_pages = 0
+        for page_number in sample_indexes:
+            page = doc[page_number]
+            text = page.get_text("text").strip()
+            text_chars += len(text)
+            if len(text) >= 80:
+                text_pages += 1
+            if looks_like_toc_page(text):
+                toc_like_pages += 1
+            if looks_like_table_page(text):
+                table_like_pages += 1
+
+            image_area_ratio = page_image_area_ratio(page)
+            image_area_ratios.append(image_area_ratio)
+            if image_area_ratio >= 0.25:
+                image_pages += 1
+
+        sampled = len(sample_indexes)
+        text_page_ratio = round(text_pages / max(sampled, 1), 3)
+        avg_text_chars = round(text_chars / max(sampled, 1), 1)
+        image_page_ratio = round(image_pages / max(sampled, 1), 3)
+        avg_image_area_ratio = round(sum(image_area_ratios) / max(sampled, 1), 3)
+        scanned_likely = text_page_ratio < 0.5 or avg_text_chars < 120
+        complex_layout_likely = image_page_ratio >= 0.35 or avg_image_area_ratio >= 0.25 or table_like_pages > 0
+        recommended, reasons = recommend_pdf_pipeline(
+            page_count=page_count,
+            scanned_likely=scanned_likely,
+            complex_layout_likely=complex_layout_likely,
+            toc_like_pages=toc_like_pages,
+            table_like_pages=table_like_pages,
+            args=args,
+        )
+        return PdfPreflight(
+            page_count=page_count,
+            sampled_pages=sampled,
+            text_page_ratio=text_page_ratio,
+            avg_text_chars=avg_text_chars,
+            image_page_ratio=image_page_ratio,
+            avg_image_area_ratio=avg_image_area_ratio,
+            toc_like_pages=toc_like_pages,
+            table_like_pages=table_like_pages,
+            scanned_likely=scanned_likely,
+            complex_layout_likely=complex_layout_likely,
+            recommended_pipeline=recommended,
+            reasons=reasons,
+        )
+    except Exception as exc:  # noqa: BLE001
+        result = empty_pdf_preflight()
+        result.reasons.append(f"PDF preflight failed: {exc}")
+        return result
+    finally:
+        if doc is not None:
+            doc.close()
+
+
+def empty_pdf_preflight() -> PdfPreflight:
+    return PdfPreflight(
+        page_count=0,
+        sampled_pages=0,
+        text_page_ratio=0.0,
+        avg_text_chars=0.0,
+        image_page_ratio=0.0,
+        avg_image_area_ratio=0.0,
+        toc_like_pages=0,
+        table_like_pages=0,
+        scanned_likely=False,
+        complex_layout_likely=False,
+        recommended_pipeline="marker",
+        reasons=[],
+    )
+
+
+def pdf_sample_indexes(page_count: int, sample_pages: int) -> list[int]:
+    if page_count <= sample_pages:
+        return list(range(page_count))
+    candidates = {0, 1, page_count - 1}
+    step = max(1, page_count // max(sample_pages - len(candidates), 1))
+    for index in range(2, page_count - 1, step):
+        candidates.add(index)
+        if len(candidates) >= sample_pages:
+            break
+    return sorted(index for index in candidates if 0 <= index < page_count)
+
+
+def page_image_area_ratio(page) -> float:
+    page_area = max(float(page.rect.width * page.rect.height), 1.0)
+    total = 0.0
+    try:
+        drawings = page.get_image_info(xrefs=False)
     except Exception:
-        return 0
+        drawings = []
+    for image in drawings:
+        bbox = image.get("bbox")
+        if not bbox or len(bbox) != 4:
+            continue
+        width = max(float(bbox[2]) - float(bbox[0]), 0.0)
+        height = max(float(bbox[3]) - float(bbox[1]), 0.0)
+        total += width * height
+    return round(min(total / page_area, 1.0), 3)
+
+
+def looks_like_toc_page(text: str) -> bool:
+    if not text:
+        return False
+    lowered = text.lower()
+    toc_markers = ("目录", "contents", "table of contents")
+    dot_leaders = len(re.findall(r"\.{3,}\s*\d{1,4}", text))
+    numbered_lines = len(re.findall(r"(?m)^\s*(第.+章|chapter\s+\d+|[一二三四五六七八九十]+[、.])", lowered))
+    return any(marker in lowered for marker in toc_markers) or dot_leaders >= 3 or numbered_lines >= 5
+
+
+def looks_like_table_page(text: str) -> bool:
+    if not text:
+        return False
+    lines = [line for line in text.splitlines() if line.strip()]
+    tabular_lines = [line for line in lines if "\t" in line or len(re.findall(r"\s{2,}", line)) >= 3]
+    numeric_dense = [line for line in lines if len(re.findall(r"\d+(?:[.,]\d+)?", line)) >= 4]
+    return len(tabular_lines) >= 4 or len(numeric_dense) >= 4
+
+
+def recommend_pdf_pipeline(
+    *,
+    page_count: int,
+    scanned_likely: bool,
+    complex_layout_likely: bool,
+    toc_like_pages: int,
+    table_like_pages: int,
+    args: argparse.Namespace,
+) -> tuple[str, list[str]]:
+    max_marker_pages = int(getattr(args, "marker_default_max_pages", 12))
+    reasons: list[str] = []
+    if page_count > max_marker_pages:
+        reasons.append(f"页数 {page_count} 超过 Marker 默认阈值 {max_marker_pages}")
+    if scanned_likely:
+        reasons.append("文本层较少，疑似扫描版或 OCR 质量风险")
+    if complex_layout_likely:
+        reasons.append("图片/表格/复杂版式迹象较多")
+    if toc_like_pages:
+        reasons.append("检测到目录页迹象")
+    if table_like_pages:
+        reasons.append("检测到表格页迹象")
+
+    if page_count <= max_marker_pages and not complex_layout_likely:
+        return "marker", reasons or ["短 PDF 且版式不复杂，优先 Marker"]
+    return "mineru", reasons or ["默认使用 MinerU 结构化解析"]
 
 
 def estimate_marker_seconds(source: Path, args: argparse.Namespace) -> float:
@@ -1974,10 +2204,7 @@ def selected_pdf_pipeline(source: Path, args: argparse.Namespace) -> str:
     mode = getattr(args, "pdf_pipeline_mode", "auto")
     if mode != "auto":
         return mode
-    page_count = get_pdf_page_count(source)
-    if page_count > int(getattr(args, "marker_default_max_pages", 12)):
-        return "mineru"
-    return "marker"
+    return pdf_preflight(source, args).recommended_pipeline
 
 
 def selected_pdf_pipeline_label(source: Path, args: argparse.Namespace) -> str:
@@ -1994,55 +2221,36 @@ def selected_pdf_pipeline_label(source: Path, args: argparse.Namespace) -> str:
 def plan_note(source: Path, args: argparse.Namespace) -> str:
     if detect_source_kind(source) != "pdf":
         return ""
-    page_count = get_pdf_page_count(source)
+    preflight = pdf_preflight(source, args)
+    page_count = preflight.page_count
     if page_count <= 0:
         return ""
     marker_seconds = estimate_marker_seconds(source, args)
     selected = selected_pdf_pipeline(source, args)
     mode = getattr(args, "pdf_pipeline_mode", "auto")
+    metrics = (
+        f"text {preflight.text_page_ratio:.0%}; "
+        f"image {preflight.avg_image_area_ratio:.0%}; "
+        f"sample {preflight.sampled_pages}/{page_count}"
+    )
+    reason = "; ".join(preflight.reasons[:2])
     if selected == "mineru":
         if mode == "auto":
-            return f"{page_count} pages; Marker est. {marker_seconds:.0f}s; auto-switch to MinerU structured parser"
-        return f"{page_count} pages; Marker est. {marker_seconds:.0f}s; using MinerU structured parser"
+            return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s; auto-switch to MinerU ({reason})"
+        return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s; using MinerU structured parser"
     if selected == "umi":
         if mode == "auto":
-            return f"{page_count} pages; Marker est. {marker_seconds:.0f}s; auto-switch to Umi-OCR"
-        return f"{page_count} pages; Marker est. {marker_seconds:.0f}s; using Umi-OCR"
-    return f"{page_count} pages; Marker est. {marker_seconds:.0f}s"
+            return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s; auto-switch to Umi-OCR ({reason})"
+        return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s; using Umi-OCR"
+    if selected == "pymupdf4llm":
+        return f"{page_count} pages; {metrics}; using PyMuPDF4LLM"
+    if mode == "auto":
+        return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s; auto-use Marker ({reason})"
+    return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s"
 
 
 def should_use_ocr_for_pdf(source: Path, sample_pages: int = 6) -> bool:
-    doc = None
-    try:
-        import pymupdf
-
-        doc = pymupdf.open(str(source))
-        page_count = len(doc)
-        if page_count == 0:
-            return False
-
-        sampled = 0
-        pages_with_text = 0
-        total_text_chars = 0
-        for page_number in range(min(sample_pages, page_count)):
-            page = doc[page_number]
-            text = page.get_text("text").strip()
-            sampled += 1
-            total_text_chars += len(text)
-            if len(text) >= 80:
-                pages_with_text += 1
-
-        if sampled == 0:
-            return False
-
-        text_page_ratio = pages_with_text / sampled
-        avg_chars = total_text_chars / sampled
-        return text_page_ratio < 0.5 or avg_chars < 120
-    except Exception:
-        return False
-    finally:
-        if doc is not None:
-            doc.close()
+    return inspect_pdf_preflight(source, default_options(), sample_pages=sample_pages).scanned_likely
 
 
 def create_umi_paddle_engine(args: argparse.Namespace):
