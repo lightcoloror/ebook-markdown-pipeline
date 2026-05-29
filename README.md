@@ -36,6 +36,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\book_converter_ui.py
 - 默认写入 `manifest.json` 和 `.reports/*.report.json`，方便失败后继续跑和排查每本书的耗时/管道/输出位置
 - report 会包含轻量 Markdown 质量评分，用来提示无标题、页码噪声、脚注密度、乱码、HTML 残留等风险
 - PDF 自动模式会先快速预检文本层、图片占比、目录页/表格页迹象和扫描版风险，再选择 Marker 或 MinerU
+- Marker/MinerU 长任务会流式读取外部工具输出；能解析页码时显示当前页，解析不到时也会持续显示运行中、已用时和预计剩余
 
 ## 用法
 

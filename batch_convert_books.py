@@ -6,11 +6,13 @@ import html
 import importlib.util
 import json
 import os
+import queue
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -919,7 +921,17 @@ def run_mineru_pdf_convert(
             *getattr(args, "mineru_extra_args", []),
         ]
         emit_stage(progress_callback, source, progress_index, progress_total, "mineru", "MinerU 结构化解析 PDF")
-        run_command(cmd, args.dry_run, env=mineru_environment(args), capture_output=False)
+        run_pdf_tool_command(
+            cmd,
+            args,
+            source,
+            progress_callback,
+            progress_index,
+            progress_total,
+            stage="mineru_progress",
+            label="MinerU",
+            env=mineru_environment(args),
+        )
         if args.dry_run:
             return
 
@@ -969,7 +981,16 @@ def run_marker_pdf_convert(
             *args.marker_extra_args,
         ]
         emit_stage(progress_callback, source, progress_index, progress_total, "marker", "Marker 解析 PDF")
-        run_command(cmd, args.dry_run)
+        run_pdf_tool_command(
+            cmd,
+            args,
+            source,
+            progress_callback,
+            progress_index,
+            progress_total,
+            stage="marker_progress",
+            label="Marker",
+        )
         if args.dry_run:
             return
 
@@ -1772,6 +1793,161 @@ def run_command(
         kwargs["stdout"] = subprocess.PIPE
         kwargs["stderr"] = subprocess.PIPE
     subprocess.run(cmd, **kwargs)
+
+
+def run_pdf_tool_command(
+    cmd: list[str],
+    args: argparse.Namespace,
+    source: Path,
+    progress_callback,
+    progress_index: int | None,
+    progress_total: int | None,
+    *,
+    stage: str,
+    label: str,
+    env: dict[str, str] | None = None,
+) -> None:
+    if args.dry_run:
+        print("DRY RUN:", format_cmd(cmd))
+        return
+
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+    lines: list[str] = []
+    output_queue: queue.Queue[str | None] = queue.Queue()
+
+    def reader() -> None:
+        assert process.stdout is not None
+        for line in process.stdout:
+            output_queue.put(line)
+        output_queue.put(None)
+
+    thread = threading.Thread(target=reader, daemon=True)
+    thread.start()
+
+    page_count = max(pdf_preflight(source, args).page_count, 0)
+    started = time.monotonic()
+    last_emit = 0.0
+    last_page: int | None = None
+    while True:
+        try:
+            line = output_queue.get(timeout=1.0)
+        except queue.Empty:
+            line = ""
+
+        now = time.monotonic()
+        if line is None:
+            break
+        if line:
+            clean = line.strip()
+            if clean:
+                lines.append(clean)
+                parsed = parse_pdf_tool_progress(clean, page_count)
+                if parsed:
+                    last_page = parsed
+                    emit_pdf_tool_progress(
+                        progress_callback,
+                        source,
+                        progress_index,
+                        progress_total,
+                        stage,
+                        label,
+                        started,
+                        page_count,
+                        last_page,
+                    )
+                    last_emit = now
+                    continue
+
+        if now - last_emit >= 5.0:
+            emit_pdf_tool_progress(
+                progress_callback,
+                source,
+                progress_index,
+                progress_total,
+                stage,
+                label,
+                started,
+                page_count,
+                last_page,
+            )
+            last_emit = now
+
+    return_code = process.wait()
+    thread.join(timeout=1.0)
+    if return_code != 0:
+        output = "\n".join(lines[-80:])
+        raise subprocess.CalledProcessError(return_code, cmd, output=output, stderr=output)
+
+
+def parse_pdf_tool_progress(line: str, page_count: int) -> int | None:
+    lowered = line.lower()
+    patterns = [
+        r"(?:page|pages|页)\s*[:#]?\s*(\d{1,5})\s*(?:/|of|共)\s*(\d{1,5})",
+        r"(\d{1,5})\s*/\s*(\d{1,5})\s*(?:page|pages|页)?",
+        r"第\s*(\d{1,5})\s*页",
+        r"(?:processing|processed|parse|ocr).*?(?:page|页)\s*[:#]?\s*(\d{1,5})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, lowered, re.I)
+        if not match:
+            continue
+        current = int(match.group(1))
+        total = int(match.group(2)) if len(match.groups()) >= 2 and match.group(2) else page_count
+        if page_count and total and abs(total - page_count) > max(5, page_count * 0.2):
+            continue
+        if current <= 0:
+            continue
+        if page_count and current > page_count:
+            continue
+        return current
+    return None
+
+
+def emit_pdf_tool_progress(
+    progress_callback,
+    source: Path,
+    index: int | None,
+    total: int | None,
+    stage: str,
+    label: str,
+    started: float,
+    page_count: int,
+    current_page: int | None,
+) -> None:
+    elapsed = time.monotonic() - started
+    elapsed_text = format_duration(elapsed)
+    remaining_text = ""
+    if current_page and page_count and current_page > 0:
+        estimated_total = elapsed * page_count / current_page
+        remaining_text = f"; 预计剩余 {format_duration(max(estimated_total - elapsed, 0))}"
+        page_text = f"{current_page}/{page_count} 页"
+    else:
+        page_text = f"总页数 {page_count}" if page_count else "页数未知"
+    emit_stage(
+        progress_callback,
+        source,
+        index,
+        total,
+        stage,
+        f"{label} 运行中 - {page_text}; 已用 {elapsed_text}{remaining_text}",
+    )
+
+
+def format_duration(seconds: float) -> str:
+    seconds = max(int(seconds), 0)
+    minutes, sec = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours:d}:{minutes:02d}:{sec:02d}"
+    return f"{minutes:02d}:{sec:02d}"
 
 
 def format_cmd(cmd: list[str]) -> str:
