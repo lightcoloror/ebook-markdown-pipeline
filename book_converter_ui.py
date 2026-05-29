@@ -27,6 +27,8 @@ try:
         collect_sources,
         convert_sources,
         default_options,
+        dependency_health_report,
+        format_health_report,
         find_missing_dependencies,
         normalize_command_options,
         suggested_command_value,
@@ -40,6 +42,8 @@ except ModuleNotFoundError:
         collect_sources,
         convert_sources,
         default_options,
+        dependency_health_report,
+        format_health_report,
         find_missing_dependencies,
         normalize_command_options,
         suggested_command_value,
@@ -60,6 +64,7 @@ class BookConverterUI:
         self.recursive_var = tk.BooleanVar(value=True)
         self.include_hidden_var = tk.BooleanVar(value=False)
         self.overwrite_var = tk.BooleanVar(value=False)
+        self.resume_var = tk.BooleanVar(value=True)
         self.pandoc_var = tk.StringVar(value=suggested_command_value("pandoc"))
         self.calibre_var = tk.StringVar(value=suggested_command_value("ebook-convert"))
         self.marker_var = tk.StringVar(value=suggested_command_value("marker_single"))
@@ -135,6 +140,9 @@ class BookConverterUI:
         ttk.Checkbutton(settings, text="Overwrite output", variable=self.overwrite_var).grid(
             row=0, column=4, sticky="w", padx=8
         )
+        ttk.Checkbutton(settings, text="Resume manifest", variable=self.resume_var).grid(
+            row=0, column=7, sticky="w", padx=8
+        )
 
         ttk.Label(settings, text="Pandoc").grid(row=1, column=0, sticky="w", pady=4)
         ttk.Entry(settings, textvariable=self.pandoc_var).grid(row=1, column=1, sticky="ew", padx=8)
@@ -192,6 +200,8 @@ class BookConverterUI:
         buttons.grid(row=3, column=0, sticky="ew", pady=(10, 0))
         self.scan_button = ttk.Button(buttons, text="扫描文件", command=self.scan)
         self.scan_button.pack(side="left")
+        self.health_button = ttk.Button(buttons, text="检查环境", command=self.health_check)
+        self.health_button.pack(side="left", padx=(8, 0))
         self.start_button = ttk.Button(buttons, text="开始执行", command=self.start_convert)
         self.start_button.pack(side="left", padx=8)
         ttk.Button(buttons, text="清空日志", command=self.clear_log).pack(side="left")
@@ -280,6 +290,7 @@ class BookConverterUI:
             output_format=self.output_format_var.get(),
             pdf_pipeline_mode=self.pdf_mode_var.get(),
             overwrite=self.overwrite_var.get(),
+            resume=self.resume_var.get(),
             pandoc_command=self.pandoc_var.get().strip() or "pandoc",
             calibre_command=self.calibre_var.get().strip() or "ebook-convert",
             marker_command=self.marker_var.get().strip() or "marker_single",
@@ -370,6 +381,26 @@ class BookConverterUI:
         for item in missing:
             self.write_log(item)
 
+    def health_check(self) -> None:
+        options = self.build_options()
+        input_root, sources = self.resolve_sources(options)
+        if not sources:
+            input_text = self.input_var.get().strip()
+            if input_text:
+                input_root = Path(input_text)
+            sources = []
+        checks = dependency_health_report(sources, options)
+        report = format_health_report(checks)
+        self.write_log(report)
+        missing = [item for item in checks if item["status"] == "missing"]
+        warnings = [item for item in checks if item["status"] == "warning"]
+        if missing:
+            messagebox.showwarning("Environment check", f"{len(missing)} missing item(s). See log for details.")
+        elif warnings:
+            messagebox.showinfo("Environment check", f"{len(warnings)} warning item(s). See log for details.")
+        else:
+            messagebox.showinfo("Environment check", "All required checks passed for the current selection.")
+
     def refresh_tree(self, input_path: Path, output_path: Path, options, sources: list[Path]) -> None:
         for item in self.tree.get_children():
             self.tree.delete(item)
@@ -401,6 +432,8 @@ class BookConverterUI:
 
         output_path = Path(output_text)
         options = self.build_options()
+        if options.resume and options.manifest is None:
+            options.manifest = output_path / "manifest.json"
         input_root, sources = self.resolve_sources(options)
         if not sources:
             messagebox.showerror("No files", "No supported files were found.")
@@ -444,6 +477,15 @@ class BookConverterUI:
                     options,
                     progress_callback=progress_callback,
                 )
+                if options.manifest:
+                    options.manifest.parent.mkdir(parents=True, exist_ok=True)
+                    import json
+                    from dataclasses import asdict
+
+                    options.manifest.write_text(
+                        json.dumps([asdict(item) for item in results], ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
                 self.queue.put(("done", results))
             except Exception as exc:  # noqa: BLE001
                 self.queue.put(("error", str(exc)))
@@ -520,6 +562,7 @@ class BookConverterUI:
     def set_running_state(self, is_running: bool) -> None:
         state = "disabled" if is_running else "normal"
         self.scan_button.configure(state=state)
+        self.health_button.configure(state=state)
         self.start_button.configure(state=state)
 
     def stage_progress_offset(self, stage: str) -> float:

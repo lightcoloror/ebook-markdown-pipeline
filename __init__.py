@@ -8,6 +8,8 @@ from .batch_convert_books import (
     collect_sources,
     convert_sources,
     default_options,
+    dependency_health_report,
+    format_health_report,
     find_missing_dependencies,
     normalize_command_options,
     run_batch,

@@ -70,6 +70,11 @@ class ConversionResult:
     status: str
     pipeline: str
     message: str
+    detected_format: str = ""
+    duration_seconds: float = 0.0
+    started_at: str = ""
+    finished_at: str = ""
+    report: str | None = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -172,6 +177,27 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional path to write a JSON conversion manifest",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Use an existing manifest to skip files that were already converted successfully",
+    )
+    parser.add_argument(
+        "--report-dir",
+        type=Path,
+        default=None,
+        help="Directory for per-book conversion reports, default: <output>/.reports",
+    )
+    parser.add_argument(
+        "--no-reports",
+        action="store_true",
+        help="Disable per-book conversion reports",
+    )
+    parser.add_argument(
+        "--health-check",
+        action="store_true",
+        help="Only print dependency and environment health information, then exit",
+    )
     return parser.parse_args()
 
 
@@ -196,6 +222,10 @@ def default_options(**overrides) -> SimpleNamespace:
         "overwrite": False,
         "dry_run": False,
         "manifest": None,
+        "resume": False,
+        "report_dir": None,
+        "no_reports": False,
+        "health_check": False,
         "pdf_fallback_to_pymupdf4llm": True,
         "pdf_pipeline_mode": "auto",
         "marker_default_max_pages": 12,
@@ -222,11 +252,18 @@ def run_batch(args: argparse.Namespace) -> int:
         recursive=args.recursive,
         include_hidden=args.include_hidden,
     )
-    if not sources:
+    if not sources and not getattr(args, "health_check", False):
         print("No supported files found.", file=sys.stderr)
         return 1
 
     args.output.mkdir(parents=True, exist_ok=True)
+    if getattr(args, "resume", False) and getattr(args, "manifest", None) is None:
+        args.manifest = args.output / "manifest.json"
+
+    if getattr(args, "health_check", False):
+        checks = dependency_health_report(sources, args)
+        print(format_health_report(checks))
+        return 0 if all(item["status"] != "missing" for item in checks) else 2
 
     missing = find_missing_dependencies(sources, args)
     if missing:
@@ -248,7 +285,7 @@ def run_batch(args: argparse.Namespace) -> int:
             encoding="utf-8",
         )
 
-    failures = [item for item in results if item.status != "ok"]
+    failures = [item for item in results if item.status == "failed"]
     return 0 if not failures else 3
 
 
@@ -262,10 +299,30 @@ def convert_sources(
     results: list[ConversionResult] = []
     source_list = list(sources)
     output_paths = build_output_paths(source_list, input_root, output_root, args)
+    completed_outputs = load_completed_outputs(getattr(args, "manifest", None)) if getattr(args, "resume", False) else {}
     total = len(source_list)
     for index, source in enumerate(source_list, start=1):
         if progress_callback:
             progress_callback("start", source, index, total, {"estimate_seconds": estimate_conversion_seconds(source, args)})
+        output_path = output_paths[source]
+        completed_output = completed_outputs.get(str(source))
+        if completed_output and Path(completed_output).exists():
+            result = ConversionResult(
+                source=str(source),
+                output=completed_output,
+                status="skipped",
+                pipeline=pipeline_name(source, args),
+                message="Previously completed in manifest; skipped by --resume.",
+                detected_format=detect_format_label(source),
+            )
+            write_conversion_report(result, args, output_path)
+            results.append(result)
+            if progress_callback:
+                progress_callback("done", source, index, total, result)
+            continue
+
+        started = time.monotonic()
+        started_at = timestamp_now()
         result = convert_one(
             source,
             input_root,
@@ -274,12 +331,37 @@ def convert_sources(
             progress_callback,
             index,
             total,
-            output_path=output_paths[source],
+            output_path=output_path,
         )
+        result.detected_format = detect_format_label(source)
+        result.duration_seconds = round(time.monotonic() - started, 3)
+        result.started_at = started_at
+        result.finished_at = timestamp_now()
+        write_conversion_report(result, args, output_path)
         results.append(result)
         if progress_callback:
             progress_callback("done", source, index, total, result)
     return results
+
+
+def load_completed_outputs(manifest_path: Path | None) -> dict[str, str]:
+    if not manifest_path or not manifest_path.exists():
+        return {}
+    try:
+        items = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    completed: dict[str, str] = {}
+    if not isinstance(items, list):
+        return completed
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        source = item.get("source")
+        output = item.get("output")
+        if item.get("status") in {"ok", "skipped"} and source and output:
+            completed[str(source)] = str(output)
+    return completed
 
 
 def collect_sources(
@@ -434,6 +516,19 @@ def pandoc_target(args: argparse.Namespace) -> str:
 
 
 def find_missing_dependencies(sources: Iterable[Path], args: argparse.Namespace) -> list[str]:
+    required = required_dependencies(sources, args)
+    missing = []
+    for command in sorted(required):
+        if resolve_command_path(command):
+            continue
+        missing.append(
+            f"Missing dependency: '{command}' is not in PATH. "
+            "Install it or pass a custom command path."
+        )
+    return missing
+
+
+def required_dependencies(sources: Iterable[Path], args: argparse.Namespace) -> set[str]:
     required = set()
     for source in sources:
         kind = detect_source_kind(source)
@@ -454,16 +549,74 @@ def find_missing_dependencies(sources: Iterable[Path], args: argparse.Namespace)
                 required.add("pymupdf4llm")
             if args.output_format != "markdown":
                 required.add(args.pandoc_command)
+    return required
 
-    missing = []
-    for command in sorted(required):
-        if resolve_command_path(command):
-            continue
-        missing.append(
-            f"Missing dependency: '{command}' is not in PATH. "
-            "Install it or pass a custom command path."
+
+def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace) -> list[dict[str, str]]:
+    checks: list[dict[str, str]] = []
+    source_list = list(sources)
+    required = required_dependencies(source_list, args)
+    if not source_list:
+        required.update(
+            {
+                getattr(args, "pandoc_command", "pandoc"),
+                getattr(args, "calibre_command", "ebook-convert"),
+                getattr(args, "marker_command", "marker_single"),
+                getattr(args, "mineru_command", "mineru"),
+                getattr(args, "umi_paddle_exe", suggested_umi_paddle_exe()),
+            }
         )
-    return missing
+    for command in sorted(required):
+        resolved = resolve_command_path(command)
+        checks.append(
+            {
+                "name": Path(command).name if command else command,
+                "kind": "command",
+                "status": "ok" if resolved else "missing",
+                "detail": resolved or "not found",
+            }
+        )
+
+    checks.append(
+        {
+            "name": "pymupdf4llm",
+            "kind": "python",
+            "status": "ok" if pymupdf4llm_available() else "missing",
+            "detail": "importable" if pymupdf4llm_available() else "not importable",
+        }
+    )
+    checks.append(
+        {
+            "name": "PyMuPDF",
+            "kind": "python",
+            "status": "ok" if pymupdf_available() else "missing",
+            "detail": "importable" if pymupdf_available() else "not importable",
+        }
+    )
+    checks.append(
+        {
+            "name": "Umi PaddleOCR module",
+            "kind": "file",
+            "status": "ok" if Path(getattr(args, "umi_paddle_module", suggested_umi_paddle_module())).exists() else "missing",
+            "detail": getattr(args, "umi_paddle_module", suggested_umi_paddle_module()),
+        }
+    )
+    checks.append(
+        {
+            "name": "CUDA for torch",
+            "kind": "gpu",
+            "status": torch_cuda_status(),
+            "detail": torch_cuda_detail(),
+        }
+    )
+    return checks
+
+
+def format_health_report(checks: list[dict[str, str]]) -> str:
+    lines = ["Dependency health check:"]
+    for item in checks:
+        lines.append(f"- [{item['status']}] {item['name']} ({item['kind']}): {item['detail']}")
+    return "\n".join(lines)
 
 
 def convert_one(
@@ -1447,6 +1600,34 @@ def quality_report_path(output_path: Path) -> Path:
     return output_path.with_name(f"{output_path.stem}.quality.md")
 
 
+def write_conversion_report(result: ConversionResult, args: argparse.Namespace, output_path: Path) -> None:
+    if getattr(args, "no_reports", False):
+        return
+    report_dir = getattr(args, "report_dir", None)
+    if report_dir is None:
+        report_dir = output_path.parent / ".reports"
+    else:
+        report_dir = Path(report_dir)
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report_path = report_dir / f"{safe_report_name(output_path.stem)}.report.json"
+    payload = asdict(result)
+    payload["report"] = str(report_path)
+    payload["source_exists"] = Path(result.source).exists()
+    payload["output_exists"] = bool(result.output and Path(result.output).exists())
+    payload["output_size_bytes"] = Path(result.output).stat().st_size if result.output and Path(result.output).exists() else 0
+    report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    result.report = str(report_path)
+
+
+def safe_report_name(stem: str) -> str:
+    safe = sanitize_output_stem(stem)
+    return safe[:140].rstrip(" ._-") or "converted-book"
+
+
+def timestamp_now() -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def run_command(
     cmd: list[str],
     dry_run: bool,
@@ -1615,6 +1796,30 @@ def explain_known_tool_error(details: str) -> str:
 
 def pymupdf4llm_available() -> bool:
     return importlib.util.find_spec("pymupdf4llm") is not None
+
+
+def pymupdf_available() -> bool:
+    return importlib.util.find_spec("pymupdf") is not None or importlib.util.find_spec("fitz") is not None
+
+
+def torch_cuda_status() -> str:
+    try:
+        import torch
+
+        return "ok" if torch.cuda.is_available() else "warning"
+    except Exception:
+        return "warning"
+
+
+def torch_cuda_detail() -> str:
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return f"torch {getattr(torch, '__version__', 'unknown')}; CUDA unavailable"
+        return f"torch {getattr(torch, '__version__', 'unknown')}; {torch.cuda.get_device_name(0)}"
+    except Exception as exc:  # noqa: BLE001
+        return f"torch not importable: {exc}"
 
 
 def suggested_umi_ocr_command() -> str:
