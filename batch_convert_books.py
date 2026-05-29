@@ -77,6 +77,23 @@ class ConversionResult:
     report: str | None = None
 
 
+@dataclass
+class MarkdownQuality:
+    score: int
+    level: str
+    headings: int
+    page_headings: int
+    lines: int
+    nonempty_lines: int
+    characters: int
+    page_number_lines: int
+    footnote_like_lines: int
+    html_tag_lines: int
+    replacement_chars: int
+    short_line_ratio: float
+    reasons: list[str]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -1615,8 +1632,87 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
     payload["source_exists"] = Path(result.source).exists()
     payload["output_exists"] = bool(result.output and Path(result.output).exists())
     payload["output_size_bytes"] = Path(result.output).stat().st_size if result.output and Path(result.output).exists() else 0
+    if result.output and Path(result.output).exists():
+        quality = analyze_markdown_quality(Path(result.output))
+        if quality:
+            payload["quality"] = asdict(quality)
     report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     result.report = str(report_path)
+
+
+def analyze_markdown_quality(path: Path) -> MarkdownQuality | None:
+    if path.suffix.lower() not in {".md", ".markdown", ".txt"}:
+        return None
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return None
+
+    lines = text.splitlines()
+    nonempty = [line.strip() for line in lines if line.strip()]
+    headings = [line for line in nonempty if re.match(r"^#{1,6}\s+\S", line)]
+    page_headings = [line for line in headings if re.match(r"^#{1,6}\s+(page|第?\s*\d+\s*页|p\.?\s*\d+)\b", line, re.I)]
+    page_number_lines = [line for line in nonempty if re.match(r"^(第\s*)?\d{1,4}\s*(页)?$", line)]
+    footnote_like_lines = [
+        line
+        for line in nonempty
+        if re.match(r"^(\[\^?\d+\]|\(\d+\)|\d+[\.、])\s*", line) or "脚注" in line or "注释" in line
+    ]
+    html_tag_lines = [line for line in nonempty if re.search(r"</?(div|span|p|br|html|body|section|aside|st)\b", line, re.I)]
+    replacement_chars = text.count("\ufffd")
+    short_lines = [line for line in nonempty if 0 < len(line) <= 8 and not re.match(r"^#{1,6}\s+", line)]
+    short_line_ratio = round(len(short_lines) / max(len(nonempty), 1), 3)
+
+    score = 100
+    reasons: list[str] = []
+    if len(text) < 500:
+        score -= 20
+        reasons.append("输出文本很短，可能没有完整转换")
+    if not headings and len(text) >= 1000:
+        score -= 25
+        reasons.append("没有 Markdown 标题，章节层级可能缺失")
+    if headings and len(page_headings) / max(len(headings), 1) > 0.7:
+        score -= 25
+        reasons.append("大部分标题像页码，可能按页面而非原书目录分层")
+    if len(page_number_lines) / max(len(nonempty), 1) > 0.08:
+        score -= 12
+        reasons.append("疑似页码行较多")
+    if len(footnote_like_lines) / max(len(nonempty), 1) > 0.18:
+        score -= 10
+        reasons.append("疑似脚注/尾注密度偏高")
+    if html_tag_lines:
+        score -= min(15, len(html_tag_lines))
+        reasons.append("存在 HTML 标签残留")
+    if replacement_chars:
+        score -= min(20, replacement_chars)
+        reasons.append("存在乱码替换字符")
+    if short_line_ratio > 0.45 and len(nonempty) > 30:
+        score -= 10
+        reasons.append("短行比例偏高，可能存在 OCR 断行或目录/页眉页脚噪声")
+
+    score = max(0, min(100, score))
+    if score >= 85:
+        level = "good"
+    elif score >= 65:
+        level = "review"
+    else:
+        level = "poor"
+
+    return MarkdownQuality(
+        score=score,
+        level=level,
+        headings=len(headings),
+        page_headings=len(page_headings),
+        lines=len(lines),
+        nonempty_lines=len(nonempty),
+        characters=len(text),
+        page_number_lines=len(page_number_lines),
+        footnote_like_lines=len(footnote_like_lines),
+        html_tag_lines=len(html_tag_lines),
+        replacement_chars=replacement_chars,
+        short_line_ratio=short_line_ratio,
+        reasons=reasons,
+    )
 
 
 def safe_report_name(stem: str) -> str:

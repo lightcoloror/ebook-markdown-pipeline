@@ -558,6 +558,8 @@ class BookConverterUI:
         self.write_log(f"[{result.status}] {result.source} -> {result.output or '-'}")
         if result.message:
             self.write_log(result.message)
+        if getattr(result, "report", None):
+            self.write_log(f"Report: {result.report}")
 
     def set_running_state(self, is_running: bool) -> None:
         state = "disabled" if is_running else "normal"
