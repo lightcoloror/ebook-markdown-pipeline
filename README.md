@@ -36,6 +36,9 @@ python D:\used-by-codex\ebook_markdown_pipeline\book_converter_ui.py
 - 默认写入 `manifest.json` 和 `.reports/*.report.json`，方便失败后继续跑和排查每本书的耗时/管道/输出位置
 - report 会包含轻量 Markdown 质量评分，用来提示无标题、页码噪声、脚注密度、乱码、HTML 残留等风险
 - 批量结束后会生成 `.reports/summary.md` 和 `.reports/summary.json`，汇总失败项、质量复查队列、管道分布和 PDF 风险
+- 批量结束后也会生成 `.reports/review-checklist.md/json`，列出需要人工复查的文件、report 路径和建议动作
+- EPUB / Calibre 中转 EPUB 会读取 `toc.ncx` / `nav.xhtml`，尽量把原书目录标题提升为 Markdown 层级标题
+- UI 会在用户目录保存上次路径、PDF 模式、工具路径和开关设置，下次启动自动恢复
 - PDF 自动模式会先快速预检文本层、图片占比、目录页/表格页迹象和扫描版风险，再选择 Marker 或 MinerU
 - Marker/MinerU 长任务会流式读取外部工具输出；能解析页码时显示当前页，解析不到时也会持续显示运行中、已用时和预计剩余
 
@@ -106,6 +109,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py `
 - report 中的 `quality.level` 分为 `good / review / poor`，用于快速筛出需要人工复查的输出。
 - PDF report 中的 `pdf_preflight` 会记录页数、采样页数、文本层比例、平均文字数、图片面积比例、目录/表格迹象、是否疑似扫描版和自动选择原因。
 - `.reports/summary.md` 是批量复查入口；优先看 `Failed` 和 `Review Queue` 两个部分。
+- `.reports/review-checklist.md` 是人工复查清单，适合转换完后逐项检查和决定是否换管道重跑。
 - `--resume` 会读取已有 manifest，跳过已经成功或已经跳过且输出文件仍存在的条目。
 - PDF 自动模式会在长文档上避免默认跑很慢的 `Marker`，并改用 `MinerU` 保留更好的结构；需要快速低结构 OCR 时可手动选 `Umi-OCR`。
 - `html` 和 `text` 输出会尽量复用 `pandoc` 做后续格式转换。

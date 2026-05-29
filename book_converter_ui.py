@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import queue
 import sys
 import threading
@@ -82,9 +83,12 @@ class BookConverterUI:
         self.total_files = 0
         self.file_start_times: dict[str, float] = {}
         self.file_estimates: dict[str, float | None] = {}
+        self.config_path = Path.home() / ".ebook_markdown_pipeline_ui.json"
 
         self.build_layout()
+        self.load_ui_config()
         self.setup_drag_and_drop()
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.after(150, self.poll_queue)
 
     def build_layout(self) -> None:
@@ -515,6 +519,7 @@ class BookConverterUI:
                     self.worker = None
                     self.write_log(f"Finished. Success: {ok_count}/{len(payload)}")
                     self.write_log(f"Summary: {Path(self.output_var.get().strip()) / '.reports' / 'summary.md'}")
+                    self.write_log(f"Review checklist: {Path(self.output_var.get().strip()) / '.reports' / 'review-checklist.md'}")
                 elif kind == "error":
                     self.set_running_state(False)
                     self.status_var.set("执行失败")
@@ -647,6 +652,60 @@ class BookConverterUI:
     def write_log(self, text: str) -> None:
         self.log.insert("end", text + "\n")
         self.log.see("end")
+
+    def load_ui_config(self) -> None:
+        if not self.config_path.exists():
+            return
+        try:
+            data = json.loads(self.config_path.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        for key, variable in {
+            "input": self.input_var,
+            "output": self.output_var,
+            "output_format": self.output_format_var,
+            "pdf_mode": self.pdf_mode_var,
+            "pandoc": self.pandoc_var,
+            "calibre": self.calibre_var,
+            "marker": self.marker_var,
+            "mineru": self.mineru_var,
+            "marker_extra": self.marker_extra_var,
+        }.items():
+            if key in data and data[key] is not None:
+                variable.set(str(data[key]))
+        for key, variable in {
+            "recursive": self.recursive_var,
+            "include_hidden": self.include_hidden_var,
+            "overwrite": self.overwrite_var,
+            "resume": self.resume_var,
+        }.items():
+            if key in data:
+                variable.set(bool(data[key]))
+
+    def save_ui_config(self) -> None:
+        data = {
+            "input": self.input_var.get(),
+            "output": self.output_var.get(),
+            "output_format": self.output_format_var.get(),
+            "pdf_mode": self.pdf_mode_var.get(),
+            "recursive": self.recursive_var.get(),
+            "include_hidden": self.include_hidden_var.get(),
+            "overwrite": self.overwrite_var.get(),
+            "resume": self.resume_var.get(),
+            "pandoc": self.pandoc_var.get(),
+            "calibre": self.calibre_var.get(),
+            "marker": self.marker_var.get(),
+            "mineru": self.mineru_var.get(),
+            "marker_extra": self.marker_extra_var.get(),
+        }
+        try:
+            self.config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001
+            self.write_log(f"Could not save UI config: {exc}")
+
+    def on_close(self) -> None:
+        self.save_ui_config()
+        self.root.destroy()
 
 
 def main() -> None:

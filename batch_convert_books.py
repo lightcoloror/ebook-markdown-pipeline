@@ -1185,6 +1185,9 @@ def postprocess_text_output(
     text = output_path.read_text(encoding="utf-8", errors="replace")
     if source_kind in {"epub", "kindle"}:
         text = clean_epub_markdown(text)
+        toc_titles = extract_epub_toc_titles(note_source_path)
+        if toc_titles:
+            text = apply_toc_headings(text, toc_titles)
         emit_stage(progress_callback, stage_source, progress_index, progress_total, "footnotes", "提取脚注与尾注")
         notes = extract_epub_rearnotes(note_source_path) if note_source_path else {}
         if notes:
@@ -1312,6 +1315,99 @@ def strip_st_tags(text: str) -> str:
     text = re.sub(r"<st\b[^>]*>", "", text, flags=re.IGNORECASE)
     text = re.sub(r"</st>", "", text, flags=re.IGNORECASE)
     return text
+
+
+def extract_epub_toc_titles(epub_path: Path | None) -> list[str]:
+    if epub_path is None or not epub_path.exists():
+        return []
+    titles: list[str] = []
+    try:
+        with zipfile.ZipFile(epub_path) as archive:
+            for name in archive.namelist():
+                lower = name.lower()
+                if lower.endswith("toc.ncx"):
+                    raw = archive.read(name).decode("utf-8", errors="replace")
+                    titles.extend(extract_ncx_titles(raw))
+                elif lower.endswith(("nav.xhtml", "nav.html")):
+                    raw = archive.read(name).decode("utf-8", errors="replace")
+                    titles.extend(extract_nav_titles(raw))
+    except Exception:
+        return []
+    return dedupe_toc_titles(titles)
+
+
+def extract_ncx_titles(raw: str) -> list[str]:
+    titles = []
+    for match in re.finditer(r"<navLabel\b[^>]*>.*?<text\b[^>]*>(.*?)</text>.*?</navLabel>", raw, re.I | re.S):
+        title = html.unescape(re.sub(r"<[^>]+>", "", match.group(1))).strip()
+        if title:
+            titles.append(title)
+    return titles
+
+
+def extract_nav_titles(raw: str) -> list[str]:
+    titles = []
+    nav_match = re.search(r"<nav\b[^>]*(?:epub:type|type)=[\"']toc[\"'][^>]*>(.*?)</nav>", raw, re.I | re.S)
+    scope = nav_match.group(1) if nav_match else raw
+    for match in re.finditer(r"<a\b[^>]*>(.*?)</a>", scope, re.I | re.S):
+        title = html.unescape(re.sub(r"<[^>]+>", "", match.group(1))).strip()
+        if title:
+            titles.append(title)
+    return titles
+
+
+def dedupe_toc_titles(titles: list[str]) -> list[str]:
+    seen: set[str] = set()
+    cleaned = []
+    for title in titles:
+        title = normalize_toc_title(title)
+        if not title or len(title) > 120:
+            continue
+        key = normalize_heading_key(title)
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(title)
+    return cleaned
+
+
+def apply_toc_headings(text: str, toc_titles: list[str]) -> str:
+    title_keys = {normalize_heading_key(title) for title in toc_titles}
+    title_keys.discard("")
+    if not title_keys:
+        return text
+    lines = text.split("\n")
+    updated: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        key = normalize_heading_key(stripped)
+        previous_blank = not updated or not updated[-1].strip()
+        if (
+            key in title_keys
+            and stripped
+            and not stripped.startswith("#")
+            and not stripped.startswith(("-", "*", ">"))
+            and len(stripped) <= 120
+            and previous_blank
+        ):
+            updated.append(f"## {stripped}")
+        else:
+            updated.append(line)
+    return "\n".join(updated)
+
+
+def normalize_toc_title(title: str) -> str:
+    title = re.sub(r"\s+", " ", title).strip()
+    return title.strip("·•-—– ")
+
+
+def normalize_heading_key(title: str) -> str:
+    title = html.unescape(title)
+    title = re.sub(r"^#+\s*", "", title.strip())
+    title = re.sub(r"\[[^\]]+\]\([^)]+\)", "", title)
+    title = re.sub(r"[\s　]+", "", title)
+    title = re.sub(r"[《》“”\"'‘’：:，,。.!！?？、（）()\[\]【】\-—–_·•]", "", title)
+    return title.casefold()
 
 
 def promote_plain_chinese_book_headings(text: str) -> str:
@@ -1719,6 +1815,11 @@ def write_batch_summary(results: list[ConversionResult], args: argparse.Namespac
     summary_json = summary_path.with_suffix(".json")
     summary_json.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
     summary_path.write_text(render_batch_summary_markdown(entries, summary_json), encoding="utf-8")
+    checklist_entries = build_review_checklist_entries(entries)
+    checklist_json = report_root / "review-checklist.json"
+    checklist_md = report_root / "review-checklist.md"
+    checklist_json.write_text(json.dumps(checklist_entries, ensure_ascii=False, indent=2), encoding="utf-8")
+    checklist_md.write_text(render_review_checklist_markdown(checklist_entries, checklist_json), encoding="utf-8")
 
 
 def load_report_snapshot(result: ConversionResult) -> dict:
@@ -1785,6 +1886,82 @@ def render_batch_summary_markdown(entries: list[dict], summary_json: Path) -> st
             )
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def build_review_checklist_entries(entries: list[dict]) -> list[dict]:
+    checklist = []
+    for item in entries:
+        quality = item.get("quality") or {}
+        preflight = item.get("pdf_preflight") or {}
+        status = item.get("status")
+        level = quality.get("level")
+        if status != "failed" and level not in {"review", "poor"} and not preflight.get("scanned_likely"):
+            continue
+        checklist.append(
+            {
+                "source": item.get("source"),
+                "output": item.get("output"),
+                "report": item.get("report"),
+                "status": status,
+                "pipeline": item.get("pipeline"),
+                "quality_level": level,
+                "quality_score": quality.get("score"),
+                "quality_reasons": quality.get("reasons") or [],
+                "pdf_scanned_likely": preflight.get("scanned_likely"),
+                "pdf_complex_layout_likely": preflight.get("complex_layout_likely"),
+                "pdf_reasons": preflight.get("reasons") or [],
+                "suggested_action": suggest_review_action(item),
+            }
+        )
+    return sorted(checklist, key=review_checklist_sort_key)
+
+
+def render_review_checklist_markdown(entries: list[dict], checklist_json: Path) -> str:
+    lines = [
+        "# Review Checklist",
+        "",
+        f"- Generated: {timestamp_now()}",
+        f"- Review candidates: {len(entries)}",
+        f"- JSON checklist: `{checklist_json}`",
+        "",
+        "| Status | Quality | Source | Suggested action | Reasons |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    if not entries:
+        lines.append("| ok | good | No review candidates | - | - |")
+    for item in entries:
+        reasons = "; ".join((item.get("quality_reasons") or []) + (item.get("pdf_reasons") or []))
+        lines.append(
+            f"| {escape_table(str(item.get('status') or ''))} | "
+            f"{escape_table(str(item.get('quality_level') or 'n/a'))} {item.get('quality_score') or ''} | "
+            f"{escape_table(Path(str(item.get('source') or '')).name)} | "
+            f"{escape_table(str(item.get('suggested_action') or ''))} | "
+            f"{escape_table(reasons[:300])} |"
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def suggest_review_action(item: dict) -> str:
+    status = item.get("status")
+    pipeline = str(item.get("pipeline") or "")
+    quality = item.get("quality") or {}
+    preflight = item.get("pdf_preflight") or {}
+    if status == "failed":
+        return "检查 report 错误信息；修复依赖或改用备用 PDF 模式后重跑"
+    if preflight.get("scanned_likely") and "mineru" not in pipeline.lower():
+        return "疑似扫描 PDF，建议用 MinerU 或 Umi-OCR 重跑对比"
+    if quality.get("level") == "poor":
+        return "优先人工复查；必要时换管道重跑"
+    if quality.get("reasons"):
+        return "抽查标题层级、页码噪声、脚注和乱码"
+    return "人工抽查"
+
+
+def review_checklist_sort_key(item: dict) -> tuple[int, int]:
+    if item.get("status") == "failed":
+        return (0, 0)
+    score = item.get("quality_score")
+    return (1, int(score) if score is not None else 999)
 
 
 def count_by(entries: list[dict], key: str) -> dict[str, int]:
