@@ -229,6 +229,12 @@ def parse_args() -> argparse.Namespace:
         help="Disable per-book conversion reports",
     )
     parser.add_argument(
+        "--summary",
+        type=Path,
+        default=None,
+        help="Optional path for a Markdown batch summary, default: <output>/.reports/summary.md",
+    )
+    parser.add_argument(
         "--health-check",
         action="store_true",
         help="Only print dependency and environment health information, then exit",
@@ -260,6 +266,7 @@ def default_options(**overrides) -> SimpleNamespace:
         "resume": False,
         "report_dir": None,
         "no_reports": False,
+        "summary": None,
         "health_check": False,
         "pdf_fallback_to_pymupdf4llm": True,
         "pdf_pipeline_mode": "auto",
@@ -319,6 +326,7 @@ def run_batch(args: argparse.Namespace) -> int:
             json.dumps([asdict(item) for item in results], ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+    write_batch_summary(results, args)
 
     failures = [item for item in results if item.status == "failed"]
     return 0 if not failures else 3
@@ -1686,6 +1694,130 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
         payload["pdf_preflight"] = asdict(pdf_preflight(Path(result.source), args))
     report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     result.report = str(report_path)
+
+
+def write_batch_summary(results: list[ConversionResult], args: argparse.Namespace) -> None:
+    if getattr(args, "no_reports", False):
+        return
+    summary_path = getattr(args, "summary", None)
+    report_dir = getattr(args, "report_dir", None)
+    if summary_path is None:
+        if report_dir is None:
+            output_root = getattr(args, "output", None)
+            if output_root is None:
+                return
+            report_root = Path(output_root) / ".reports"
+        else:
+            report_root = Path(report_dir)
+        summary_path = report_root / "summary.md"
+    else:
+        summary_path = Path(summary_path)
+        report_root = summary_path.parent
+    report_root.mkdir(parents=True, exist_ok=True)
+
+    entries = [load_report_snapshot(result) for result in results]
+    summary_json = summary_path.with_suffix(".json")
+    summary_json.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+    summary_path.write_text(render_batch_summary_markdown(entries, summary_json), encoding="utf-8")
+
+
+def load_report_snapshot(result: ConversionResult) -> dict:
+    payload = asdict(result)
+    if result.report and Path(result.report).exists():
+        try:
+            payload.update(json.loads(Path(result.report).read_text(encoding="utf-8")))
+        except Exception:
+            pass
+    return payload
+
+
+def render_batch_summary_markdown(entries: list[dict], summary_json: Path) -> str:
+    total = len(entries)
+    status_counts = count_by(entries, "status")
+    pipeline_counts = count_by(entries, "pipeline")
+    quality_counts = count_nested(entries, "quality", "level")
+    pdf_risk_count = sum(1 for item in entries if (item.get("pdf_preflight") or {}).get("scanned_likely"))
+    failed = [item for item in entries if item.get("status") == "failed"]
+    review_items = [
+        item
+        for item in entries
+        if (item.get("quality") or {}).get("level") in {"review", "poor"} or item.get("status") == "failed"
+    ]
+
+    lines = [
+        "# Conversion Summary",
+        "",
+        f"- Generated: {timestamp_now()}",
+        f"- Total files: {total}",
+        f"- Status: {format_counts(status_counts)}",
+        f"- Pipelines: {format_counts(pipeline_counts)}",
+        f"- Quality: {format_counts(quality_counts) if quality_counts else 'n/a'}",
+        f"- PDF scanned-like: {pdf_risk_count}",
+        f"- JSON summary: `{summary_json}`",
+        "",
+    ]
+
+    if failed:
+        lines.extend(["## Failed", "", "| Source | Pipeline | Message |", "| --- | --- | --- |"])
+        for item in failed:
+            lines.append(
+                f"| {escape_table(Path(str(item.get('source', ''))).name)} | "
+                f"{escape_table(str(item.get('pipeline', '')))} | "
+                f"{escape_table(str(item.get('message', ''))[:240])} |"
+            )
+        lines.append("")
+
+    lines.extend(["## Review Queue", "", "| Level | Score | Source | Pipeline | Reasons |", "| --- | ---: | --- | --- | --- |"])
+    if not review_items:
+        lines.append("| good | 100 | No review candidates | - | - |")
+    else:
+        for item in sorted(review_items, key=summary_sort_key):
+            quality = item.get("quality") or {}
+            reasons = "; ".join(quality.get("reasons") or [])
+            if not reasons and item.get("status") == "failed":
+                reasons = item.get("message", "")
+            lines.append(
+                f"| {escape_table(str(quality.get('level', item.get('status', ''))))} | "
+                f"{quality.get('score', '')} | "
+                f"{escape_table(Path(str(item.get('source', ''))).name)} | "
+                f"{escape_table(str(item.get('pipeline', '')))} | "
+                f"{escape_table(str(reasons)[:260])} |"
+            )
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def count_by(entries: list[dict], key: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in entries:
+        value = str(item.get(key) or "unknown")
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
+
+def count_nested(entries: list[dict], parent: str, key: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in entries:
+        nested = item.get(parent) or {}
+        value = nested.get(key)
+        if not value:
+            continue
+        counts[str(value)] = counts.get(str(value), 0) + 1
+    return counts
+
+
+def format_counts(counts: dict[str, int]) -> str:
+    return ", ".join(f"{key}={value}" for key, value in sorted(counts.items())) if counts else "n/a"
+
+
+def summary_sort_key(item: dict) -> tuple[int, int]:
+    quality = item.get("quality") or {}
+    status_rank = 0 if item.get("status") == "failed" else 1
+    return (status_rank, int(quality.get("score") or 999))
+
+
+def escape_table(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ").replace("\r", " ")
 
 
 def analyze_markdown_quality(path: Path) -> MarkdownQuality | None:

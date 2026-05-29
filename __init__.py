@@ -15,4 +15,5 @@ from .batch_convert_books import (
     run_batch,
     suggested_command_value,
     suggested_umi_paddle_exe,
+    write_batch_summary,
 )

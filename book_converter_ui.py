@@ -32,6 +32,7 @@ try:
         find_missing_dependencies,
         normalize_command_options,
         suggested_command_value,
+        write_batch_summary,
     )
 except ModuleNotFoundError:
     from batch_convert_books import (
@@ -47,6 +48,7 @@ except ModuleNotFoundError:
         find_missing_dependencies,
         normalize_command_options,
         suggested_command_value,
+        write_batch_summary,
     )
 
 
@@ -486,6 +488,8 @@ class BookConverterUI:
                         json.dumps([asdict(item) for item in results], ensure_ascii=False, indent=2),
                         encoding="utf-8",
                     )
+                options.output = output_path
+                write_batch_summary(results, options)
                 self.queue.put(("done", results))
             except Exception as exc:  # noqa: BLE001
                 self.queue.put(("error", str(exc)))
@@ -510,6 +514,7 @@ class BookConverterUI:
                     self.set_running_state(False)
                     self.worker = None
                     self.write_log(f"Finished. Success: {ok_count}/{len(payload)}")
+                    self.write_log(f"Summary: {Path(self.output_var.get().strip()) / '.reports' / 'summary.md'}")
                 elif kind == "error":
                     self.set_running_state(False)
                     self.status_var.set("执行失败")
