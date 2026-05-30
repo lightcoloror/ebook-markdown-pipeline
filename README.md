@@ -41,6 +41,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\book_converter_ui.py
 - UI 会在用户目录保存上次路径、PDF 模式、工具路径和开关设置，下次启动自动恢复
 - PDF 自动模式会先快速预检文本层、图片占比、目录页/表格页迹象和扫描版风险，再选择 Marker 或 MinerU
 - Marker/MinerU 长任务会流式读取外部工具输出；能解析页码时显示当前页，页处理完成后会切换为“正在收尾/写文件”，并提示长时间无输出的疑似卡住状态
+- 每次 Marker/MinerU 调用会写入 `.reports/pdf-tool-logs/*.log`，report 中也会记录 `pdf_tool_diagnostics`，用于排查卡在页级解析、收尾写文件、无输出等待、启动失败或非零退出码
 
 ## 用法
 
@@ -112,6 +113,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py `
 - `.reports/review-checklist.md` 是人工复查清单，适合转换完后逐项检查和决定是否换管道重跑。
 - `--resume` 会读取已有 manifest，跳过已经成功或已经跳过且输出文件仍存在的条目。
 - PDF 自动模式会在长文档上避免默认跑很慢的 `Marker`，并改用 `MinerU` 保留更好的结构；需要快速低结构 OCR 时可手动选 `Umi-OCR`。
+- 如果 PDF 长任务疑似卡住，优先查看对应 `.reports/*.report.json` 里的 `pdf_tool_diagnostics.log`，再打开 `.reports/pdf-tool-logs/*.log` 看最后的 `stdout`、`heartbeat`、`finalizing` 或 `exit` 记录。
 - `html` 和 `text` 输出会尽量复用 `pandoc` 做后续格式转换。
 - `AZW/MOBI` 默认要求是无 DRM 文件。
 - `--dry-run` 可以先看会执行哪些命令。

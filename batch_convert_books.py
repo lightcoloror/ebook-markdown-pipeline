@@ -683,6 +683,7 @@ def convert_one(
 ) -> ConversionResult:
     output_path = output_path or build_output_path(source, input_root, output_root, args)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    args._pdf_tool_diagnostics = []
 
     if output_path.exists() and not args.overwrite:
         return ConversionResult(
@@ -933,6 +934,7 @@ def run_mineru_pdf_convert(
             cmd,
             args,
             source,
+            output_path,
             progress_callback,
             progress_index,
             progress_total,
@@ -993,6 +995,7 @@ def run_marker_pdf_convert(
             cmd,
             args,
             source,
+            output_path,
             progress_callback,
             progress_index,
             progress_total,
@@ -1767,6 +1770,19 @@ def quality_report_path(output_path: Path) -> Path:
     return output_path.with_name(f"{output_path.stem}.quality.md")
 
 
+def pdf_tool_log_path(args: argparse.Namespace, source: Path, output_path: Path, label: str) -> Path:
+    report_dir = getattr(args, "report_dir", None)
+    if report_dir is None:
+        report_dir = output_path.parent / ".reports"
+    else:
+        report_dir = Path(report_dir)
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    digest = hashlib.sha1(str(source).encode("utf-8", errors="replace")).hexdigest()[:8]
+    tool = re.sub(r"[^A-Za-z0-9_.-]+", "-", label.lower()).strip("-") or "pdf-tool"
+    safe_stem = safe_report_name(output_path.stem)[:90].rstrip(" ._-") or "converted-book"
+    return report_dir / "pdf-tool-logs" / f"{timestamp}-{tool}-{safe_stem}-{digest}.log"
+
+
 def write_conversion_report(result: ConversionResult, args: argparse.Namespace, output_path: Path) -> None:
     if getattr(args, "no_reports", False):
         return
@@ -1788,6 +1804,9 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
             payload["quality"] = asdict(quality)
     if Path(result.source).suffix.lower() == ".pdf":
         payload["pdf_preflight"] = asdict(pdf_preflight(Path(result.source), args))
+        diagnostics = getattr(args, "_pdf_tool_diagnostics", [])
+        if diagnostics:
+            payload["pdf_tool_diagnostics"] = diagnostics
     report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     result.report = str(report_path)
 
@@ -2108,6 +2127,7 @@ def run_pdf_tool_command(
     cmd: list[str],
     args: argparse.Namespace,
     source: Path,
+    output_path: Path,
     progress_callback,
     progress_index: int | None,
     progress_total: int | None,
@@ -2120,15 +2140,71 @@ def run_pdf_tool_command(
         print("DRY RUN:", format_cmd(cmd))
         return
 
-    process = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
+    page_count = max(pdf_preflight(source, args).page_count, 0)
+    log_path = pdf_tool_log_path(args, source, output_path, label)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    diagnostic: dict[str, object] = {
+        "tool": label,
+        "stage": stage,
+        "source": str(source),
+        "output": str(output_path),
+        "log": str(log_path),
+        "command": cmd,
+        "started_at": timestamp_now(),
+        "page_count": page_count,
+        "last_page": None,
+        "last_output_at": None,
+        "finalizing_started_at": None,
+        "duration_seconds": None,
+        "exit_code": None,
+        "status": "running",
+        "last_lines": [],
+    }
+    getattr(args, "_pdf_tool_diagnostics", []).append(diagnostic)
+    log_file = log_path.open("w", encoding="utf-8", errors="replace")
+
+    def log_event(kind: str, message: str | dict[str, object]) -> None:
+        payload = message if isinstance(message, dict) else {"message": message}
+        log_file.write(json.dumps({"time": timestamp_now(), "kind": kind, **payload}, ensure_ascii=False) + "\n")
+        log_file.flush()
+
+    log_event(
+        "start",
+        {
+            "tool": label,
+            "stage": stage,
+            "source": str(source),
+            "output": str(output_path),
+            "command": cmd,
+            "page_count": page_count,
+        },
     )
+    emit_stage(
+        progress_callback,
+        source,
+        progress_index,
+        progress_total,
+        stage,
+        f"{label} 日志写入 {log_path}",
+    )
+    try:
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+        )
+    except Exception as exc:
+        diagnostic["status"] = "spawn_failed"
+        diagnostic["error"] = str(exc)
+        log_event("spawn_failed", {"error": str(exc)})
+        log_file.close()
+        raise
+    diagnostic["pid"] = process.pid
+    log_event("process", {"pid": process.pid})
     lines: list[str] = []
     output_queue: queue.Queue[str | None] = queue.Queue()
 
@@ -2141,7 +2217,6 @@ def run_pdf_tool_command(
     thread = threading.Thread(target=reader, daemon=True)
     thread.start()
 
-    page_count = max(pdf_preflight(source, args).page_count, 0)
     started = time.monotonic()
     last_emit = 0.0
     last_output_at = started
@@ -2160,12 +2235,17 @@ def run_pdf_tool_command(
             clean = line.strip()
             if clean:
                 last_output_at = now
+                diagnostic["last_output_at"] = timestamp_now()
                 lines.append(clean)
+                log_event("stdout", clean)
                 parsed = parse_pdf_tool_progress(clean, page_count)
                 if parsed:
                     last_page = parsed
+                    diagnostic["last_page"] = parsed
                     if page_count and parsed >= page_count and finalizing_since is None:
                         finalizing_since = now
+                        diagnostic["finalizing_started_at"] = timestamp_now()
+                        log_event("finalizing", {"last_page": parsed, "page_count": page_count})
                     emit_pdf_tool_progress(
                         progress_callback,
                         source,
@@ -2185,6 +2265,18 @@ def run_pdf_tool_command(
         if now - last_emit >= 5.0:
             if page_count and last_page and last_page >= page_count and finalizing_since is None:
                 finalizing_since = now
+                diagnostic["finalizing_started_at"] = timestamp_now()
+                log_event("finalizing", {"last_page": last_page, "page_count": page_count})
+            log_event(
+                "heartbeat",
+                {
+                    "elapsed_seconds": round(now - started, 3),
+                    "last_page": last_page,
+                    "page_count": page_count,
+                    "no_output_seconds": round(now - last_output_at, 3),
+                    "finalizing_seconds": round(now - finalizing_since, 3) if finalizing_since else None,
+                },
+            )
             emit_pdf_tool_progress(
                 progress_callback,
                 source,
@@ -2202,6 +2294,23 @@ def run_pdf_tool_command(
 
     return_code = process.wait()
     thread.join(timeout=1.0)
+    duration_seconds = time.monotonic() - started
+    diagnostic["duration_seconds"] = round(duration_seconds, 3)
+    diagnostic["exit_code"] = return_code
+    diagnostic["status"] = "ok" if return_code == 0 else "failed"
+    diagnostic["finished_at"] = timestamp_now()
+    diagnostic["last_lines"] = lines[-20:]
+    log_event(
+        "exit",
+        {
+            "exit_code": return_code,
+            "duration_seconds": round(duration_seconds, 3),
+            "last_page": last_page,
+            "page_count": page_count,
+            "line_count": len(lines),
+        },
+    )
+    log_file.close()
     if return_code != 0:
         output = "\n".join(lines[-80:])
         raise subprocess.CalledProcessError(return_code, cmd, output=output, stderr=output)
