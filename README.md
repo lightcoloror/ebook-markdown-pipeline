@@ -42,6 +42,9 @@ python D:\used-by-codex\ebook_markdown_pipeline\book_converter_ui.py
 - PDF 自动模式会先快速预检文本层、图片占比、目录页/表格页迹象和扫描版风险，再选择 Marker 或 MinerU
 - Marker/MinerU 长任务会流式读取外部工具输出；能解析页码时显示当前页，页处理完成后会切换为“正在收尾/写文件”，并提示长时间无输出的疑似卡住状态
 - 每次 Marker/MinerU 调用会写入 `.reports/pdf-tool-logs/*.log`，report 中也会记录 `pdf_tool_diagnostics`，用于排查卡在页级解析、收尾写文件、无输出等待、启动失败或非零退出码
+- PDF 工具有自动防卡死保护：无输出超过 `--pdf-tool-idle-timeout` 或页处理完成后收尾超过 `--pdf-tool-finalize-timeout` 会终止进程树、保留临时目录并自动回退到 PyMuPDF4LLM
+- 200 页以上 PDF 默认按 50 页分段跑 MinerU，降低长文档整本卡死的风险；可用 `--mineru-segment-min-pages` 和 `--mineru-segment-pages` 调整
+- UI 提供复查入口：打开复查清单、选中输出、选中报告和最近 PDF 工具日志
 
 ## 用法
 
@@ -114,6 +117,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py `
 - `--resume` 会读取已有 manifest，跳过已经成功或已经跳过且输出文件仍存在的条目。
 - PDF 自动模式会在长文档上避免默认跑很慢的 `Marker`，并改用 `MinerU` 保留更好的结构；需要快速低结构 OCR 时可手动选 `Umi-OCR`。
 - 如果 PDF 长任务疑似卡住，优先查看对应 `.reports/*.report.json` 里的 `pdf_tool_diagnostics.log`，再打开 `.reports/pdf-tool-logs/*.log` 看最后的 `stdout`、`heartbeat`、`finalizing` 或 `exit` 记录。
+- 自动回退可用 `--no-pdf-auto-fallback` 关闭；超时阈值传 `0` 表示禁用对应超时。
 - `html` 和 `text` 输出会尽量复用 `pandoc` 做后续格式转换。
 - `AZW/MOBI` 默认要求是无 DRM 文件。
 - `--dry-run` 可以先看会执行哪些命令。

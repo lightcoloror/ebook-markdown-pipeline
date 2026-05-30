@@ -73,6 +73,8 @@ class BookConverterUI:
         self.marker_var = tk.StringVar(value=suggested_command_value("marker_single"))
         self.mineru_var = tk.StringVar(value=suggested_command_value("mineru"))
         self.marker_extra_var = tk.StringVar()
+        self.pdf_idle_timeout_var = tk.StringVar(value="1800")
+        self.pdf_finalize_timeout_var = tk.StringVar(value="480")
         self.status_var = tk.StringVar(value="就绪")
         self.current_stage_var = tk.StringVar(value="")
         self.selected_input_files: list[Path] = []
@@ -83,6 +85,7 @@ class BookConverterUI:
         self.total_files = 0
         self.file_start_times: dict[str, float] = {}
         self.file_estimates: dict[str, float | None] = {}
+        self.latest_results = []
         self.config_path = Path.home() / ".ebook_markdown_pipeline_ui.json"
 
         self.build_layout()
@@ -163,6 +166,10 @@ class BookConverterUI:
         ttk.Entry(settings, textvariable=self.marker_extra_var).grid(
             row=2, column=3, columnspan=3, sticky="ew", padx=8
         )
+        ttk.Label(settings, text="Idle timeout(s)").grid(row=3, column=0, sticky="w", pady=4)
+        ttk.Entry(settings, textvariable=self.pdf_idle_timeout_var, width=10).grid(row=3, column=1, sticky="w", padx=8)
+        ttk.Label(settings, text="Finalize timeout(s)").grid(row=3, column=2, sticky="w", pady=4)
+        ttk.Entry(settings, textvariable=self.pdf_finalize_timeout_var, width=10).grid(row=3, column=3, sticky="w", padx=8)
 
         actions = ttk.Frame(container)
         actions.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
@@ -210,6 +217,10 @@ class BookConverterUI:
         self.health_button.pack(side="left", padx=(8, 0))
         self.start_button = ttk.Button(buttons, text="开始执行", command=self.start_convert)
         self.start_button.pack(side="left", padx=8)
+        ttk.Button(buttons, text="打开复查清单", command=self.open_review_checklist).pack(side="left")
+        ttk.Button(buttons, text="打开选中输出", command=self.open_selected_output).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="打开选中报告", command=self.open_selected_report).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="打开最近PDF日志", command=self.open_latest_pdf_log).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="清空日志", command=self.clear_log).pack(side="left")
 
         self.progress = ttk.Progressbar(buttons, mode="determinate", length=220)
@@ -302,8 +313,16 @@ class BookConverterUI:
             marker_command=self.marker_var.get().strip() or "marker_single",
             mineru_command=self.mineru_var.get().strip() or "mineru",
             marker_extra_args=marker_extra,
+            pdf_tool_idle_timeout=self.parse_timeout(self.pdf_idle_timeout_var.get(), 1800.0),
+            pdf_tool_finalize_timeout=self.parse_timeout(self.pdf_finalize_timeout_var.get(), 480.0),
         )
         return normalize_command_options(options)
+
+    def parse_timeout(self, value: str, default: float) -> float:
+        try:
+            return max(float(value.strip()), 0.0)
+        except Exception:
+            return default
 
     def format_selected_files(self, paths: list[Path]) -> str:
         if not paths:
@@ -508,6 +527,7 @@ class BookConverterUI:
                 if kind == "progress":
                     self.handle_progress(payload)
                 elif kind == "done":
+                    self.latest_results = payload
                     ok_count = 0
                     for result in payload:
                         if result.status == "ok":
@@ -570,6 +590,62 @@ class BookConverterUI:
             self.write_log(result.message)
         if getattr(result, "report", None):
             self.write_log(f"Report: {result.report}")
+
+    def open_review_checklist(self) -> None:
+        output_text = self.output_var.get().strip()
+        if not output_text:
+            messagebox.showwarning("Output missing", "Please choose an output folder first.")
+            return
+        self.open_path(Path(output_text) / ".reports" / "review-checklist.md")
+
+    def open_selected_output(self) -> None:
+        selected = self.selected_tree_values()
+        if not selected:
+            return
+        self.open_path(Path(selected.get("output", "")))
+
+    def open_selected_report(self) -> None:
+        selected = self.selected_tree_values()
+        if not selected:
+            return
+        source = selected.get("source", "")
+        for result in self.latest_results:
+            if str(getattr(result, "source", "")) == source and getattr(result, "report", None):
+                self.open_path(Path(result.report))
+                return
+        output = Path(selected.get("output", ""))
+        report = output.parent / ".reports" / f"{output.stem[:140].rstrip(' ._-')}.report.json"
+        self.open_path(report)
+
+    def open_latest_pdf_log(self) -> None:
+        output_text = self.output_var.get().strip()
+        if not output_text:
+            messagebox.showwarning("Output missing", "Please choose an output folder first.")
+            return
+        log_dir = Path(output_text) / ".reports" / "pdf-tool-logs"
+        logs = sorted(log_dir.glob("*.log"), key=lambda path: path.stat().st_mtime, reverse=True) if log_dir.exists() else []
+        if not logs:
+            messagebox.showinfo("No PDF logs", "No PDF tool logs found yet.")
+            return
+        self.open_path(logs[0])
+
+    def selected_tree_values(self) -> dict[str, str] | None:
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showinfo("No selection", "Please select a file in the detected file list first.")
+            return None
+        values = self.tree.item(selection[0], "values")
+        columns = ("source", "format", "pipeline", "note", "output_format", "output")
+        return dict(zip(columns, values))
+
+    def open_path(self, path: Path) -> None:
+        if not path.exists():
+            messagebox.showwarning("File not found", str(path))
+            return
+        try:
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Open failed", str(exc))
 
     def set_running_state(self, is_running: bool) -> None:
         state = "disabled" if is_running else "normal"
@@ -670,6 +746,8 @@ class BookConverterUI:
             "marker": self.marker_var,
             "mineru": self.mineru_var,
             "marker_extra": self.marker_extra_var,
+            "pdf_idle_timeout": self.pdf_idle_timeout_var,
+            "pdf_finalize_timeout": self.pdf_finalize_timeout_var,
         }.items():
             if key in data and data[key] is not None:
                 variable.set(str(data[key]))
@@ -697,6 +775,8 @@ class BookConverterUI:
             "marker": self.marker_var.get(),
             "mineru": self.mineru_var.get(),
             "marker_extra": self.marker_extra_var.get(),
+            "pdf_idle_timeout": self.pdf_idle_timeout_var.get(),
+            "pdf_finalize_timeout": self.pdf_finalize_timeout_var.get(),
         }
         try:
             self.config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")

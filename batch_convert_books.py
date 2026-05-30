@@ -100,16 +100,25 @@ class MarkdownQuality:
 class PdfPreflight:
     page_count: int
     sampled_pages: int
+    bookmark_count: int
     text_page_ratio: float
     avg_text_chars: float
+    avg_text_blocks: float
     image_page_ratio: float
     avg_image_area_ratio: float
     toc_like_pages: int
     table_like_pages: int
+    two_column_like_pages: int
     scanned_likely: bool
     complex_layout_likely: bool
     recommended_pipeline: str
     reasons: list[str]
+
+
+class PdfToolTimeoutError(RuntimeError):
+    def __init__(self, message: str, diagnostic: dict[str, object]):
+        super().__init__(message)
+        self.diagnostic = diagnostic
 
 
 def parse_args() -> argparse.Namespace:
@@ -187,6 +196,18 @@ def parse_args() -> argparse.Namespace:
         help="MinerU OCR language, default: ch",
     )
     parser.add_argument(
+        "--mineru-segment-min-pages",
+        type=int,
+        default=200,
+        help="Use segmented MinerU processing for PDFs with at least this many pages; 0 disables. Default: 200.",
+    )
+    parser.add_argument(
+        "--mineru-segment-pages",
+        type=int,
+        default=50,
+        help="Pages per MinerU segment for long PDFs; 0 disables. Default: 50.",
+    )
+    parser.add_argument(
         "--calibre-command",
         default="ebook-convert",
         help="Calibre conversion command, default: ebook-convert",
@@ -239,6 +260,23 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Only print dependency and environment health information, then exit",
     )
+    parser.add_argument(
+        "--pdf-tool-idle-timeout",
+        type=float,
+        default=1800.0,
+        help="Abort Marker/MinerU after this many seconds without output; 0 disables. Default: 1800.",
+    )
+    parser.add_argument(
+        "--pdf-tool-finalize-timeout",
+        type=float,
+        default=480.0,
+        help="Abort Marker/MinerU after this many seconds stuck after all pages are reported done; 0 disables. Default: 480.",
+    )
+    parser.add_argument(
+        "--no-pdf-auto-fallback",
+        action="store_true",
+        help="Disable automatic fallback to PyMuPDF4LLM when Marker/MinerU fails or times out.",
+    )
     return parser.parse_args()
 
 
@@ -255,6 +293,8 @@ def default_options(**overrides) -> SimpleNamespace:
         "mineru_method": "auto",
         "mineru_backend": "pipeline",
         "mineru_lang": "ch",
+        "mineru_segment_min_pages": 200,
+        "mineru_segment_pages": 50,
         "mineru_model_source": "huggingface",
         "mineru_hf_endpoint": "https://hf-mirror.com",
         "mineru_keep_artifacts": True,
@@ -269,6 +309,8 @@ def default_options(**overrides) -> SimpleNamespace:
         "summary": None,
         "health_check": False,
         "pdf_fallback_to_pymupdf4llm": True,
+        "pdf_tool_idle_timeout": 1800.0,
+        "pdf_tool_finalize_timeout": 480.0,
         "pdf_pipeline_mode": "auto",
         "marker_default_max_pages": 12,
         "marker_seconds_per_page_estimate": 10.0,
@@ -288,6 +330,8 @@ def main() -> int:
 
 
 def run_batch(args: argparse.Namespace) -> int:
+    if getattr(args, "no_pdf_auto_fallback", False):
+        args.pdf_fallback_to_pymupdf4llm = False
     normalize_command_options(args)
     sources = collect_sources(
         args.input,
@@ -611,12 +655,16 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace) 
         )
     for command in sorted(required):
         resolved = resolve_command_path(command)
+        detail = resolved or "not found"
+        version = command_version(resolved or command) if resolved else ""
+        if version:
+            detail = f"{detail}; {version}"
         checks.append(
             {
                 "name": Path(command).name if command else command,
                 "kind": "command",
                 "status": "ok" if resolved else "missing",
-                "detail": resolved or "not found",
+                "detail": detail,
             }
         )
 
@@ -671,6 +719,46 @@ def format_health_report(checks: list[dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
+def command_version(command: str) -> str:
+    command_name = Path(command).name.lower()
+    if command_name not in {"pandoc.exe", "pandoc", "mineru.exe", "mineru", "ebook-convert.exe", "ebook-convert"}:
+        return ""
+    candidates = [
+        [command, "--version"],
+        [command, "-V"],
+        [command, "-v"],
+    ]
+    for cmd in candidates:
+        try:
+            completed = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                check=False,
+            )
+        except Exception:
+            continue
+        output = (completed.stdout or "").strip().splitlines()
+        first_line = next((line.strip() for line in output if line.strip()), "")
+        if first_line and not looks_like_version_probe_error(first_line):
+            return first_line[:180]
+    return ""
+
+
+def looks_like_version_probe_error(line: str) -> bool:
+    lowered = line.lower()
+    return (
+        lowered.startswith("traceback")
+        or lowered.startswith("error")
+        or "not recognized" in lowered
+        or "exception" in lowered
+    )
+
+
 def convert_one(
     source: Path,
     input_root: Path,
@@ -684,6 +772,7 @@ def convert_one(
     output_path = output_path or build_output_path(source, input_root, output_root, args)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     args._pdf_tool_diagnostics = []
+    args._last_pdf_pipeline = None
 
     if output_path.exists() and not args.overwrite:
         return ConversionResult(
@@ -732,7 +821,7 @@ def convert_one(
         source=str(source),
         output=str(output_path),
         status="ok",
-        pipeline=pipeline_name(source, args),
+        pipeline=getattr(args, "_last_pdf_pipeline", None) if kind == "pdf" else pipeline_name(source, args),
         message="",
     )
 
@@ -878,21 +967,19 @@ def run_pdf_convert(
     progress_total: int | None = None,
 ) -> None:
     selected = selected_pdf_pipeline(source, args)
-    if selected == "umi":
-        run_umi_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
-        return
-    if selected == "mineru":
-        run_mineru_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
-        return
-    if selected == "pymupdf4llm":
-        run_pymupdf4llm_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
-        return
-
+    args._last_pdf_pipeline = selected_pdf_pipeline_label(source, args)
     try:
-        run_marker_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        if selected == "umi":
+            run_umi_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        elif selected == "mineru":
+            run_mineru_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        elif selected == "pymupdf4llm":
+            run_pymupdf4llm_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        else:
+            run_marker_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         return
     except Exception as exc:  # noqa: BLE001
-        if not should_fallback_from_marker(exc, args):
+        if not should_fallback_from_pdf_tool(exc, selected, args):
             raise
         emit_stage(
             progress_callback,
@@ -900,9 +987,10 @@ def run_pdf_convert(
             progress_index,
             progress_total,
             "fallback",
-            "Marker 失败，自动回退到 PyMuPDF4LLM",
+            f"{selected} 失败/超时，自动回退到 PyMuPDF4LLM",
         )
         run_pymupdf4llm_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        args._last_pdf_pipeline = f"pymupdf4llm(fallback from {selected})"
 
 
 def run_mineru_pdf_convert(
@@ -913,8 +1001,36 @@ def run_mineru_pdf_convert(
     progress_index: int | None = None,
     progress_total: int | None = None,
 ) -> None:
-    with tempfile.TemporaryDirectory(prefix="mineru-output-") as tmpdir:
-        tmpdir_path = Path(tmpdir)
+    page_count = pdf_preflight(source, args).page_count
+    segment_min_pages = int(getattr(args, "mineru_segment_min_pages", 200) or 0)
+    segment_pages = int(getattr(args, "mineru_segment_pages", 50) or 0)
+    if segment_min_pages > 0 and segment_pages > 0 and page_count >= segment_min_pages:
+        args._last_pdf_pipeline = "mineru(segmented)"
+        run_segmented_mineru_pdf_convert(
+            source,
+            output_path,
+            args,
+            page_count,
+            segment_pages,
+            progress_callback,
+            progress_index,
+            progress_total,
+        )
+        return
+    run_single_mineru_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+
+
+def run_single_mineru_pdf_convert(
+    source: Path,
+    output_path: Path,
+    args: argparse.Namespace,
+    progress_callback=None,
+    progress_index: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    tmpdir_path = Path(tempfile.mkdtemp(prefix="mineru-output-"))
+    success = False
+    try:
         cmd = [
             args.mineru_command,
             "-p",
@@ -943,6 +1059,7 @@ def run_mineru_pdf_convert(
             env=mineru_environment(args),
         )
         if args.dry_run:
+            success = True
             return
 
         emit_stage(progress_callback, source, progress_index, progress_total, "collect", "收集 MinerU 输出")
@@ -968,9 +1085,103 @@ def run_mineru_pdf_convert(
                 progress_index=progress_index,
                 progress_total=progress_total,
             )
+            success = True
             return
 
         convert_markdown_file(best_md, output_path, args, progress_callback, source, progress_index, progress_total)
+        success = True
+    except Exception:
+        preserve_pdf_tool_temp_dir(args, tmpdir_path, output_path, "MinerU")
+        raise
+    finally:
+        if success and tmpdir_path.exists():
+            shutil.rmtree(tmpdir_path, ignore_errors=True)
+
+
+def run_segmented_mineru_pdf_convert(
+    source: Path,
+    output_path: Path,
+    args: argparse.Namespace,
+    page_count: int,
+    segment_pages: int,
+    progress_callback=None,
+    progress_index: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    tmpdir_path = Path(tempfile.mkdtemp(prefix="mineru-segments-"))
+    merged_md = tmpdir_path / "merged.md"
+    chunk_paths: list[Path] = []
+    success = False
+    try:
+        ranges = [(start, min(start + segment_pages, page_count)) for start in range(0, page_count, segment_pages)]
+        emit_stage(
+            progress_callback,
+            source,
+            progress_index,
+            progress_total,
+            "mineru",
+            f"长 PDF 分段解析：{len(ranges)} 段，每段最多 {segment_pages} 页",
+        )
+        for idx, (start, end) in enumerate(ranges, start=1):
+            segment_pdf = tmpdir_path / f"segment-{idx:03d}-pages-{start + 1}-{end}.pdf"
+            segment_output = tmpdir_path / f"segment-{idx:03d}.md"
+            write_pdf_segment(source, segment_pdf, start, end)
+            emit_stage(
+                progress_callback,
+                source,
+                progress_index,
+                progress_total,
+                "mineru_progress",
+                f"MinerU 分段 {idx}/{len(ranges)}，页 {start + 1}-{end}",
+            )
+            run_single_mineru_pdf_convert(
+                segment_pdf,
+                segment_output,
+                args,
+                progress_callback,
+                progress_index,
+                progress_total,
+            )
+            chunk_paths.append(segment_output)
+
+        merge_markdown_segments(chunk_paths, merged_md, ranges)
+        if args.output_format == "markdown":
+            shutil.copyfile(merged_md, output_path)
+            postprocess_text_output(
+                output_path,
+                args,
+                source_kind="pdf",
+                progress_callback=progress_callback,
+                progress_source=source,
+                progress_index=progress_index,
+                progress_total=progress_total,
+            )
+        else:
+            convert_markdown_file(merged_md, output_path, args, progress_callback, source, progress_index, progress_total)
+        success = True
+    except Exception:
+        preserve_pdf_tool_temp_dir(args, tmpdir_path, output_path, "MinerU-segments")
+        raise
+    finally:
+        if success and tmpdir_path.exists():
+            shutil.rmtree(tmpdir_path, ignore_errors=True)
+
+
+def write_pdf_segment(source: Path, target: Path, start_page: int, end_page: int) -> None:
+    import pymupdf
+
+    with pymupdf.open(str(source)) as src_doc:
+        with pymupdf.open() as out_doc:
+            out_doc.insert_pdf(src_doc, from_page=start_page, to_page=end_page - 1)
+            out_doc.save(str(target))
+
+
+def merge_markdown_segments(chunk_paths: list[Path], target: Path, ranges: list[tuple[int, int]]) -> None:
+    parts = []
+    for path, (start, end) in zip(chunk_paths, ranges):
+        text = path.read_text(encoding="utf-8", errors="replace").strip()
+        parts.append(f"<!-- MinerU segment pages {start + 1}-{end} -->\n\n{text}")
+    target.write_text("\n\n".join(parts).rstrip() + "\n", encoding="utf-8")
 
 
 def run_marker_pdf_convert(
@@ -981,8 +1192,9 @@ def run_marker_pdf_convert(
     progress_index: int | None = None,
     progress_total: int | None = None,
 ) -> None:
-    with tempfile.TemporaryDirectory(prefix="marker-output-") as tmpdir:
-        tmpdir_path = Path(tmpdir)
+    tmpdir_path = Path(tempfile.mkdtemp(prefix="marker-output-"))
+    success = False
+    try:
         cmd = [
             args.marker_command,
             str(source),
@@ -1003,6 +1215,7 @@ def run_marker_pdf_convert(
             label="Marker",
         )
         if args.dry_run:
+            success = True
             return
 
         emit_stage(progress_callback, source, progress_index, progress_total, "collect", "收集 Marker 输出")
@@ -1023,9 +1236,17 @@ def run_marker_pdf_convert(
                 progress_index=progress_index,
                 progress_total=progress_total,
             )
+            success = True
             return
 
         convert_markdown_file(best_md, output_path, args, progress_callback, source, progress_index, progress_total)
+        success = True
+    except Exception:
+        preserve_pdf_tool_temp_dir(args, tmpdir_path, output_path, "Marker")
+        raise
+    finally:
+        if success and tmpdir_path.exists():
+            shutil.rmtree(tmpdir_path, ignore_errors=True)
 
 
 def run_pymupdf4llm_pdf_convert(
@@ -1724,6 +1945,30 @@ def save_mineru_artifacts(mineru_output_dir: Path, output_path: Path) -> Path:
     return artifact_root
 
 
+def preserve_pdf_tool_temp_dir(args: argparse.Namespace, tmpdir_path: Path, output_path: Path, label: str) -> Path | None:
+    if not tmpdir_path.exists():
+        return None
+    report_dir = getattr(args, "report_dir", None)
+    if report_dir is None:
+        report_dir = output_path.parent / ".reports"
+    else:
+        report_dir = Path(report_dir)
+    artifact_root = report_dir / "pdf-tool-artifacts"
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha1(str(tmpdir_path).encode("utf-8", errors="replace")).hexdigest()[:8]
+    target = artifact_root / f"{time.strftime('%Y%m%d-%H%M%S')}-{label.lower()}-{safe_report_name(output_path.stem)[:80]}-{digest}"
+    try:
+        if target.exists():
+            shutil.rmtree(target, ignore_errors=True)
+        shutil.move(str(tmpdir_path), str(target))
+    except Exception:
+        return tmpdir_path
+    diagnostics = getattr(args, "_pdf_tool_diagnostics", [])
+    if diagnostics:
+        diagnostics[-1]["preserved_temp_dir"] = str(target)
+    return target
+
+
 def write_mineru_quality_report(artifact_root: Path, output_path: Path) -> None:
     try:
         from ebook_markdown_pipeline.analyze_mineru_difficult_pages import find_middle_json, score_middle_json
@@ -2267,14 +2512,38 @@ def run_pdf_tool_command(
                 finalizing_since = now
                 diagnostic["finalizing_started_at"] = timestamp_now()
                 log_event("finalizing", {"last_page": last_page, "page_count": page_count})
+            idle_seconds = now - last_output_at
+            finalizing_seconds = now - finalizing_since if finalizing_since else 0.0
+            timeout_reason = pdf_tool_timeout_reason(args, idle_seconds, finalizing_seconds)
+            if timeout_reason:
+                diagnostic["status"] = "timeout"
+                diagnostic["timeout_reason"] = timeout_reason
+                diagnostic["last_page"] = last_page
+                diagnostic["duration_seconds"] = round(now - started, 3)
+                diagnostic["finished_at"] = timestamp_now()
+                diagnostic["last_lines"] = lines[-20:]
+                log_event(
+                    "timeout",
+                    {
+                        "reason": timeout_reason,
+                        "elapsed_seconds": round(now - started, 3),
+                        "last_page": last_page,
+                        "page_count": page_count,
+                        "idle_seconds": round(idle_seconds, 3),
+                        "finalizing_seconds": round(finalizing_seconds, 3) if finalizing_since else None,
+                    },
+                )
+                terminate_process_tree(process)
+                log_file.close()
+                raise PdfToolTimeoutError(f"{label} timed out: {timeout_reason}", diagnostic)
             log_event(
                 "heartbeat",
                 {
                     "elapsed_seconds": round(now - started, 3),
                     "last_page": last_page,
                     "page_count": page_count,
-                    "no_output_seconds": round(now - last_output_at, 3),
-                    "finalizing_seconds": round(now - finalizing_since, 3) if finalizing_since else None,
+                    "no_output_seconds": round(idle_seconds, 3),
+                    "finalizing_seconds": round(finalizing_seconds, 3) if finalizing_since else None,
                 },
             )
             emit_pdf_tool_progress(
@@ -2338,6 +2607,43 @@ def parse_pdf_tool_progress(line: str, page_count: int) -> int | None:
             continue
         return current
     return None
+
+
+def pdf_tool_timeout_reason(args: argparse.Namespace, idle_seconds: float, finalizing_seconds: float) -> str | None:
+    finalize_timeout = float(getattr(args, "pdf_tool_finalize_timeout", 0.0) or 0.0)
+    idle_timeout = float(getattr(args, "pdf_tool_idle_timeout", 0.0) or 0.0)
+    if finalize_timeout > 0 and finalizing_seconds >= finalize_timeout:
+        return f"finalize timeout after {format_duration(finalizing_seconds)}"
+    if idle_timeout > 0 and idle_seconds >= idle_timeout:
+        return f"idle timeout after {format_duration(idle_seconds)} without output"
+    return None
+
+
+def terminate_process_tree(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+            process.wait(timeout=10)
+            return
+        except Exception:
+            pass
+    try:
+        process.terminate()
+        process.wait(timeout=10)
+    except Exception:
+        try:
+            process.kill()
+            process.wait(timeout=10)
+        except Exception:
+            pass
 
 
 def emit_pdf_tool_progress(
@@ -2645,22 +2951,32 @@ def inspect_pdf_preflight(source: Path, args: argparse.Namespace, sample_pages: 
             return empty_pdf_preflight()
 
         sample_indexes = pdf_sample_indexes(page_count, sample_pages)
+        try:
+            bookmark_count = len(doc.get_toc(simple=True))
+        except Exception:
+            bookmark_count = 0
         text_pages = 0
         image_pages = 0
         text_chars = 0
+        text_blocks = 0
         image_area_ratios: list[float] = []
         toc_like_pages = 0
         table_like_pages = 0
+        two_column_like_pages = 0
         for page_number in sample_indexes:
             page = doc[page_number]
             text = page.get_text("text").strip()
             text_chars += len(text)
+            blocks = page_text_blocks(page)
+            text_blocks += len(blocks)
             if len(text) >= 80:
                 text_pages += 1
             if looks_like_toc_page(text):
                 toc_like_pages += 1
             if looks_like_table_page(text):
                 table_like_pages += 1
+            if looks_like_two_column_page(page, blocks):
+                two_column_like_pages += 1
 
             image_area_ratio = page_image_area_ratio(page)
             image_area_ratios.append(image_area_ratio)
@@ -2670,27 +2986,38 @@ def inspect_pdf_preflight(source: Path, args: argparse.Namespace, sample_pages: 
         sampled = len(sample_indexes)
         text_page_ratio = round(text_pages / max(sampled, 1), 3)
         avg_text_chars = round(text_chars / max(sampled, 1), 1)
+        avg_text_blocks = round(text_blocks / max(sampled, 1), 1)
         image_page_ratio = round(image_pages / max(sampled, 1), 3)
         avg_image_area_ratio = round(sum(image_area_ratios) / max(sampled, 1), 3)
         scanned_likely = text_page_ratio < 0.5 or avg_text_chars < 120
-        complex_layout_likely = image_page_ratio >= 0.35 or avg_image_area_ratio >= 0.25 or table_like_pages > 0
+        complex_layout_likely = (
+            image_page_ratio >= 0.35
+            or avg_image_area_ratio >= 0.25
+            or table_like_pages > 0
+            or two_column_like_pages > 0
+        )
         recommended, reasons = recommend_pdf_pipeline(
             page_count=page_count,
             scanned_likely=scanned_likely,
             complex_layout_likely=complex_layout_likely,
             toc_like_pages=toc_like_pages,
             table_like_pages=table_like_pages,
+            two_column_like_pages=two_column_like_pages,
+            bookmark_count=bookmark_count,
             args=args,
         )
         return PdfPreflight(
             page_count=page_count,
             sampled_pages=sampled,
+            bookmark_count=bookmark_count,
             text_page_ratio=text_page_ratio,
             avg_text_chars=avg_text_chars,
+            avg_text_blocks=avg_text_blocks,
             image_page_ratio=image_page_ratio,
             avg_image_area_ratio=avg_image_area_ratio,
             toc_like_pages=toc_like_pages,
             table_like_pages=table_like_pages,
+            two_column_like_pages=two_column_like_pages,
             scanned_likely=scanned_likely,
             complex_layout_likely=complex_layout_likely,
             recommended_pipeline=recommended,
@@ -2709,12 +3036,15 @@ def empty_pdf_preflight() -> PdfPreflight:
     return PdfPreflight(
         page_count=0,
         sampled_pages=0,
+        bookmark_count=0,
         text_page_ratio=0.0,
         avg_text_chars=0.0,
+        avg_text_blocks=0.0,
         image_page_ratio=0.0,
         avg_image_area_ratio=0.0,
         toc_like_pages=0,
         table_like_pages=0,
+        two_column_like_pages=0,
         scanned_likely=False,
         complex_layout_likely=False,
         recommended_pipeline="marker",
@@ -2751,6 +3081,38 @@ def page_image_area_ratio(page) -> float:
     return round(min(total / page_area, 1.0), 3)
 
 
+def page_text_blocks(page) -> list[tuple[float, float, float, float]]:
+    try:
+        raw_blocks = page.get_text("blocks")
+    except Exception:
+        return []
+    blocks: list[tuple[float, float, float, float]] = []
+    for block in raw_blocks:
+        if len(block) < 5:
+            continue
+        text = str(block[4]).strip()
+        if not text:
+            continue
+        try:
+            blocks.append((float(block[0]), float(block[1]), float(block[2]), float(block[3])))
+        except Exception:
+            continue
+    return blocks
+
+
+def looks_like_two_column_page(page, blocks: list[tuple[float, float, float, float]]) -> bool:
+    if len(blocks) < 8:
+        return False
+    midpoint = float(page.rect.width) / 2.0
+    left = [block for block in blocks if (block[0] + block[2]) / 2.0 < midpoint * 0.9]
+    right = [block for block in blocks if (block[0] + block[2]) / 2.0 > midpoint * 1.1]
+    if len(left) < 3 or len(right) < 3:
+        return False
+    left_max = max(block[2] for block in left)
+    right_min = min(block[0] for block in right)
+    return right_min - left_max > page.rect.width * 0.04
+
+
 def looks_like_toc_page(text: str) -> bool:
     if not text:
         return False
@@ -2777,6 +3139,8 @@ def recommend_pdf_pipeline(
     complex_layout_likely: bool,
     toc_like_pages: int,
     table_like_pages: int,
+    two_column_like_pages: int,
+    bookmark_count: int,
     args: argparse.Namespace,
 ) -> tuple[str, list[str]]:
     max_marker_pages = int(getattr(args, "marker_default_max_pages", 12))
@@ -2791,6 +3155,10 @@ def recommend_pdf_pipeline(
         reasons.append("检测到目录页迹象")
     if table_like_pages:
         reasons.append("检测到表格页迹象")
+    if two_column_like_pages:
+        reasons.append("检测到双栏/多栏版式迹象")
+    if bookmark_count:
+        reasons.append(f"PDF 内置书签 {bookmark_count} 条，可辅助章节结构")
 
     if page_count <= max_marker_pages and not complex_layout_likely:
         return "marker", reasons or ["短 PDF 且版式不复杂，优先 Marker"]
@@ -2853,6 +3221,8 @@ def plan_note(source: Path, args: argparse.Namespace) -> str:
     metrics = (
         f"text {preflight.text_page_ratio:.0%}; "
         f"image {preflight.avg_image_area_ratio:.0%}; "
+        f"blocks {preflight.avg_text_blocks:.1f}/page; "
+        f"bookmarks {preflight.bookmark_count}; "
         f"sample {preflight.sampled_pages}/{page_count}"
     )
     reason = "; ".join(preflight.reasons[:2])
@@ -2929,11 +3299,15 @@ def close_umi_paddle_engine(ocr_engine) -> None:
             pass
 
 
-def should_fallback_from_marker(exc: Exception, args: argparse.Namespace) -> bool:
+def should_fallback_from_pdf_tool(exc: Exception, selected: str, args: argparse.Namespace) -> bool:
     if not getattr(args, "pdf_fallback_to_pymupdf4llm", True):
+        return False
+    if selected == "pymupdf4llm":
         return False
     if not pymupdf4llm_available():
         return False
+    if isinstance(exc, PdfToolTimeoutError):
+        return True
     if isinstance(exc, FileNotFoundError):
         return True
     if isinstance(exc, subprocess.CalledProcessError):
@@ -2946,7 +3320,7 @@ def should_fallback_from_marker(exc: Exception, args: argparse.Namespace) -> boo
             "marker completed but no markdown file was produced",
         )
         return any(token in details for token in retryable_markers)
-    return False
+    return selected in {"marker", "mineru"}
 
 
 if __name__ == "__main__":
