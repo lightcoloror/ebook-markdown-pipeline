@@ -2144,6 +2144,8 @@ def run_pdf_tool_command(
     page_count = max(pdf_preflight(source, args).page_count, 0)
     started = time.monotonic()
     last_emit = 0.0
+    last_output_at = started
+    finalizing_since: float | None = None
     last_page: int | None = None
     while True:
         try:
@@ -2157,10 +2159,13 @@ def run_pdf_tool_command(
         if line:
             clean = line.strip()
             if clean:
+                last_output_at = now
                 lines.append(clean)
                 parsed = parse_pdf_tool_progress(clean, page_count)
                 if parsed:
                     last_page = parsed
+                    if page_count and parsed >= page_count and finalizing_since is None:
+                        finalizing_since = now
                     emit_pdf_tool_progress(
                         progress_callback,
                         source,
@@ -2171,11 +2176,15 @@ def run_pdf_tool_command(
                         started,
                         page_count,
                         last_page,
+                        finalizing_since=finalizing_since,
+                        no_output_seconds=0.0,
                     )
                     last_emit = now
                     continue
 
         if now - last_emit >= 5.0:
+            if page_count and last_page and last_page >= page_count and finalizing_since is None:
+                finalizing_since = now
             emit_pdf_tool_progress(
                 progress_callback,
                 source,
@@ -2186,6 +2195,8 @@ def run_pdf_tool_command(
                 started,
                 page_count,
                 last_page,
+                finalizing_since=finalizing_since,
+                no_output_seconds=now - last_output_at,
             )
             last_emit = now
 
@@ -2230,23 +2241,40 @@ def emit_pdf_tool_progress(
     started: float,
     page_count: int,
     current_page: int | None,
+    *,
+    finalizing_since: float | None = None,
+    no_output_seconds: float = 0.0,
 ) -> None:
     elapsed = time.monotonic() - started
     elapsed_text = format_duration(elapsed)
     remaining_text = ""
-    if current_page and page_count and current_page > 0:
+    suffixes: list[str] = []
+    if current_page and page_count and current_page >= page_count:
+        page_text = f"{page_count}/{page_count} 页，页处理完成，正在收尾/写文件"
+        if finalizing_since is not None:
+            finalizing_elapsed = max(time.monotonic() - finalizing_since, 0.0)
+            if finalizing_elapsed >= 30:
+                suffixes.append(f"收尾已用 {format_duration(finalizing_elapsed)}")
+            if finalizing_elapsed >= 120:
+                suffixes.append("可能在合并版面、复制图片或等待子进程退出")
+        if no_output_seconds >= 60:
+            suffixes.append(f"最近 {format_duration(no_output_seconds)} 无新输出")
+    elif current_page and page_count and current_page > 0:
         estimated_total = elapsed * page_count / current_page
         remaining_text = f"; 预计剩余 {format_duration(max(estimated_total - elapsed, 0))}"
         page_text = f"{current_page}/{page_count} 页"
     else:
         page_text = f"总页数 {page_count}" if page_count else "页数未知"
+        if no_output_seconds >= 60:
+            suffixes.append(f"最近 {format_duration(no_output_seconds)} 无新输出")
+    suffix_text = f"; {'; '.join(suffixes)}" if suffixes else ""
     emit_stage(
         progress_callback,
         source,
         index,
         total,
         stage,
-        f"{label} 运行中 - {page_text}; 已用 {elapsed_text}{remaining_text}",
+        f"{label} 运行中 - {page_text}; 已用 {elapsed_text}{remaining_text}{suffix_text}",
     )
 
 

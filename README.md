@@ -40,7 +40,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\book_converter_ui.py
 - EPUB / Calibre 中转 EPUB 会读取 `toc.ncx` / `nav.xhtml`，尽量把原书目录标题提升为 Markdown 层级标题
 - UI 会在用户目录保存上次路径、PDF 模式、工具路径和开关设置，下次启动自动恢复
 - PDF 自动模式会先快速预检文本层、图片占比、目录页/表格页迹象和扫描版风险，再选择 Marker 或 MinerU
-- Marker/MinerU 长任务会流式读取外部工具输出；能解析页码时显示当前页，解析不到时也会持续显示运行中、已用时和预计剩余
+- Marker/MinerU 长任务会流式读取外部工具输出；能解析页码时显示当前页，页处理完成后会切换为“正在收尾/写文件”，并提示长时间无输出的疑似卡住状态
 
 ## 用法
 
