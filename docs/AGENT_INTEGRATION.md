@@ -149,9 +149,13 @@ Outputs:
 - `document_locations.jsonl`
 - `document_locations.sqlite`
 
+If one source file fails, the indexer records a `failed` item and continues with the rest of the batch.
+
 ### `query_location_index`
 
 Searches `document_locations.sqlite` and returns `source`, `kind`, `page`, `engine`, and `snippet`.
+
+The response also includes `search_mode` and `used_query`. The normal path is SQLite FTS; when FTS cannot match or the query is a CJK substring, the tool falls back to LIKE matching. This is intended for coarse page/image location, not exact bounding-box extraction.
 
 ## Agent Usage Policy
 

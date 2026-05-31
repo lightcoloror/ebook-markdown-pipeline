@@ -59,6 +59,7 @@ def main() -> int:
     query_parser.add_argument("index", type=Path)
     query_parser.add_argument("query")
     query_parser.add_argument("--limit", type=int, default=20)
+    query_parser.add_argument("--format", choices=["json", "markdown"], default="json")
 
     args = parser.parse_args()
     if args.command == "index":
@@ -76,7 +77,10 @@ def main() -> int:
         return 0
     if args.command == "query":
         result = query_location_index(args.index, args.query, limit=args.limit)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if args.format == "markdown":
+            print(render_query_markdown(result))
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     return 2
 
@@ -114,10 +118,24 @@ def build_location_index(
 
     try:
         for source in sources:
-            if source.suffix.lower() in PDF_EXTENSIONS:
-                records.extend(index_pdf(source, options, ocr_mode, ensure_ocr_engine))
-            elif source.suffix.lower() in IMAGE_EXTENSIONS:
-                records.append(index_image(source, ocr_mode, ensure_ocr_engine))
+            try:
+                if source.suffix.lower() in PDF_EXTENSIONS:
+                    records.extend(index_pdf(source, options, ocr_mode, ensure_ocr_engine))
+                elif source.suffix.lower() in IMAGE_EXTENSIONS:
+                    records.append(index_image(source, ocr_mode, ensure_ocr_engine))
+            except Exception as exc:  # noqa: BLE001
+                records.append(
+                    LocationRecord(
+                        source=str(source),
+                        kind="file",
+                        page=None,
+                        text="",
+                        char_count=0,
+                        engine="error",
+                        status="failed",
+                        message=str(exc),
+                    )
+                )
     finally:
         if ocr_engine is not None:
             close_umi_paddle_engine(ocr_engine)
@@ -137,25 +155,48 @@ def build_location_index(
 
 
 def query_location_index(index_path: Path, query: str, *, limit: int = 20) -> dict:
+    if not index_path.exists():
+        return empty_query_result(index_path, query, message="Index file not found.")
+
     conn = sqlite3.connect(str(index_path))
     conn.row_factory = sqlite3.Row
     try:
         rows = []
         used_query = query
+        search_mode = "fts"
         for candidate_query in build_fts_query_candidates(query):
             rows = execute_location_query(conn, candidate_query, limit)
             used_query = candidate_query
             if rows:
                 break
+        if not rows:
+            rows = execute_like_query(conn, query, limit)
+            used_query = query
+            search_mode = "like"
         return {
             "index": str(index_path),
             "query": query,
             "used_query": used_query,
+            "search_mode": search_mode,
             "count": len(rows),
             "matches": [dict(row) for row in rows],
         }
     finally:
         conn.close()
+
+
+def empty_query_result(index_path: Path, query: str, *, message: str | None = None) -> dict:
+    result = {
+        "index": str(index_path),
+        "query": query,
+        "used_query": query,
+        "search_mode": "none",
+        "count": 0,
+        "matches": [],
+    }
+    if message:
+        result["message"] = message
+    return result
 
 
 def execute_location_query(conn: sqlite3.Connection, query: str, limit: int) -> list[sqlite3.Row]:
@@ -181,6 +222,48 @@ def execute_location_query(conn: sqlite3.Connection, query: str, limit: int) -> 
         return []
 
 
+def execute_like_query(conn: sqlite3.Connection, query: str, limit: int) -> list[sqlite3.Row]:
+    pattern = f"%{escape_like(query)}%"
+    try:
+        rows = conn.execute(
+            """
+            SELECT source, kind, page, char_count, engine, text
+            FROM locations
+            WHERE text LIKE ? ESCAPE '\\'
+            ORDER BY char_count DESC
+            LIMIT ?
+            """,
+            (pattern, limit),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [row_with_snippet(row, query) for row in rows]
+
+
+def row_with_snippet(row: sqlite3.Row, query: str) -> dict:
+    text = row["text"]
+    position = text.lower().find(query.lower())
+    if position < 0:
+        position = 0
+    start = max(0, position - 48)
+    end = min(len(text), position + len(query) + 96)
+    snippet = text[start:end].replace(query, f"[{query}]")
+    prefix = "..." if start > 0 else ""
+    suffix = "..." if end < len(text) else ""
+    return {
+        "source": row["source"],
+        "kind": row["kind"],
+        "page": row["page"],
+        "char_count": row["char_count"],
+        "engine": row["engine"],
+        "snippet": f"{prefix}{snippet}{suffix}",
+    }
+
+
+def escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def build_fts_query_candidates(query: str) -> list[str]:
     candidates = [query]
     tokens = [token for token in re.split(r"[^\w\u4e00-\u9fff]+|_", query) if token]
@@ -198,6 +281,33 @@ def dedupe_preserve_order(values: Iterable[str]) -> list[str]:
             seen.add(value)
             result.append(value)
     return result
+
+
+def render_query_markdown(result: dict) -> str:
+    lines = [
+        f"# Location Query: {result['query']}",
+        "",
+        f"- Index: `{result['index']}`",
+        f"- Search mode: `{result.get('search_mode', 'fts')}`",
+        f"- Used query: `{result.get('used_query', result['query'])}`",
+        f"- Matches: {result['count']}",
+        "",
+    ]
+    if not result["matches"]:
+        lines.append("No matches.")
+        return "\n".join(lines).rstrip() + "\n"
+    lines.extend(["| Source | Page/Image | Engine | Snippet |", "| --- | --- | --- | --- |"])
+    for match in result["matches"]:
+        source = markdown_cell(str(match["source"]))
+        location = f"Page {match['page']}" if match.get("page") else "Image"
+        engine = markdown_cell(str(match["engine"]))
+        snippet = markdown_cell(str(match["snippet"]).replace("\n", " "))
+        lines.append(f"| {source} | {location} | {engine} | {snippet} |")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def markdown_cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("\r", " ").replace("\n", " ")
 
 
 def collect_location_sources(input_path: Path, *, recursive: bool, include_hidden: bool) -> list[Path]:
