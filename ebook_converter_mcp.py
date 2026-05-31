@@ -25,6 +25,7 @@ from ebook_markdown_pipeline import (  # noqa: E402
     write_batch_summary,
 )
 from ebook_markdown_pipeline.document_locator import build_location_index, query_location_index  # noqa: E402
+from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book  # noqa: E402
 
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -250,6 +251,23 @@ def tool_schemas() -> list[dict[str, Any]]:
                 "required": ["index", "query"],
             },
         },
+        {
+            "name": "rebuild_image_book",
+            "description": "OCR a folder of screenshots/images, deduplicate near-repeats, infer order, and write a structured Markdown draft plus review files.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"},
+                    "output": {"type": "string"},
+                    "recursive": {"type": "boolean", "default": True},
+                    "include_hidden": {"type": "boolean", "default": False},
+                    "ocr": {"type": "string", "enum": ["auto", "never"], "default": "auto"},
+                    "umi_paddle_exe": {"type": "string"},
+                    "umi_paddle_module": {"type": "string"},
+                },
+                "required": ["input", "output"],
+            },
+        },
     ]
 
 
@@ -270,6 +288,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return build_location_index_tool(arguments)
     if name == "query_location_index":
         return query_location_index_tool(arguments)
+    if name == "rebuild_image_book":
+        return rebuild_image_book_tool(arguments)
     raise ValueError(f"Unknown tool: {name}")
 
 
@@ -437,6 +457,18 @@ def query_location_index_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         Path(arguments["index"]),
         str(arguments["query"]),
         limit=int(arguments.get("limit") or 20),
+    )
+
+
+def rebuild_image_book_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    return rebuild_image_book(
+        input_path=Path(arguments["input"]),
+        output_dir=Path(arguments["output"]),
+        recursive=bool(arguments.get("recursive", True)),
+        include_hidden=bool(arguments.get("include_hidden", False)),
+        ocr_mode=str(arguments.get("ocr") or "auto"),
+        umi_paddle_exe=arguments.get("umi_paddle_exe"),
+        umi_paddle_module=arguments.get("umi_paddle_module"),
     )
 
 

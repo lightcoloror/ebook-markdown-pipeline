@@ -26,6 +26,7 @@ try:
         build_location_index_from_sources,
         collect_location_sources,
     )
+    from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book_from_sources  # noqa: E402
     from ebook_markdown_pipeline import (
         OUTPUT_FORMATS,
         PDF_PIPELINE_MODES,
@@ -48,6 +49,7 @@ except ModuleNotFoundError:
         build_location_index_from_sources,
         collect_location_sources,
     )
+    from image_book_rebuilder import rebuild_image_book_from_sources  # noqa: E402
     from batch_convert_books import (
         OUTPUT_FORMATS,
         PDF_PIPELINE_MODES,
@@ -231,6 +233,8 @@ class BookConverterUI:
         self.start_button.pack(side="left", padx=8)
         self.location_button = ttk.Button(buttons, text="定位索引 / Location Index", command=self.start_location_index)
         self.location_button.pack(side="left", padx=(0, 8))
+        self.image_book_button = ttk.Button(buttons, text="截图成书 / Image Book", command=self.start_image_book_rebuild)
+        self.image_book_button.pack(side="left", padx=(0, 8))
         ttk.Button(buttons, text="复查清单 / Checklist", command=self.open_review_checklist).pack(side="left")
         ttk.Button(buttons, text="选中输出 / Output", command=self.open_selected_output).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="选中报告 / Report", command=self.open_selected_report).pack(side="left", padx=(8, 0))
@@ -406,6 +410,10 @@ class BookConverterUI:
             include_hidden=self.include_hidden_var.get(),
         )
         return input_path, sources
+
+    def resolve_image_sources(self) -> tuple[Path, list[Path]]:
+        input_root, sources = self.resolve_location_sources()
+        return input_root, [source for source in sources if source.suffix.lower() in IMAGE_EXTENSIONS]
 
     def apply_default_output_from_sources(self, sources: list[Path]) -> None:
         if not sources:
@@ -651,6 +659,42 @@ class BookConverterUI:
         self.worker = threading.Thread(target=worker, daemon=True)
         self.worker.start()
 
+    def start_image_book_rebuild(self) -> None:
+        if self.worker and self.worker.is_alive():
+            messagebox.showinfo("忙碌 / Busy", "已有任务正在运行。/ A task is already running.")
+            return
+
+        input_root, sources = self.resolve_image_sources()
+        if not sources:
+            messagebox.showerror("没有图片 / No images", "请选择或拖入图片文件。/ Please choose or drop image files.")
+            return
+        if not self.output_var.get().strip():
+            self.output_var.set(str(input_root if input_root.is_dir() else input_root.parent))
+        output_path = Path(self.output_var.get().strip())
+
+        self.write_log(f"开始截图成书 {len(sources)} 张图片... / Rebuilding image book from {len(sources)} image(s)...")
+        self.set_running_state(True)
+        self.total_files = len(sources)
+        self.progress.configure(maximum=max(len(sources), 1), value=0)
+        self.status_var.set(f"截图成书 / Image Book 0/{len(sources)}")
+        self.current_stage_var.set("OCR、去重、排序、生成 Markdown / OCR, dedupe, order, Markdown")
+
+        def worker() -> None:
+            try:
+                result = rebuild_image_book_from_sources(
+                    sources,
+                    output_path,
+                    input_label=str(input_root),
+                    title=input_root.name or "Rebuilt Image Book",
+                    ocr_mode="auto",
+                )
+                self.queue.put(("image_book_done", result))
+            except Exception as exc:  # noqa: BLE001
+                self.queue.put(("error", str(exc)))
+
+        self.worker = threading.Thread(target=worker, daemon=True)
+        self.worker.start()
+
     def poll_queue(self) -> None:
         try:
             while True:
@@ -681,6 +725,16 @@ class BookConverterUI:
                     self.write_log(f"SQLite: {payload.get('sqlite')}")
                     self.write_log(f"JSONL: {payload.get('jsonl')}")
                     self.write_log(f"状态统计 / Status: {payload.get('status_counts')}")
+                elif kind == "image_book_done":
+                    self.progress.configure(value=self.total_files)
+                    self.status_var.set("截图成书完成 / Image book finished")
+                    self.current_stage_var.set("请检查 book.md 和 review.md / Check book.md and review.md")
+                    self.set_running_state(False)
+                    self.worker = None
+                    self.write_log("截图成书完成 / Image book finished.")
+                    self.write_log(f"Book: {payload.get('book')}")
+                    self.write_log(f"Order: {payload.get('order')}")
+                    self.write_log(f"Review: {payload.get('review')}")
                 elif kind == "error":
                     self.set_running_state(False)
                     self.status_var.set("执行失败 / Failed")
@@ -794,6 +848,7 @@ class BookConverterUI:
         self.health_button.configure(state=state)
         self.start_button.configure(state=state)
         self.location_button.configure(state=state)
+        self.image_book_button.configure(state=state)
 
     def stage_progress_offset(self, stage: str) -> float:
         mapping = {

@@ -157,11 +157,24 @@ Searches `document_locations.sqlite` and returns `source`, `source_name`, `kind`
 
 The response also includes `search_mode` and `used_query`. The normal path is SQLite FTS; when FTS cannot match, the tool falls back to exact LIKE and then all-token LIKE matching. This is intended for coarse page/image location, not exact bounding-box extraction.
 
+### `rebuild_image_book`
+
+OCRs a folder of screenshots/images, detects duplicate or near-duplicate screenshots, uses page numbers / filename numbers / timestamps / text overlap to infer order, and writes a Markdown draft.
+
+Outputs:
+
+- `book.md`: reconstructed Markdown draft.
+- `order.md`: inferred order with confidence and overlap evidence.
+- `review.md`: duplicate groups, low-confidence order items, and empty OCR items.
+- `pages.jsonl`: per-image OCR and metadata.
+- `clusters.json`: duplicate/near-duplicate groups.
+
 ## Agent Usage Policy
 
 - Prefer `scan_books` before `start_conversion`.
 - Run `health_check` before the first conversion in a new environment.
 - Use `build_location_index` instead of full conversion when the user only needs to find which page/image contains a keyword.
+- Use `rebuild_image_book` when the user has unordered screenshots and wants a single Markdown draft with review artifacts.
 - For PDFs, keep `pdf_pipeline_mode=auto` unless the user explicitly chooses another mode.
 - For long-running conversions, call `start_conversion`, then poll `get_job_status`.
 - If output quality is questionable, inspect `summary.md`, `review-checklist.md`, per-book report JSON, and PDF tool logs.

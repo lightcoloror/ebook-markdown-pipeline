@@ -9,6 +9,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+import fitz
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-test the ebook converter MCP stdio server.")
@@ -49,6 +51,7 @@ def main() -> int:
                 "read_pdf_tool_log",
                 "build_location_index",
                 "query_location_index",
+                "rebuild_image_book",
             }
             missing = sorted(required_tools - tool_names)
             if missing:
@@ -97,6 +100,26 @@ def main() -> int:
             )
             if location["record_count"] != 0:
                 raise RuntimeError(f"TXT should not be indexed by the location indexer: {location}")
+
+            image_dir = tmpdir / "images"
+            image_dir.mkdir()
+            pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 80, 80), 0)
+            pixmap.clear_with(255)
+            pixmap.save(str(image_dir / "shot-001.png"))
+            image_book_dir = tmpdir / "image-book"
+            image_book = call_tool(
+                proc,
+                81,
+                "rebuild_image_book",
+                {
+                    "input": str(image_dir),
+                    "output": str(image_book_dir),
+                    "recursive": False,
+                    "ocr": "never",
+                },
+            )
+            if image_book["source_count"] != 1 or not Path(image_book["book"]).exists():
+                raise RuntimeError(f"Image book rebuild failed: {image_book}")
 
             print("MCP stdio smoke test passed.")
             return 0

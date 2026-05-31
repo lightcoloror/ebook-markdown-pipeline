@@ -143,6 +143,21 @@ python D:\used-by-codex\ebook_markdown_pipeline\document_locator.py query `
 
 输出会包含源文件、PDF 页码或图片文件、匹配片段、匹配质量和 token 命中数。查询会先走 SQLite FTS，必要时回退到完整子串匹配和 all-token 子串匹配；英文下划线、中文分词不稳定、OCR 漏字等场景会做轻量 token 回退，所以适合“先定位到哪页/哪张图，再人工复核”的用法。`--ocr never` 只用 PDF 文本层，速度最快；`--ocr auto` 会对无文本层 PDF 页和图片调用 Umi-OCR。批量建索引时，单个坏文件会记录为 `failed`，不会中断整批任务。
 
+## 截图成书重建
+
+如果有一批乱序、重复、部分重叠的截图，可以先用截图重建管道生成可复查的 Markdown 草稿：
+
+桌面 UI 中也可以批量选择或拖入图片，然后点击 `截图成书 / Image Book`。
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\image_book_rebuilder.py build `
+  D:\screenshots `
+  D:\screenshots-md `
+  --recursive
+```
+
+输出包括 `book.md`、`order.md`、`review.md`、`pages.jsonl`、`clusters.json`。排序会综合图片内页码、文件名数字、文件时间、文本前后重叠和重复截图分组；重复截图会作为排序和复查依据保留在 `review.md`，不会静默丢弃。
+
 失败后只重跑未完成项：
 
 ```powershell
