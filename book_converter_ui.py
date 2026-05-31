@@ -56,9 +56,9 @@ except ModuleNotFoundError:
 class BookConverterUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("Ebook Converter UI")
-        self.root.geometry("1100x700")
-        self.root.minsize(980, 620)
+        self.root.title("电子书转换器 / Ebook Converter")
+        self.root.geometry("1280x760")
+        self.root.minsize(1160, 680)
 
         self.input_var = tk.StringVar()
         self.output_var = tk.StringVar()
@@ -75,7 +75,7 @@ class BookConverterUI:
         self.marker_extra_var = tk.StringVar()
         self.pdf_idle_timeout_var = tk.StringVar(value="1800")
         self.pdf_finalize_timeout_var = tk.StringVar(value="480")
-        self.status_var = tk.StringVar(value="就绪")
+        self.status_var = tk.StringVar(value="就绪 / Ready")
         self.current_stage_var = tk.StringVar(value="")
         self.selected_input_files: list[Path] = []
 
@@ -101,28 +101,28 @@ class BookConverterUI:
         container.rowconfigure(2, weight=1)
         container.rowconfigure(4, weight=1)
 
-        paths = ttk.LabelFrame(container, text="Paths", padding=10)
+        paths = ttk.LabelFrame(container, text="路径 / Paths", padding=10)
         paths.grid(row=0, column=0, sticky="ew")
         paths.columnconfigure(1, weight=1)
 
-        ttk.Label(paths, text="Input file/folder").grid(row=0, column=0, sticky="w", pady=4)
+        ttk.Label(paths, text="输入文件/文件夹 / Input").grid(row=0, column=0, sticky="w", pady=4)
         ttk.Entry(paths, textvariable=self.input_var).grid(row=0, column=1, sticky="ew", padx=8)
-        ttk.Button(paths, text="Files", command=self.pick_input_files).grid(row=0, column=2, padx=4)
-        ttk.Button(paths, text="Folder", command=self.pick_input_folder).grid(row=0, column=3, padx=4)
-        ttk.Label(paths, text="也可以直接把文件/文件夹拖到窗口里").grid(
+        ttk.Button(paths, text="文件 / Files", command=self.pick_input_files).grid(row=0, column=2, padx=4)
+        ttk.Button(paths, text="文件夹 / Folder", command=self.pick_input_folder).grid(row=0, column=3, padx=4)
+        ttk.Label(paths, text="也可以直接把文件/文件夹拖到窗口里 / Drag files or folders here").grid(
             row=2, column=1, sticky="w", padx=8, pady=(2, 0)
         )
 
-        ttk.Label(paths, text="Output folder").grid(row=1, column=0, sticky="w", pady=4)
+        ttk.Label(paths, text="输出文件夹 / Output").grid(row=1, column=0, sticky="w", pady=4)
         ttk.Entry(paths, textvariable=self.output_var).grid(row=1, column=1, sticky="ew", padx=8)
-        ttk.Button(paths, text="Browse", command=self.pick_output_folder).grid(row=1, column=2, padx=4)
+        ttk.Button(paths, text="浏览 / Browse", command=self.pick_output_folder).grid(row=1, column=2, padx=4)
 
-        settings = ttk.LabelFrame(container, text="Options", padding=10)
+        settings = ttk.LabelFrame(container, text="选项 / Options", padding=10)
         settings.grid(row=1, column=0, sticky="ew", pady=(10, 0))
         settings.columnconfigure(1, weight=1)
         settings.columnconfigure(3, weight=1)
 
-        ttk.Label(settings, text="Output format").grid(row=0, column=0, sticky="w", pady=4)
+        ttk.Label(settings, text="输出格式 / Format").grid(row=0, column=0, sticky="w", pady=4)
         ttk.Combobox(
             settings,
             textvariable=self.output_format_var,
@@ -131,7 +131,7 @@ class BookConverterUI:
             width=16,
         ).grid(row=0, column=1, sticky="w", padx=8)
 
-        ttk.Label(settings, text="PDF mode").grid(row=0, column=5, sticky="w", pady=4)
+        ttk.Label(settings, text="PDF 模式 / PDF mode").grid(row=0, column=5, sticky="w", pady=4)
         ttk.Combobox(
             settings,
             textvariable=self.pdf_mode_var,
@@ -140,16 +140,16 @@ class BookConverterUI:
             width=14,
         ).grid(row=0, column=6, sticky="w", padx=8)
 
-        ttk.Checkbutton(settings, text="Recursive", variable=self.recursive_var).grid(
+        ttk.Checkbutton(settings, text="递归 / Recursive", variable=self.recursive_var).grid(
             row=0, column=2, sticky="w", padx=8
         )
-        ttk.Checkbutton(settings, text="Include hidden", variable=self.include_hidden_var).grid(
+        ttk.Checkbutton(settings, text="含隐藏 / Hidden", variable=self.include_hidden_var).grid(
             row=0, column=3, sticky="w", padx=8
         )
-        ttk.Checkbutton(settings, text="Overwrite output", variable=self.overwrite_var).grid(
+        ttk.Checkbutton(settings, text="覆盖 / Overwrite", variable=self.overwrite_var).grid(
             row=0, column=4, sticky="w", padx=8
         )
-        ttk.Checkbutton(settings, text="Resume manifest", variable=self.resume_var).grid(
+        ttk.Checkbutton(settings, text="续跑 / Resume", variable=self.resume_var).grid(
             row=0, column=7, sticky="w", padx=8
         )
 
@@ -162,13 +162,13 @@ class BookConverterUI:
         ttk.Label(settings, text="MinerU").grid(row=2, column=0, sticky="w", pady=4)
         ttk.Entry(settings, textvariable=self.mineru_var).grid(row=2, column=1, sticky="ew", padx=8)
 
-        ttk.Label(settings, text="Marker extra args").grid(row=2, column=2, sticky="w", pady=4)
+        ttk.Label(settings, text="Marker 参数 / Args").grid(row=2, column=2, sticky="w", pady=4)
         ttk.Entry(settings, textvariable=self.marker_extra_var).grid(
             row=2, column=3, columnspan=3, sticky="ew", padx=8
         )
-        ttk.Label(settings, text="Idle timeout(s)").grid(row=3, column=0, sticky="w", pady=4)
+        ttk.Label(settings, text="无输出超时(s) / Idle").grid(row=3, column=0, sticky="w", pady=4)
         ttk.Entry(settings, textvariable=self.pdf_idle_timeout_var, width=10).grid(row=3, column=1, sticky="w", padx=8)
-        ttk.Label(settings, text="Finalize timeout(s)").grid(row=3, column=2, sticky="w", pady=4)
+        ttk.Label(settings, text="收尾超时(s) / Finalize").grid(row=3, column=2, sticky="w", pady=4)
         ttk.Entry(settings, textvariable=self.pdf_finalize_timeout_var, width=10).grid(row=3, column=3, sticky="w", padx=8)
 
         actions = ttk.Frame(container)
@@ -176,7 +176,7 @@ class BookConverterUI:
         actions.columnconfigure(0, weight=1)
         actions.rowconfigure(0, weight=1)
 
-        preview_box = ttk.LabelFrame(actions, text="Detected Files And Planned Output", padding=8)
+        preview_box = ttk.LabelFrame(actions, text="检测文件与输出计划 / Detected Files And Planned Output", padding=8)
         preview_box.grid(row=0, column=0, sticky="nsew")
         preview_box.columnconfigure(0, weight=1)
         preview_box.rowconfigure(0, weight=1)
@@ -186,12 +186,12 @@ class BookConverterUI:
         self.tree.grid(row=0, column=0, sticky="nsew")
 
         labels = {
-            "source": "Source",
-            "format": "Detected",
-            "pipeline": "Pipeline",
-            "note": "Note",
-            "output_format": "Output Format",
-            "output": "Output",
+            "source": "来源 / Source",
+            "format": "格式 / Format",
+            "pipeline": "管道 / Pipeline",
+            "note": "说明 / Note",
+            "output_format": "输出格式 / Output Format",
+            "output": "输出 / Output",
         }
         widths = {
             "source": 300,
@@ -211,24 +211,24 @@ class BookConverterUI:
 
         buttons = ttk.Frame(container)
         buttons.grid(row=3, column=0, sticky="ew", pady=(10, 0))
-        self.scan_button = ttk.Button(buttons, text="扫描文件", command=self.scan)
+        self.scan_button = ttk.Button(buttons, text="扫描 / Scan", command=self.scan)
         self.scan_button.pack(side="left")
-        self.health_button = ttk.Button(buttons, text="检查环境", command=self.health_check)
+        self.health_button = ttk.Button(buttons, text="检查环境 / Health", command=self.health_check)
         self.health_button.pack(side="left", padx=(8, 0))
-        self.start_button = ttk.Button(buttons, text="开始执行", command=self.start_convert)
+        self.start_button = ttk.Button(buttons, text="开始 / Start", command=self.start_convert)
         self.start_button.pack(side="left", padx=8)
-        ttk.Button(buttons, text="打开复查清单", command=self.open_review_checklist).pack(side="left")
-        ttk.Button(buttons, text="打开选中输出", command=self.open_selected_output).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="打开选中报告", command=self.open_selected_report).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="打开最近PDF日志", command=self.open_latest_pdf_log).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="清空日志", command=self.clear_log).pack(side="left")
+        ttk.Button(buttons, text="复查清单 / Checklist", command=self.open_review_checklist).pack(side="left")
+        ttk.Button(buttons, text="选中输出 / Output", command=self.open_selected_output).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="选中报告 / Report", command=self.open_selected_report).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="PDF日志 / PDF log", command=self.open_latest_pdf_log).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="清空日志 / Clear", command=self.clear_log).pack(side="left")
 
         self.progress = ttk.Progressbar(buttons, mode="determinate", length=220)
         self.progress.pack(side="left", padx=(18, 8))
         ttk.Label(buttons, textvariable=self.status_var).pack(side="left")
         ttk.Label(buttons, textvariable=self.current_stage_var).pack(side="left", padx=(10, 0))
 
-        log_box = ttk.LabelFrame(container, text="Log", padding=8)
+        log_box = ttk.LabelFrame(container, text="日志 / Log", padding=8)
         log_box.grid(row=4, column=0, sticky="nsew", pady=(10, 0))
         log_box.columnconfigure(0, weight=1)
         log_box.rowconfigure(0, weight=1)
@@ -241,28 +241,28 @@ class BookConverterUI:
         self.log.configure(yscrollcommand=log_scroll.set)
 
     def pick_input_files(self) -> None:
-        filetypes = [("Supported", " ".join(f"*{ext}" for ext in sorted(SUPPORTED_FORMATS))), ("All", "*.*")]
-        paths = filedialog.askopenfilenames(title="Choose input file(s)", filetypes=filetypes)
+        filetypes = [("支持格式 / Supported", " ".join(f"*{ext}" for ext in sorted(SUPPORTED_FORMATS))), ("全部 / All", "*.*")]
+        paths = filedialog.askopenfilenames(title="选择输入文件 / Choose input file(s)", filetypes=filetypes)
         if paths:
             self.selected_input_files = [Path(path) for path in paths]
             self.input_var.set(self.format_selected_files(self.selected_input_files))
             self.apply_default_output_from_sources(self.selected_input_files)
 
     def pick_input_folder(self) -> None:
-        path = filedialog.askdirectory(title="Choose input folder")
+        path = filedialog.askdirectory(title="选择输入文件夹 / Choose input folder")
         if path:
             self.selected_input_files = []
             self.input_var.set(path)
             self.output_var.set(path)
 
     def pick_output_folder(self) -> None:
-        path = filedialog.askdirectory(title="Choose output folder")
+        path = filedialog.askdirectory(title="选择输出文件夹 / Choose output folder")
         if path:
             self.output_var.set(path)
 
     def setup_drag_and_drop(self) -> None:
         if DND_FILES is None or not hasattr(self.root, "drop_target_register"):
-            self.write_log("Drag-and-drop disabled: tkinterdnd2 is not available in this Python environment.")
+            self.write_log("拖放不可用：当前 Python 环境缺少 tkinterdnd2。/ Drag-and-drop disabled: tkinterdnd2 is not available.")
             return
         self.root.drop_target_register(DND_FILES)
         self.root.dnd_bind("<<Drop>>", self.handle_drop)
@@ -280,23 +280,23 @@ class BookConverterUI:
             self.selected_input_files = files
             self.input_var.set(self.format_selected_files(files))
             self.apply_default_output_from_sources(files)
-            self.write_log(f"Dropped {len(files)} supported file(s).")
+            self.write_log(f"已拖入 {len(files)} 个支持文件。/ Dropped {len(files)} supported file(s).")
         elif len(folders) == 1:
             self.selected_input_files = []
             self.input_var.set(str(folders[0]))
             self.output_var.set(str(folders[0]))
-            self.write_log(f"Dropped folder: {folders[0]}")
+            self.write_log(f"已拖入文件夹 / Dropped folder: {folders[0]}")
         elif folders:
             self.selected_input_files = []
             self.input_var.set(str(folders[0]))
             self.output_var.set(str(folders[0]))
-            self.write_log(f"Dropped multiple folders; using first folder: {folders[0]}")
+            self.write_log(f"拖入多个文件夹，使用第一个。/ Dropped multiple folders; using first: {folders[0]}")
         else:
-            messagebox.showwarning("Unsupported drop", "No supported ebook/PDF files were dropped.")
+            messagebox.showwarning("不支持的拖放 / Unsupported drop", "没有拖入支持的电子书/PDF文件。/ No supported ebook/PDF files were dropped.")
             return
 
         if unsupported:
-            self.write_log(f"Ignored {len(unsupported)} unsupported file(s).")
+            self.write_log(f"已忽略 {len(unsupported)} 个不支持文件。/ Ignored {len(unsupported)} unsupported file(s).")
         self.scan()
 
     def build_options(self):
@@ -372,7 +372,7 @@ class BookConverterUI:
         options = self.build_options()
         input_root, sources = self.resolve_sources(options)
         if not sources:
-            messagebox.showerror("Input missing", "Please choose an existing input file or folder.")
+            messagebox.showerror("缺少输入 / Input missing", "请选择存在的输入文件或文件夹。/ Please choose an existing input file or folder.")
             return
         if not self.output_var.get().strip():
             if self.selected_input_files:
@@ -380,7 +380,7 @@ class BookConverterUI:
             elif input_root:
                 self.output_var.set(str(input_root if input_root.is_dir() else input_root.parent))
         if not self.output_var.get().strip():
-            messagebox.showerror("Output missing", "Please choose an output folder.")
+            messagebox.showerror("缺少输出 / Output missing", "请选择输出文件夹。/ Please choose an output folder.")
             return
         output_path = Path(self.output_var.get().strip())
 
@@ -389,20 +389,20 @@ class BookConverterUI:
         plans = analyze_sources(sources, input_root, output_path, options)
 
         missing = find_missing_dependencies(sources, options)
-        self.write_log(f"Scanned {len(sources)} supported file(s).")
+        self.write_log(f"已扫描 {len(sources)} 个支持文件。/ Scanned {len(sources)} supported file(s).")
         if any(path.suffix.lower() == ".pdf" for path in sources):
             if self.pdf_mode_var.get() == "auto":
-                self.write_log("Note: Auto mode uses Marker for short PDFs and switches long PDFs to MinerU structured parsing by default.")
+                self.write_log("提示：自动模式短 PDF 用 Marker，长 PDF 默认切换到 MinerU 结构化解析。/ Auto mode uses Marker for short PDFs and MinerU for long PDFs.")
             elif self.pdf_mode_var.get() == "marker":
-                self.write_log("Note: Marker mode is higher quality but slower on long PDFs.")
+                self.write_log("提示：Marker 质量较高，但长 PDF 更慢。/ Marker mode is higher quality but slower on long PDFs.")
             elif self.pdf_mode_var.get() == "mineru":
-                self.write_log("Note: MinerU mode targets structured PDF parsing with headings, page furniture, tables, and footnotes.")
+                self.write_log("提示：MinerU 面向标题、页眉页脚、表格、脚注等结构化解析。/ MinerU targets structured PDF parsing.")
             elif self.pdf_mode_var.get() == "umi":
-                self.write_log("Note: Umi-OCR mode is faster for long/scanned PDFs but structure quality is lower.")
-            self.write_log("Note: If Marker fails because of model/network issues, the pipeline will automatically fall back to PyMuPDF4LLM.")
+                self.write_log("提示：Umi-OCR 对长/扫描 PDF 更快，但结构质量较低。/ Umi-OCR is faster for scanned PDFs but lower-structure.")
+            self.write_log("提示：Marker/MinerU 失败或超时时会自动回退到 PyMuPDF4LLM。/ Marker/MinerU failures or timeouts fall back to PyMuPDF4LLM.")
             for plan in plans:
                 if plan.detected_format == "PDF" and plan.note:
-                    self.write_log(f"PDF plan: {Path(plan.source).name} -> {plan.pipeline}; {plan.note}")
+                    self.write_log(f"PDF 计划 / PDF plan: {Path(plan.source).name} -> {plan.pipeline}; {plan.note}")
         for item in missing:
             self.write_log(item)
 
@@ -420,11 +420,11 @@ class BookConverterUI:
         missing = [item for item in checks if item["status"] == "missing"]
         warnings = [item for item in checks if item["status"] == "warning"]
         if missing:
-            messagebox.showwarning("Environment check", f"{len(missing)} missing item(s). See log for details.")
+            messagebox.showwarning("环境检查 / Environment check", f"缺少 {len(missing)} 项。详见日志。/ {len(missing)} missing item(s). See log.")
         elif warnings:
-            messagebox.showinfo("Environment check", f"{len(warnings)} warning item(s). See log for details.")
+            messagebox.showinfo("环境检查 / Environment check", f"{len(warnings)} 项警告。详见日志。/ {len(warnings)} warning item(s). See log.")
         else:
-            messagebox.showinfo("Environment check", "All required checks passed for the current selection.")
+            messagebox.showinfo("环境检查 / Environment check", "当前选择所需环境检查通过。/ All required checks passed.")
 
     def refresh_tree(self, input_path: Path, output_path: Path, options, sources: list[Path]) -> None:
         for item in self.tree.get_children():
@@ -446,13 +446,13 @@ class BookConverterUI:
 
     def start_convert(self) -> None:
         if self.worker and self.worker.is_alive():
-            messagebox.showinfo("Busy", "A conversion task is already running.")
+            messagebox.showinfo("忙碌 / Busy", "已有转换任务正在运行。/ A conversion task is already running.")
             return
 
         input_text = self.input_var.get().strip()
         output_text = self.output_var.get().strip()
         if not input_text or not output_text:
-            messagebox.showerror("Missing paths", "Please choose both input and output paths.")
+            messagebox.showerror("缺少路径 / Missing paths", "请选择输入和输出路径。/ Please choose both input and output paths.")
             return
 
         output_path = Path(output_text)
@@ -461,26 +461,26 @@ class BookConverterUI:
             options.manifest = output_path / "manifest.json"
         input_root, sources = self.resolve_sources(options)
         if not sources:
-            messagebox.showerror("No files", "No supported files were found.")
+            messagebox.showerror("没有文件 / No files", "未找到支持的文件。/ No supported files were found.")
             return
 
         missing = find_missing_dependencies(sources, options)
         if missing:
-            self.write_log("Dependency check failed:")
+            self.write_log("依赖检查失败 / Dependency check failed:")
             for item in missing:
                 self.write_log(item)
-            messagebox.showerror("Dependencies missing", "\n".join(missing))
+            messagebox.showerror("缺少依赖 / Dependencies missing", "\n".join(missing))
             return
 
         self.refresh_tree(input_root, output_path, options, sources)
-        self.write_log(f"Starting conversion for {len(sources)} file(s)...")
+        self.write_log(f"开始转换 {len(sources)} 个文件... / Starting conversion for {len(sources)} file(s)...")
         self.set_running_state(True)
         self.total_files = len(sources)
         self.file_start_times.clear()
         self.file_estimates.clear()
         self.progress.configure(maximum=max(len(sources), 1), value=0)
-        self.status_var.set(f"准备开始，0/{len(sources)}")
-        self.current_stage_var.set("等待任务启动")
+        self.status_var.set(f"准备开始 / Ready, 0/{len(sources)}")
+        self.current_stage_var.set("等待任务启动 / Waiting")
 
         def worker() -> None:
             try:
@@ -533,20 +533,20 @@ class BookConverterUI:
                         if result.status == "ok":
                             ok_count += 1
                     self.progress.configure(value=self.total_files)
-                    self.status_var.set(f"已完成，成功 {ok_count}/{len(payload)}")
-                    self.current_stage_var.set("全部任务完成")
+                    self.status_var.set(f"已完成 / Finished，成功 / Success {ok_count}/{len(payload)}")
+                    self.current_stage_var.set("全部任务完成 / All done")
                     self.set_running_state(False)
                     self.worker = None
-                    self.write_log(f"Finished. Success: {ok_count}/{len(payload)}")
-                    self.write_log(f"Summary: {Path(self.output_var.get().strip()) / '.reports' / 'summary.md'}")
-                    self.write_log(f"Review checklist: {Path(self.output_var.get().strip()) / '.reports' / 'review-checklist.md'}")
+                    self.write_log(f"完成 / Finished. 成功 / Success: {ok_count}/{len(payload)}")
+                    self.write_log(f"汇总 / Summary: {Path(self.output_var.get().strip()) / '.reports' / 'summary.md'}")
+                    self.write_log(f"复查清单 / Review checklist: {Path(self.output_var.get().strip()) / '.reports' / 'review-checklist.md'}")
                 elif kind == "error":
                     self.set_running_state(False)
-                    self.status_var.set("执行失败")
-                    self.current_stage_var.set("任务异常中断")
+                    self.status_var.set("执行失败 / Failed")
+                    self.current_stage_var.set("任务异常中断 / Interrupted")
                     self.worker = None
-                    self.write_log(f"Error: {payload}")
-                    messagebox.showerror("Conversion error", payload)
+                    self.write_log(f"错误 / Error: {payload}")
+                    messagebox.showerror("转换错误 / Conversion error", payload)
         except queue.Empty:
             pass
         finally:
@@ -565,9 +565,9 @@ class BookConverterUI:
             self.file_estimates[source] = estimate
             timing = self.format_timing(source)
             self.progress.configure(value=max(index - 0.5, 0.2))
-            self.status_var.set(f"处理中 {index}/{total}: {source_name} {timing}")
-            self.current_stage_var.set("准备任务")
-            self.write_log(f"Processing {index}/{total}: {source} {timing}")
+            self.status_var.set(f"处理中 / Processing {index}/{total}: {source_name} {timing}")
+            self.current_stage_var.set("准备任务 / Preparing")
+            self.write_log(f"处理中 / Processing {index}/{total}: {source} {timing}")
             return
 
         if event == "stage":
@@ -576,25 +576,25 @@ class BookConverterUI:
             base_value = max(index - 1, 0)
             phase_offset = self.stage_progress_offset(stage_info.get("stage", ""))
             self.progress.configure(value=min(base_value + phase_offset, self.total_files))
-            self.status_var.set(f"处理中 {index}/{total}: {source_name} {self.format_timing(source)}")
+            self.status_var.set(f"处理中 / Processing {index}/{total}: {source_name} {self.format_timing(source)}")
             self.current_stage_var.set(stage_text)
             self.write_log(f"  - {stage_text}")
             return
 
         result = payload["result"]
         self.progress.configure(value=index)
-        self.status_var.set(f"已完成 {index}/{total}: {source_name} {self.format_timing(source)}")
-        self.current_stage_var.set("当前文件已完成")
+        self.status_var.set(f"已完成 / Done {index}/{total}: {source_name} {self.format_timing(source)}")
+        self.current_stage_var.set("当前文件已完成 / Current file done")
         self.write_log(f"[{result.status}] {result.source} -> {result.output or '-'}")
         if result.message:
             self.write_log(result.message)
         if getattr(result, "report", None):
-            self.write_log(f"Report: {result.report}")
+            self.write_log(f"报告 / Report: {result.report}")
 
     def open_review_checklist(self) -> None:
         output_text = self.output_var.get().strip()
         if not output_text:
-            messagebox.showwarning("Output missing", "Please choose an output folder first.")
+            messagebox.showwarning("缺少输出 / Output missing", "请先选择输出文件夹。/ Please choose an output folder first.")
             return
         self.open_path(Path(output_text) / ".reports" / "review-checklist.md")
 
@@ -620,19 +620,19 @@ class BookConverterUI:
     def open_latest_pdf_log(self) -> None:
         output_text = self.output_var.get().strip()
         if not output_text:
-            messagebox.showwarning("Output missing", "Please choose an output folder first.")
+            messagebox.showwarning("缺少输出 / Output missing", "请先选择输出文件夹。/ Please choose an output folder first.")
             return
         log_dir = Path(output_text) / ".reports" / "pdf-tool-logs"
         logs = sorted(log_dir.glob("*.log"), key=lambda path: path.stat().st_mtime, reverse=True) if log_dir.exists() else []
         if not logs:
-            messagebox.showinfo("No PDF logs", "No PDF tool logs found yet.")
+            messagebox.showinfo("没有 PDF 日志 / No PDF logs", "尚未找到 PDF 工具日志。/ No PDF tool logs found yet.")
             return
         self.open_path(logs[0])
 
     def selected_tree_values(self) -> dict[str, str] | None:
         selection = self.tree.selection()
         if not selection:
-            messagebox.showinfo("No selection", "Please select a file in the detected file list first.")
+            messagebox.showinfo("未选择 / No selection", "请先在检测文件列表中选择一个文件。/ Please select a file first.")
             return None
         values = self.tree.item(selection[0], "values")
         columns = ("source", "format", "pipeline", "note", "output_format", "output")
@@ -640,12 +640,12 @@ class BookConverterUI:
 
     def open_path(self, path: Path) -> None:
         if not path.exists():
-            messagebox.showwarning("File not found", str(path))
+            messagebox.showwarning("文件不存在 / File not found", str(path))
             return
         try:
             os.startfile(str(path))  # type: ignore[attr-defined]
         except Exception as exc:  # noqa: BLE001
-            messagebox.showerror("Open failed", str(exc))
+            messagebox.showerror("打开失败 / Open failed", str(exc))
 
     def set_running_state(self, is_running: bool) -> None:
         state = "disabled" if is_running else "normal"
@@ -676,24 +676,24 @@ class BookConverterUI:
 
     def describe_stage(self, stage: str, detail: str) -> str:
         labels = {
-            "prepare": "准备输出文件",
-            "calibre": "Calibre 转 EPUB",
-            "marker": "Marker 解析 PDF",
-            "mineru": "MinerU 结构化解析 PDF",
-            "marker_progress": "Marker 运行进度",
-            "mineru_progress": "MinerU 运行进度",
-            "fallback": "切换到 PyMuPDF4LLM",
-            "pymupdf": "PyMuPDF4LLM 解析 PDF",
-            "umi": "Umi-OCR 解析 PDF",
-            "umi_page": "Umi-OCR 逐页识别",
-            "pandoc": "Pandoc 转换",
-            "collect": "收集转换结果",
-            "copy": "写入 Markdown 文件",
-            "quality": "生成 PDF 质量报告",
-            "postprocess": "清洗 Markdown",
-            "footnotes": "提取脚注与尾注",
+            "prepare": "准备输出文件 / Prepare output",
+            "calibre": "Calibre 转 EPUB / Convert to EPUB",
+            "marker": "Marker 解析 PDF / Parse PDF",
+            "mineru": "MinerU 结构化解析 PDF / Structured PDF parse",
+            "marker_progress": "Marker 运行进度 / Progress",
+            "mineru_progress": "MinerU 运行进度 / Progress",
+            "fallback": "切换到 PyMuPDF4LLM / Fallback",
+            "pymupdf": "PyMuPDF4LLM 解析 PDF / Parse PDF",
+            "umi": "Umi-OCR 解析 PDF / OCR PDF",
+            "umi_page": "Umi-OCR 逐页识别 / Page OCR",
+            "pandoc": "Pandoc 转换 / Convert",
+            "collect": "收集转换结果 / Collect output",
+            "copy": "写入 Markdown 文件 / Write Markdown",
+            "quality": "生成 PDF 质量报告 / Quality report",
+            "postprocess": "清洗 Markdown / Clean Markdown",
+            "footnotes": "提取脚注与尾注 / Extract notes",
         }
-        label = labels.get(stage, stage or "处理中")
+        label = labels.get(stage, stage or "处理中 / Processing")
         if detail and detail != label:
             return f"{label} - {detail}"
         return label
@@ -706,8 +706,8 @@ class BookConverterUI:
         estimate = self.file_estimates.get(source)
         if estimate and estimate > 0:
             remaining = max(0.0, estimate - elapsed)
-            return f"(已用 {self.format_duration(elapsed)} / 预计 {self.format_duration(estimate)}，约剩 {self.format_duration(remaining)})"
-        return f"(已用 {self.format_duration(elapsed)})"
+            return f"(已用/elapsed {self.format_duration(elapsed)} / 预计/est {self.format_duration(estimate)}，剩余/left {self.format_duration(remaining)})"
+        return f"(已用/elapsed {self.format_duration(elapsed)})"
 
     def format_duration(self, seconds: float) -> str:
         seconds_int = int(round(seconds))
@@ -722,7 +722,7 @@ class BookConverterUI:
     def clear_log(self) -> None:
         self.log.delete("1.0", "end")
         if not (self.worker and self.worker.is_alive()):
-            self.status_var.set("就绪")
+            self.status_var.set("就绪 / Ready")
             self.current_stage_var.set("")
 
     def write_log(self, text: str) -> None:
@@ -781,7 +781,7 @@ class BookConverterUI:
         try:
             self.config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception as exc:  # noqa: BLE001
-            self.write_log(f"Could not save UI config: {exc}")
+            self.write_log(f"无法保存 UI 配置 / Could not save UI config: {exc}")
 
     def on_close(self) -> None:
         self.save_ui_config()
