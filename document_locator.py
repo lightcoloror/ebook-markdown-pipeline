@@ -22,6 +22,7 @@ from ebook_markdown_pipeline.batch_convert_books import (  # noqa: E402
     suggested_umi_paddle_module,
     umi_ocr_image,
 )
+from ebook_markdown_pipeline.artifact_schema import artifact, with_artifacts  # noqa: E402
 
 
 PDF_EXTENSIONS = {".pdf"}
@@ -168,7 +169,8 @@ def build_location_index_from_sources(
 
     write_jsonl(jsonl_path, records)
     write_sqlite(sqlite_path, records)
-    return {
+    return with_artifacts(
+        {
         "input": input_label,
         "output": str(output_dir),
         "jsonl": str(jsonl_path),
@@ -177,7 +179,12 @@ def build_location_index_from_sources(
         "record_count": len(records),
         "ocr_mode": ocr_mode,
         "status_counts": count_by_status(records),
-    }
+        },
+        [
+            artifact("location_index_jsonl", jsonl_path, label="Document locations JSONL", media_type="application/x-jsonlines"),
+            artifact("location_index_sqlite", sqlite_path, label="Document locations SQLite", media_type="application/vnd.sqlite3"),
+        ],
+    )
 
 
 def query_location_index(index_path: Path, query: str, *, limit: int = 20) -> dict:

@@ -32,6 +32,9 @@ def main() -> int:
         build = build_location_index(input_dir, output_dir, recursive=True, ocr_mode="never")
         if build["record_count"] != 2:
             raise RuntimeError(f"Expected two page records: {build}")
+        artifact_types = {item["type"] for item in build.get("artifacts", [])}
+        if not {"location_index_jsonl", "location_index_sqlite"}.issubset(artifact_types):
+            raise RuntimeError(f"Expected location index artifacts: {json.dumps(build, ensure_ascii=False)}")
 
         result = query_location_index(Path(build["sqlite"]), "300000", limit=5)
         if result["count"] != 1 or result["matches"][0]["page"] != 2:

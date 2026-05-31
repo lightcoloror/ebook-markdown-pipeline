@@ -23,6 +23,7 @@ from ebook_markdown_pipeline.batch_convert_books import (  # noqa: E402
     suggested_umi_paddle_module,
     umi_ocr_image,
 )
+from ebook_markdown_pipeline.artifact_schema import artifact, with_artifacts  # noqa: E402
 from ebook_markdown_pipeline.document_locator import IMAGE_EXTENSIONS  # noqa: E402
 
 
@@ -149,7 +150,8 @@ def rebuild_image_book_from_sources(
     review_md.write_text(render_review_markdown(pages, ordered_pages, duplicate_groups), encoding="utf-8")
     book_md.write_text(render_book_markdown(title, ordered_pages), encoding="utf-8")
 
-    return {
+    return with_artifacts(
+        {
         "input": input_label,
         "output": str(output_dir),
         "source_count": len(source_list),
@@ -161,7 +163,15 @@ def rebuild_image_book_from_sources(
         "clusters": str(clusters_json),
         "order": str(order_md),
         "review": str(review_md),
-    }
+        },
+        [
+            artifact("markdown", book_md, label="Rebuilt Markdown", media_type="text/markdown"),
+            artifact("pages_jsonl", pages_jsonl, label="Per-image OCR metadata", media_type="application/x-jsonlines"),
+            artifact("clusters_json", clusters_json, label="Duplicate groups", media_type="application/json"),
+            artifact("order_report", order_md, label="Inferred order report", media_type="text/markdown"),
+            artifact("review_report", review_md, label="Image book review checklist", media_type="text/markdown"),
+        ],
+    )
 
 
 def collect_image_sources(input_path: Path, *, recursive: bool, include_hidden: bool) -> list[Path]:

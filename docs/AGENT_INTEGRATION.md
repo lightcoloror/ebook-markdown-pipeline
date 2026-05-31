@@ -209,3 +209,11 @@ The MCP tool names and top-level JSON keys should be treated as stable:
 - `checks`
 
 Future changes should add fields rather than rename or remove these keys.
+
+Tools that write files should return `schema_version` and `artifacts` when possible. Artifact objects follow `artifact-schema-v1`:
+
+- `type`: stable artifact type, such as `markdown`, `location_index_sqlite`, `pages_jsonl`, `order_report`, or `review_report`.
+- `path`: local filesystem path.
+- `label`: human-readable label.
+- `media_type`: MIME-style content type when known.
+- `description`: optional extra detail.

@@ -155,6 +155,8 @@
 - `report`
 - `logs`
 
+当前最小实现为 `artifact-schema-v1`，已先接入 `build_location_index` 和 `rebuild_image_book`。新工具应优先复用同一 schema，旧工具在保持兼容的前提下逐步补齐。
+
 常见 artifact 类型：
 
 - `markdown`

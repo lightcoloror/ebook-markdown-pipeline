@@ -71,6 +71,10 @@ def main() -> int:
     )
     if not Path(result["book"]).exists():
         raise RuntimeError(f"Expected output files from empty rebuild: {result}")
+    artifact_types = {item["type"] for item in result.get("artifacts", [])}
+    expected_artifacts = {"markdown", "pages_jsonl", "clusters_json", "order_report", "review_report"}
+    if not expected_artifacts.issubset(artifact_types):
+        raise RuntimeError(f"Expected image book artifacts: {result}")
     if not {"ocr", "dedupe", "order", "write"}.issubset({event["stage"] for event in events}):
         raise RuntimeError(f"Expected progress events, got: {events}")
     for path in output_dir.glob("*"):
