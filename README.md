@@ -57,6 +57,40 @@ python D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py `
   --manifest D:\books-md\manifest.json
 ```
 
+## Agent 调用
+
+推荐调用层级：
+
+- `MCP`：给 OpenClaw、Hermes Agent、Codex 等 agent 稳定调用，支持扫描、环境检查、后台转换、轮询进度、读取 report 和 PDF 工具日志。
+- `CLI`：自动化脚本和人工排错的稳定兜底入口。
+- `Skill`：给支持 skill 的 agent 提供调用规范，避免 agent 自己重写转换逻辑。
+
+MCP 配置示例：
+
+```json
+{
+  "mcpServers": {
+    "ebook-markdown-pipeline": {
+      "command": "python",
+      "args": [
+        "D:\\used-by-codex\\ebook_markdown_pipeline\\ebook_converter_mcp.py"
+      ]
+    }
+  }
+}
+```
+
+MCP 工具包括：
+
+- `scan_books`：扫描输入并返回每本书的转换计划。
+- `health_check`：检查 Pandoc、Calibre、MinerU、Marker、Umi-OCR、PyMuPDF4LLM、CUDA 和模型缓存。
+- `start_conversion`：启动后台转换任务。
+- `get_job_status`：轮询任务状态、阶段事件和结果。
+- `read_report`：读取转换 report。
+- `read_pdf_tool_log`：读取 Marker/MinerU 日志尾部。
+
+详细说明见 [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md)。支持 skill 的 agent 可参考 [skills/ebook-markdown-pipeline/SKILL.md](skills/ebook-markdown-pipeline/SKILL.md)。
+
 失败后只重跑未完成项：
 
 ```powershell

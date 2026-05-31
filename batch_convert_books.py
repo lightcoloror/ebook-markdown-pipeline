@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import html
 import importlib.util
@@ -1262,13 +1263,14 @@ def run_pymupdf4llm_pdf_convert(
     emit_stage(progress_callback, source, progress_index, progress_total, "pymupdf", f"PyMuPDF4LLM 解析 PDF - {ocr_detail}")
     import pymupdf4llm
 
-    markdown = pymupdf4llm.to_markdown(
-        str(source),
-        use_ocr=use_ocr,
-        force_text=True,
-        show_progress=False,
-        ocr_language="eng",
-    )
+    with contextlib.redirect_stdout(sys.stderr):
+        markdown = pymupdf4llm.to_markdown(
+            str(source),
+            use_ocr=use_ocr,
+            force_text=True,
+            show_progress=False,
+            ocr_language="eng",
+        )
     with tempfile.TemporaryDirectory(prefix="pymupdf4llm-output-") as tmpdir:
         temp_md = Path(tmpdir) / f"{source.stem}.md"
         temp_md.write_text(markdown, encoding="utf-8")
