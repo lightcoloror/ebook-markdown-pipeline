@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 import sys
 import tempfile
@@ -139,7 +140,27 @@ def query_location_index(index_path: Path, query: str, *, limit: int = 20) -> di
     conn = sqlite3.connect(str(index_path))
     conn.row_factory = sqlite3.Row
     try:
-        rows = conn.execute(
+        rows = []
+        used_query = query
+        for candidate_query in build_fts_query_candidates(query):
+            rows = execute_location_query(conn, candidate_query, limit)
+            used_query = candidate_query
+            if rows:
+                break
+        return {
+            "index": str(index_path),
+            "query": query,
+            "used_query": used_query,
+            "count": len(rows),
+            "matches": [dict(row) for row in rows],
+        }
+    finally:
+        conn.close()
+
+
+def execute_location_query(conn: sqlite3.Connection, query: str, limit: int) -> list[sqlite3.Row]:
+    try:
+        return conn.execute(
             """
             SELECT
               locations.source,
@@ -156,19 +177,32 @@ def query_location_index(index_path: Path, query: str, *, limit: int = 20) -> di
             """,
             (query, limit),
         ).fetchall()
-        return {
-            "index": str(index_path),
-            "query": query,
-            "count": len(rows),
-            "matches": [dict(row) for row in rows],
-        }
-    finally:
-        conn.close()
+    except sqlite3.OperationalError:
+        return []
+
+
+def build_fts_query_candidates(query: str) -> list[str]:
+    candidates = [query]
+    tokens = [token for token in re.split(r"[^\w\u4e00-\u9fff]+|_", query) if token]
+    if len(tokens) > 1:
+        candidates.append(" ".join(tokens))
+        candidates.append(" OR ".join(tokens))
+    return dedupe_preserve_order(candidates)
+
+
+def dedupe_preserve_order(values: Iterable[str]) -> list[str]:
+    seen = set()
+    result = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
 
 
 def collect_location_sources(input_path: Path, *, recursive: bool, include_hidden: bool) -> list[Path]:
     if input_path.is_file():
-        return [input_path] if input_path.suffix.lower() in SUPPORTED_LOCATION_EXTENSIONS else []
+        return [input_path.resolve()] if input_path.suffix.lower() in SUPPORTED_LOCATION_EXTENSIONS else []
     if not input_path.exists():
         return []
     pattern = "**/*" if recursive else "*"
@@ -178,7 +212,7 @@ def collect_location_sources(input_path: Path, *, recursive: bool, include_hidde
             continue
         if not include_hidden and any(part.startswith(".") for part in path.parts):
             continue
-        sources.append(path)
+        sources.append(path.resolve())
     return sorted(sources, key=lambda item: str(item).lower())
 
 
