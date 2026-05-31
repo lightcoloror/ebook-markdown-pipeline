@@ -9,6 +9,8 @@ This project is designed for stable AI-agent invocation through a layered interf
 
 Do not duplicate conversion logic in agent-specific plugins. Keep conversion behavior in `batch_convert_books.py` and expose it through stable wrappers.
 
+The long-term technical direction is documented in [TECHNICAL_DIRECTION.md](TECHNICAL_DIRECTION.md): this project should evolve into a general image/document material recognition tool for AI agents, with Docling as the future default document-understanding backend, MinerU as the complex-document backend, and Umi-OCR/PaddleOCR as local OCR fallback.
+
 ## Recommended Integration
 
 Use MCP for OpenClaw, Hermes Agent, Codex, Claude Code, or other agents that support tool schemas.
