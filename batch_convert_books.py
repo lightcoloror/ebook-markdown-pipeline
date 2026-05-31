@@ -529,8 +529,6 @@ def build_output_paths(
         source: build_output_path(source, input_root, output_root, args)
         for source in source_list
     }
-    if getattr(args, "overwrite", False):
-        return base_paths
 
     assigned: dict[Path, Path] = {}
     used: set[str] = set()

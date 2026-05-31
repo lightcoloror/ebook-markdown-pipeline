@@ -41,6 +41,42 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_mcp_stdio.py
 
 Use `--convert` if you also want to test a tiny real TXT conversion.
 
+## Docker Agent Integration
+
+For Docker-hosted agents, use the HTTP bridge unless the project directory and all converter dependencies are mounted inside the container.
+
+Host-side startup:
+
+```powershell
+$env:EBOOK_CONVERTER_API_TOKEN = "replace-with-a-local-token"
+python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_http.py --host 0.0.0.0 --port 8765
+```
+
+Container-side health check:
+
+```bash
+curl -H "Authorization: Bearer replace-with-a-local-token" http://host.docker.internal:8765/health
+```
+
+Container-side tool call:
+
+```bash
+curl -H "Authorization: Bearer replace-with-a-local-token" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"scan_books","arguments":{"input":"D:\\books","output":"D:\\books-md","recursive":true}}' \
+  http://host.docker.internal:8765/call
+```
+
+The HTTP bridge intentionally reuses the MCP tool names and payloads. Treat it as a Docker transport adapter, not as a separate conversion implementation.
+
+Local Docker smoke test:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipeline\scripts\run_docker_agent_smoke.ps1
+```
+
+The smoke test generates tiny `TXT / FB2 / RTF / EPUB / ODT / AZW3 / MOBI / AZW / PDF` fixtures, starts the HTTP bridge temporarily, converts them through the API, and verifies that the OpenClaw and Hermes containers can call the bridge through `host.docker.internal`.
+
 ## MCP Tools
 
 ### `scan_books`

@@ -103,6 +103,21 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_mcp_stdio.py
 python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_mcp_stdio.py --convert
 ```
 
+Docker 里的 OpenClaw / Hermes Agent 这类容器无法直接执行 Windows 路径的 stdio MCP 时，可以启动 HTTP bridge：
+
+```powershell
+$env:EBOOK_CONVERTER_API_TOKEN = "replace-with-a-local-token"
+python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_http.py --host 0.0.0.0 --port 8765
+```
+
+容器内通过 `http://host.docker.internal:8765` 调用，接口复用同一套 MCP tool 名称和 JSON 参数。详见 [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md)。
+
+本机 Docker 集成烟测：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipeline\scripts\run_docker_agent_smoke.ps1
+```
+
 失败后只重跑未完成项：
 
 ```powershell
