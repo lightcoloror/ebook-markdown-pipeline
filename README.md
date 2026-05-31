@@ -93,6 +93,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py `
 - `ebook-convert` from calibre
 - `mineru`
 - `marker_single`
+- Python packages in [requirements.txt](requirements.txt), including `PyMuPDF` and `PyMuPDF4LLM`
 
 如果命令不在 `PATH`，可以显式传：
 
@@ -121,3 +122,11 @@ python D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py `
 - `html` 和 `text` 输出会尽量复用 `pandoc` 做后续格式转换。
 - `AZW/MOBI` 默认要求是无 DRM 文件。
 - `--dry-run` 可以先看会执行哪些命令。
+
+## 许可证
+
+本项目以 [GNU Affero General Public License v3.0](LICENSE) 发布。
+
+选择 AGPL-3.0 的原因是：本项目直接或间接集成/调用的 PDF 处理工具中，`PyMuPDF` / `PyMuPDF4LLM` 使用 AGPL-3.0 或商业双许可，`MinerU` 公开信息也包含 AGPL-3.0/强 copyleft 约束，`Marker` 属于 GPL-3.0 级别。为了公开分享时采用“参考过的开源工具里最严格”的口径，本项目选择 AGPL-3.0。
+
+第三方工具和模型不包含在本仓库中，用户需要按各自项目许可证和模型许可证自行安装与使用。详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
