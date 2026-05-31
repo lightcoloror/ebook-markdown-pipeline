@@ -14,7 +14,7 @@ Do not duplicate conversion logic in agent-specific plugins. Keep conversion beh
 Use MCP for OpenClaw, Hermes Agent, Codex, Claude Code, or other agents that support tool schemas.
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_mcp.py
+D:\used-by-codex\ebook_markdown_pipeline\start_mcp.cmd
 ```
 
 Example MCP server config:
@@ -23,14 +23,23 @@ Example MCP server config:
 {
   "mcpServers": {
     "ebook-markdown-pipeline": {
-      "command": "python",
-      "args": [
-        "D:\\used-by-codex\\ebook_markdown_pipeline\\ebook_converter_mcp.py"
-      ]
+      "command": "C:\\path\\to\\ebook_markdown_pipeline\\start_mcp.cmd",
+      "args": []
     }
   }
 }
 ```
+
+The same config is available at `examples/mcp_config.json`.
+Replace `C:\path\to\ebook_markdown_pipeline` with the real project path.
+
+Before connecting an agent, run the stdio smoke test:
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_mcp_stdio.py
+```
+
+Use `--convert` if you also want to test a tiny real TXT conversion.
 
 ## MCP Tools
 

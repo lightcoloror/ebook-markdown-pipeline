@@ -71,14 +71,14 @@ MCP 配置示例：
 {
   "mcpServers": {
     "ebook-markdown-pipeline": {
-      "command": "python",
-      "args": [
-        "D:\\used-by-codex\\ebook_markdown_pipeline\\ebook_converter_mcp.py"
-      ]
+      "command": "C:\\path\\to\\ebook_markdown_pipeline\\start_mcp.cmd",
+      "args": []
     }
   }
 }
 ```
+
+把 `C:\path\to\ebook_markdown_pipeline` 改成实际项目路径即可。本机当前路径是 `D:\used-by-codex\ebook_markdown_pipeline`。
 
 MCP 工具包括：
 
@@ -90,6 +90,18 @@ MCP 工具包括：
 - `read_pdf_tool_log`：读取 Marker/MinerU 日志尾部。
 
 详细说明见 [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md)。支持 skill 的 agent 可参考 [skills/ebook-markdown-pipeline/SKILL.md](skills/ebook-markdown-pipeline/SKILL.md)。
+
+接入前可先跑 MCP smoke test：
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_mcp_stdio.py
+```
+
+需要测试一次真实转换时：
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_mcp_stdio.py --convert
+```
 
 失败后只重跑未完成项：
 

@@ -13,7 +13,13 @@ Use this skill when a user asks to convert EPUB, AZW, MOBI, FB2, TXT, RTF, ODT, 
 Start command:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_mcp.py
+D:\used-by-codex\ebook_markdown_pipeline\start_mcp.cmd
+```
+
+Smoke test:
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_mcp_stdio.py
 ```
 
 Use these tools:
