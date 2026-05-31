@@ -36,6 +36,8 @@ def main() -> int:
         result = query_location_index(Path(build["sqlite"]), "300000", limit=5)
         if result["count"] != 1 or result["matches"][0]["page"] != 2:
             raise RuntimeError(f"Expected a hit on page 2: {json.dumps(result, ensure_ascii=False)}")
+        if result["matches"][0]["match_quality"] != "exact" or result["matches"][0]["location"] != "page 2":
+            raise RuntimeError(f"Expected location metadata on the hit: {json.dumps(result, ensure_ascii=False)}")
 
         chinese_index = root / "chinese.sqlite"
         write_sqlite(
@@ -55,6 +57,16 @@ def main() -> int:
         chinese = query_location_index(chinese_index, "合同金额", limit=5)
         if chinese["count"] != 1 or chinese["matches"][0]["page"] != 7:
             raise RuntimeError(f"Expected a Chinese substring hit on page 7: {json.dumps(chinese, ensure_ascii=False)}")
+        if chinese["matches"][0]["match_quality"] != "exact":
+            raise RuntimeError(f"Expected Chinese query to keep exact-match metadata: {json.dumps(chinese, ensure_ascii=False)}")
+
+        fuzzy = query_location_index(chinese_index, "合同_金额", limit=5)
+        if fuzzy["count"] != 1 or fuzzy["matches"][0]["match_quality"] != "all_terms":
+            raise RuntimeError(f"Expected tokenized fuzzy hit: {json.dumps(fuzzy, ensure_ascii=False)}")
+
+        empty_query = query_location_index(Path(build["sqlite"]), "   ", limit=5)
+        if empty_query["count"] != 0 or "empty" not in empty_query.get("message", "").lower():
+            raise RuntimeError(f"Expected stable empty-query response: {json.dumps(empty_query, ensure_ascii=False)}")
 
         missing = query_location_index(root / "missing.sqlite", "anything", limit=5)
         if missing["count"] != 0 or "not found" not in missing.get("message", "").lower():

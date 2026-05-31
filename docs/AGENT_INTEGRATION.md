@@ -153,9 +153,9 @@ If one source file fails, the indexer records a `failed` item and continues with
 
 ### `query_location_index`
 
-Searches `document_locations.sqlite` and returns `source`, `kind`, `page`, `engine`, and `snippet`.
+Searches `document_locations.sqlite` and returns `source`, `source_name`, `kind`, `page`, `location`, `engine`, `snippet`, `match_quality`, and `token_hits`.
 
-The response also includes `search_mode` and `used_query`. The normal path is SQLite FTS; when FTS cannot match or the query is a CJK substring, the tool falls back to LIKE matching. This is intended for coarse page/image location, not exact bounding-box extraction.
+The response also includes `search_mode` and `used_query`. The normal path is SQLite FTS; when FTS cannot match, the tool falls back to exact LIKE and then all-token LIKE matching. This is intended for coarse page/image location, not exact bounding-box extraction.
 
 ## Agent Usage Policy
 

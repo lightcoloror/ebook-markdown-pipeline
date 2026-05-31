@@ -139,7 +139,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\document_locator.py query `
   --format markdown
 ```
 
-输出会包含源文件、PDF 页码或图片文件、匹配片段。查询会先走 SQLite FTS，必要时回退到普通子串匹配；英文下划线、OCR 漏字等场景会做轻量 token 回退，所以适合“先定位到哪页/哪张图，再人工复核”的用法。`--ocr never` 只用 PDF 文本层，速度最快；`--ocr auto` 会对无文本层 PDF 页和图片调用 Umi-OCR。批量建索引时，单个坏文件会记录为 `failed`，不会中断整批任务。
+输出会包含源文件、PDF 页码或图片文件、匹配片段、匹配质量和 token 命中数。查询会先走 SQLite FTS，必要时回退到完整子串匹配和 all-token 子串匹配；英文下划线、中文分词不稳定、OCR 漏字等场景会做轻量 token 回退，所以适合“先定位到哪页/哪张图，再人工复核”的用法。`--ocr never` 只用 PDF 文本层，速度最快；`--ocr auto` 会对无文本层 PDF 页和图片调用 Umi-OCR。批量建索引时，单个坏文件会记录为 `failed`，不会中断整批任务。
 
 失败后只重跑未完成项：
 

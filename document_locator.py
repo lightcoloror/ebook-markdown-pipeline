@@ -155,6 +155,10 @@ def build_location_index(
 
 
 def query_location_index(index_path: Path, query: str, *, limit: int = 20) -> dict:
+    query = query.strip()
+    limit = clamp_limit(limit)
+    if not query:
+        return empty_query_result(index_path, query, message="Query is empty.")
     if not index_path.exists():
         return empty_query_result(index_path, query, message="Index file not found.")
 
@@ -173,16 +177,24 @@ def query_location_index(index_path: Path, query: str, *, limit: int = 20) -> di
             rows = execute_like_query(conn, query, limit)
             used_query = query
             search_mode = "like"
+        if not rows:
+            rows = execute_like_terms_query(conn, split_query_terms(query), limit)
+            used_query = " AND ".join(split_query_terms(query))
+            search_mode = "like_terms"
         return {
             "index": str(index_path),
             "query": query,
             "used_query": used_query,
             "search_mode": search_mode,
             "count": len(rows),
-            "matches": [dict(row) for row in rows],
+            "matches": enrich_matches(rows, query),
         }
     finally:
         conn.close()
+
+
+def clamp_limit(limit: int) -> int:
+    return min(max(limit, 1), 200)
 
 
 def empty_query_result(index_path: Path, query: str, *, message: str | None = None) -> dict:
@@ -209,6 +221,7 @@ def execute_location_query(conn: sqlite3.Connection, query: str, limit: int) -> 
               locations.page,
               locations.char_count,
               locations.engine,
+              locations.text,
               snippet(location_fts, 0, '[', ']', ' ... ', 12) AS snippet
             FROM location_fts
             JOIN locations ON locations.id = location_fts.rowid
@@ -240,6 +253,27 @@ def execute_like_query(conn: sqlite3.Connection, query: str, limit: int) -> list
     return [row_with_snippet(row, query) for row in rows]
 
 
+def execute_like_terms_query(conn: sqlite3.Connection, terms: list[str], limit: int) -> list[sqlite3.Row]:
+    if not terms:
+        return []
+    clauses = " AND ".join(["lower(text) LIKE ? ESCAPE '\\'"] * len(terms))
+    patterns = [f"%{escape_like(term.lower())}%" for term in terms]
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT source, kind, page, char_count, engine, text
+            FROM locations
+            WHERE {clauses}
+            ORDER BY char_count DESC
+            LIMIT ?
+            """,
+            (*patterns, limit),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [row_with_snippet(row, terms[0]) for row in rows]
+
+
 def row_with_snippet(row: sqlite3.Row, query: str) -> dict:
     text = row["text"]
     position = text.lower().find(query.lower())
@@ -247,7 +281,7 @@ def row_with_snippet(row: sqlite3.Row, query: str) -> dict:
         position = 0
     start = max(0, position - 48)
     end = min(len(text), position + len(query) + 96)
-    snippet = text[start:end].replace(query, f"[{query}]")
+    snippet = highlight_term(text[start:end], query)
     prefix = "..." if start > 0 else ""
     suffix = "..." if end < len(text) else ""
     return {
@@ -256,8 +290,64 @@ def row_with_snippet(row: sqlite3.Row, query: str) -> dict:
         "page": row["page"],
         "char_count": row["char_count"],
         "engine": row["engine"],
+        "text": text,
         "snippet": f"{prefix}{snippet}{suffix}",
     }
+
+
+def enrich_matches(rows: Iterable[sqlite3.Row | dict], query: str) -> list[dict]:
+    query_terms = split_query_terms(query)
+    matches = []
+    for row in rows:
+        match = dict(row)
+        text = str(match.pop("text", ""))
+        source = str(match.get("source", ""))
+        page = match.get("page")
+        token_hits = count_token_hits(text, query_terms)
+        match.update(
+            {
+                "source_name": Path(source).name,
+                "location": f"page {page}" if page else "image",
+                "match_quality": classify_match_quality(text, query, query_terms),
+                "token_hits": token_hits,
+            }
+        )
+        matches.append(match)
+    return sorted(matches, key=match_sort_key)
+
+
+def split_query_terms(query: str) -> list[str]:
+    return [token.lower() for token in re.split(r"[^\w\u4e00-\u9fff]+|_", query) if token]
+
+
+def count_token_hits(text: str, terms: Iterable[str]) -> int:
+    lowered = text.lower()
+    return sum(1 for term in terms if term and term in lowered)
+
+
+def classify_match_quality(text: str, query: str, terms: list[str]) -> str:
+    lowered = text.lower()
+    normalized_query = query.lower()
+    if normalized_query and normalized_query in lowered:
+        return "exact"
+    token_hits = count_token_hits(text, terms)
+    if terms and token_hits == len(terms):
+        return "all_terms"
+    if token_hits:
+        return "partial_terms"
+    return "unknown"
+
+
+def match_sort_key(match: dict) -> tuple[int, int, str, int]:
+    quality_rank = {"exact": 0, "all_terms": 1, "partial_terms": 2, "unknown": 3}
+    page = match.get("page") or 0
+    return (quality_rank.get(str(match.get("match_quality")), 9), -int(match.get("token_hits") or 0), str(match.get("source")), page)
+
+
+def highlight_term(text: str, term: str) -> str:
+    if not term:
+        return text
+    return re.sub(re.escape(term), lambda item: f"[{item.group(0)}]", text, count=1, flags=re.IGNORECASE)
 
 
 def escape_like(value: str) -> str:
@@ -296,13 +386,14 @@ def render_query_markdown(result: dict) -> str:
     if not result["matches"]:
         lines.append("No matches.")
         return "\n".join(lines).rstrip() + "\n"
-    lines.extend(["| Source | Page/Image | Engine | Snippet |", "| --- | --- | --- | --- |"])
+    lines.extend(["| Source | Location | Quality | Engine | Snippet |", "| --- | --- | --- | --- | --- |"])
     for match in result["matches"]:
         source = markdown_cell(str(match["source"]))
-        location = f"Page {match['page']}" if match.get("page") else "Image"
+        location = markdown_cell(str(match.get("location") or (f"Page {match['page']}" if match.get("page") else "Image")))
+        quality = markdown_cell(str(match.get("match_quality", "")))
         engine = markdown_cell(str(match["engine"]))
         snippet = markdown_cell(str(match["snippet"]).replace("\n", " "))
-        lines.append(f"| {source} | {location} | {engine} | {snippet} |")
+        lines.append(f"| {source} | {location} | {quality} | {engine} | {snippet} |")
     return "\n".join(lines).rstrip() + "\n"
 
 
