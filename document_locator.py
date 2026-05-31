@@ -96,8 +96,34 @@ def build_location_index(
     umi_paddle_exe: str | None = None,
     umi_paddle_module: str | None = None,
 ) -> dict:
-    output_dir.mkdir(parents=True, exist_ok=True)
     sources = collect_location_sources(input_path, recursive=recursive, include_hidden=include_hidden)
+    return build_location_index_from_sources(
+        sources,
+        output_dir,
+        input_label=str(input_path),
+        ocr_mode=ocr_mode,
+        umi_render_dpi=umi_render_dpi,
+        umi_paddle_exe=umi_paddle_exe,
+        umi_paddle_module=umi_paddle_module,
+    )
+
+
+def build_location_index_from_sources(
+    sources: Iterable[Path],
+    output_dir: Path,
+    *,
+    input_label: str = "selected files",
+    ocr_mode: str = "auto",
+    umi_render_dpi: int = 200,
+    umi_paddle_exe: str | None = None,
+    umi_paddle_module: str | None = None,
+) -> dict:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    source_list = [
+        source.resolve()
+        for source in sources
+        if source.exists() and source.is_file() and source.suffix.lower() in SUPPORTED_LOCATION_EXTENSIONS
+    ]
     jsonl_path = output_dir / "document_locations.jsonl"
     sqlite_path = output_dir / "document_locations.sqlite"
 
@@ -117,7 +143,7 @@ def build_location_index(
         return ocr_engine
 
     try:
-        for source in sources:
+        for source in source_list:
             try:
                 if source.suffix.lower() in PDF_EXTENSIONS:
                     records.extend(index_pdf(source, options, ocr_mode, ensure_ocr_engine))
@@ -143,11 +169,11 @@ def build_location_index(
     write_jsonl(jsonl_path, records)
     write_sqlite(sqlite_path, records)
     return {
-        "input": str(input_path),
+        "input": input_label,
         "output": str(output_dir),
         "jsonl": str(jsonl_path),
         "sqlite": str(sqlite_path),
-        "source_count": len(sources),
+        "source_count": len(source_list),
         "record_count": len(records),
         "ocr_mode": ocr_mode,
         "status_counts": count_by_status(records),

@@ -20,6 +20,12 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
+    from ebook_markdown_pipeline.document_locator import (  # noqa: E402
+        IMAGE_EXTENSIONS,
+        SUPPORTED_LOCATION_EXTENSIONS,
+        build_location_index_from_sources,
+        collect_location_sources,
+    )
     from ebook_markdown_pipeline import (
         OUTPUT_FORMATS,
         PDF_PIPELINE_MODES,
@@ -36,6 +42,12 @@ try:
         write_batch_summary,
     )
 except ModuleNotFoundError:
+    from document_locator import (  # noqa: E402
+        IMAGE_EXTENSIONS,
+        SUPPORTED_LOCATION_EXTENSIONS,
+        build_location_index_from_sources,
+        collect_location_sources,
+    )
     from batch_convert_books import (
         OUTPUT_FORMATS,
         PDF_PIPELINE_MODES,
@@ -217,6 +229,8 @@ class BookConverterUI:
         self.health_button.pack(side="left", padx=(8, 0))
         self.start_button = ttk.Button(buttons, text="开始 / Start", command=self.start_convert)
         self.start_button.pack(side="left", padx=8)
+        self.location_button = ttk.Button(buttons, text="定位索引 / Location Index", command=self.start_location_index)
+        self.location_button.pack(side="left", padx=(0, 8))
         ttk.Button(buttons, text="复查清单 / Checklist", command=self.open_review_checklist).pack(side="left")
         ttk.Button(buttons, text="选中输出 / Output", command=self.open_selected_output).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="选中报告 / Report", command=self.open_selected_report).pack(side="left", padx=(8, 0))
@@ -241,7 +255,13 @@ class BookConverterUI:
         self.log.configure(yscrollcommand=log_scroll.set)
 
     def pick_input_files(self) -> None:
-        filetypes = [("支持格式 / Supported", " ".join(f"*{ext}" for ext in sorted(SUPPORTED_FORMATS))), ("全部 / All", "*.*")]
+        all_supported = SUPPORTED_FORMATS | IMAGE_EXTENSIONS
+        filetypes = [
+            ("电子书/PDF/图片 / Ebook PDF Images", " ".join(f"*{ext}" for ext in sorted(all_supported))),
+            ("电子书/PDF / Ebook PDF", " ".join(f"*{ext}" for ext in sorted(SUPPORTED_FORMATS))),
+            ("图片 / Images", " ".join(f"*{ext}" for ext in sorted(IMAGE_EXTENSIONS))),
+            ("全部 / All", "*.*"),
+        ]
         paths = filedialog.askopenfilenames(title="选择输入文件 / Choose input file(s)", filetypes=filetypes)
         if paths:
             self.selected_input_files = [Path(path) for path in paths]
@@ -272,9 +292,10 @@ class BookConverterUI:
         if not paths:
             return
 
-        files = [path for path in paths if path.is_file() and path.suffix.lower() in SUPPORTED_FORMATS]
+        accepted_extensions = SUPPORTED_FORMATS | IMAGE_EXTENSIONS
+        files = [path for path in paths if path.is_file() and path.suffix.lower() in accepted_extensions]
         folders = [path for path in paths if path.is_dir()]
-        unsupported = [path for path in paths if path.is_file() and path.suffix.lower() not in SUPPORTED_FORMATS]
+        unsupported = [path for path in paths if path.is_file() and path.suffix.lower() not in accepted_extensions]
 
         if files:
             self.selected_input_files = files
@@ -297,7 +318,10 @@ class BookConverterUI:
 
         if unsupported:
             self.write_log(f"已忽略 {len(unsupported)} 个不支持文件。/ Ignored {len(unsupported)} unsupported file(s).")
-        self.scan()
+        if any(path.suffix.lower() in IMAGE_EXTENSIONS for path in files):
+            self.scan_location_inputs()
+        else:
+            self.scan()
 
     def build_options(self):
         marker_extra = [item for item in self.marker_extra_var.get().split() if item]
@@ -359,6 +383,30 @@ class BookConverterUI:
         )
         return input_path, sources
 
+    def resolve_location_sources(self) -> tuple[Path, list[Path]]:
+        if self.selected_input_files:
+            sources = [
+                path
+                for path in self.selected_input_files
+                if path.exists() and path.is_file() and path.suffix.lower() in SUPPORTED_LOCATION_EXTENSIONS
+            ]
+            if not sources:
+                return Path(), []
+            common_root = Path(os.path.commonpath([str(path.parent) for path in sources]))
+            return common_root, sorted(sources)
+
+        input_text = self.input_var.get().strip()
+        if not input_text:
+            return Path(), []
+
+        input_path = Path(input_text)
+        sources = collect_location_sources(
+            input_path,
+            recursive=self.recursive_var.get(),
+            include_hidden=self.include_hidden_var.get(),
+        )
+        return input_path, sources
+
     def apply_default_output_from_sources(self, sources: list[Path]) -> None:
         if not sources:
             return
@@ -372,6 +420,10 @@ class BookConverterUI:
         options = self.build_options()
         input_root, sources = self.resolve_sources(options)
         if not sources:
+            _, location_sources = self.resolve_location_sources()
+            if location_sources:
+                self.scan_location_inputs()
+                return
             messagebox.showerror("缺少输入 / Input missing", "请选择存在的输入文件或文件夹。/ Please choose an existing input file or folder.")
             return
         if not self.output_var.get().strip():
@@ -405,6 +457,41 @@ class BookConverterUI:
                     self.write_log(f"PDF 计划 / PDF plan: {Path(plan.source).name} -> {plan.pipeline}; {plan.note}")
         for item in missing:
             self.write_log(item)
+
+    def scan_location_inputs(self) -> None:
+        input_root, sources = self.resolve_location_sources()
+        if not sources:
+            messagebox.showerror("没有图片/PDF / No images or PDFs", "未找到可建定位索引的 PDF 或图片。/ No PDF or image files were found.")
+            return
+        if not self.output_var.get().strip():
+            self.output_var.set(str(input_root if input_root.is_dir() else input_root.parent))
+        output_path = Path(self.output_var.get().strip())
+
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for source in sources:
+            suffix = source.suffix.lower()
+            detected_format = "PDF" if suffix == ".pdf" else "IMAGE"
+            note = "PDF page/image location index" if suffix == ".pdf" else "Image OCR location index"
+            self.tree.insert(
+                "",
+                "end",
+                values=(
+                    str(source),
+                    detected_format,
+                    "location-index",
+                    note,
+                    "sqlite/jsonl",
+                    str(output_path / "document_locations.sqlite"),
+                ),
+            )
+
+        pdf_count = sum(1 for source in sources if source.suffix.lower() == ".pdf")
+        image_count = len(sources) - pdf_count
+        self.write_log(
+            f"已扫描定位文件 {len(sources)} 个：PDF {pdf_count}，图片 {image_count}。/ "
+            f"Scanned {len(sources)} location file(s): {pdf_count} PDF, {image_count} image(s)."
+        )
 
     def health_check(self) -> None:
         options = self.build_options()
@@ -461,6 +548,14 @@ class BookConverterUI:
             options.manifest = output_path / "manifest.json"
         input_root, sources = self.resolve_sources(options)
         if not sources:
+            _, location_sources = self.resolve_location_sources()
+            if location_sources:
+                messagebox.showinfo(
+                    "这是定位索引输入 / Location index input",
+                    "当前选择的是 PDF/图片定位索引输入，请点击“定位索引 / Location Index”。/ "
+                    "The current input is for PDF/image location indexing. Please click Location Index.",
+                )
+                return
             messagebox.showerror("没有文件 / No files", "未找到支持的文件。/ No supported files were found.")
             return
 
@@ -520,6 +615,42 @@ class BookConverterUI:
         self.worker = threading.Thread(target=worker, daemon=True)
         self.worker.start()
 
+    def start_location_index(self) -> None:
+        if self.worker and self.worker.is_alive():
+            messagebox.showinfo("忙碌 / Busy", "已有任务正在运行。/ A task is already running.")
+            return
+
+        input_root, sources = self.resolve_location_sources()
+        if not sources:
+            messagebox.showerror("没有图片/PDF / No images or PDFs", "请选择或拖入 PDF/图片文件。/ Please choose or drop PDF/image files.")
+            return
+        if not self.output_var.get().strip():
+            self.output_var.set(str(input_root if input_root.is_dir() else input_root.parent))
+        output_path = Path(self.output_var.get().strip())
+
+        self.scan_location_inputs()
+        self.write_log(f"开始建立定位索引 {len(sources)} 个文件... / Building location index for {len(sources)} file(s)...")
+        self.set_running_state(True)
+        self.total_files = len(sources)
+        self.progress.configure(maximum=max(len(sources), 1), value=0)
+        self.status_var.set(f"建立定位索引 / Indexing 0/{len(sources)}")
+        self.current_stage_var.set("读取 PDF 文本层，必要时调用 Umi-OCR / Reading text layers and OCR if needed")
+
+        def worker() -> None:
+            try:
+                result = build_location_index_from_sources(
+                    sources,
+                    output_path,
+                    input_label=str(input_root),
+                    ocr_mode="auto",
+                )
+                self.queue.put(("location_done", result))
+            except Exception as exc:  # noqa: BLE001
+                self.queue.put(("error", str(exc)))
+
+        self.worker = threading.Thread(target=worker, daemon=True)
+        self.worker.start()
+
     def poll_queue(self) -> None:
         try:
             while True:
@@ -540,6 +671,16 @@ class BookConverterUI:
                     self.write_log(f"完成 / Finished. 成功 / Success: {ok_count}/{len(payload)}")
                     self.write_log(f"汇总 / Summary: {Path(self.output_var.get().strip()) / '.reports' / 'summary.md'}")
                     self.write_log(f"复查清单 / Review checklist: {Path(self.output_var.get().strip()) / '.reports' / 'review-checklist.md'}")
+                elif kind == "location_done":
+                    self.progress.configure(value=self.total_files)
+                    self.status_var.set("定位索引完成 / Location index finished")
+                    self.current_stage_var.set("可用 query_location_index 或 CLI 查询 / Ready for query")
+                    self.set_running_state(False)
+                    self.worker = None
+                    self.write_log("定位索引完成 / Location index finished.")
+                    self.write_log(f"SQLite: {payload.get('sqlite')}")
+                    self.write_log(f"JSONL: {payload.get('jsonl')}")
+                    self.write_log(f"状态统计 / Status: {payload.get('status_counts')}")
                 elif kind == "error":
                     self.set_running_state(False)
                     self.status_var.set("执行失败 / Failed")
@@ -652,6 +793,7 @@ class BookConverterUI:
         self.scan_button.configure(state=state)
         self.health_button.configure(state=state)
         self.start_button.configure(state=state)
+        self.location_button.configure(state=state)
 
     def stage_progress_offset(self, stage: str) -> float:
         mapping = {

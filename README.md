@@ -122,6 +122,8 @@ powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipelin
 
 如果只需要知道关键词出现在“哪份 PDF 的哪一页”或“哪张图片”，不需要精确坐标，可以使用页级/图片级定位索引：
 
+桌面 UI 也支持这个流程：批量选择或拖入 PDF/图片后，点击 `定位索引 / Location Index`，会在输出文件夹生成 `document_locations.sqlite` 和 `document_locations.jsonl`。
+
 ```powershell
 python D:\used-by-codex\ebook_markdown_pipeline\document_locator.py index `
   D:\documents `
