@@ -178,6 +178,12 @@ Outputs:
 
 If one source file fails, the indexer records a `failed` item and continues with the rest of the batch.
 
+### `start_location_index`
+
+Starts `build_location_index` as a background job and returns `job_id`.
+
+Use this instead of `build_location_index` for large folders, image-heavy inputs, or OCR-enabled runs. Poll with `get_job_status`; final job results include `artifacts`.
+
 ### `query_location_index`
 
 Searches `document_locations.sqlite` and returns `source`, `source_name`, `kind`, `page`, `location`, `engine`, `snippet`, `match_quality`, and `token_hits`.
@@ -196,12 +202,20 @@ Outputs:
 - `pages.jsonl`: per-image OCR and metadata.
 - `clusters.json`: duplicate/near-duplicate groups.
 
+### `start_image_book_rebuild`
+
+Starts `rebuild_image_book` as a background job and returns `job_id`.
+
+Use this for large screenshot folders or OCR-enabled image-book rebuilding. Poll with `get_job_status`; progress events include OCR page progress, dedupe, ordering, and write stages.
+
 ## Agent Usage Policy
 
 - Prefer `scan_books` before `start_conversion`.
 - Run `health_check` before the first conversion in a new environment.
 - Use `build_location_index` instead of full conversion when the user only needs to find which page/image contains a keyword.
+- Use `start_location_index` instead of `build_location_index` for long or OCR-heavy indexing.
 - Use `rebuild_image_book` when the user has unordered screenshots and wants a single Markdown draft with review artifacts.
+- Use `start_image_book_rebuild` instead of `rebuild_image_book` for long screenshot folders.
 - For PDFs, keep `pdf_pipeline_mode=auto` unless the user explicitly chooses another mode.
 - For long-running conversions, call `start_conversion`, then poll `get_job_status`.
 - If output quality is questionable, inspect `summary.md`, `review-checklist.md`, per-book report JSON, and PDF tool logs.

@@ -52,8 +52,10 @@ def main() -> int:
                 "read_pdf_tool_log",
                 "read_artifact",
                 "build_location_index",
+                "start_location_index",
                 "query_location_index",
                 "rebuild_image_book",
+                "start_image_book_rebuild",
             }
             missing = sorted(required_tools - tool_names)
             if missing:
@@ -126,6 +128,22 @@ def main() -> int:
             if inspected_pdf["kind"] != "pdf" or inspected_pdf["preflight"]["page_count"] != 1:
                 raise RuntimeError(f"PDF inspection failed: {inspected_pdf}")
 
+            async_location_dir = tmpdir / "async-locations"
+            async_location = call_tool(
+                proc,
+                85,
+                "start_location_index",
+                {
+                    "input": str(image_dir),
+                    "output": str(async_location_dir),
+                    "recursive": False,
+                    "ocr": "never",
+                },
+            )
+            async_location_final = poll_job(proc, async_location["job_id"])
+            if async_location_final["status"] != "done" or not async_location_final.get("artifacts"):
+                raise RuntimeError(f"Async location index failed: {async_location_final}")
+
             image_book_dir = tmpdir / "image-book"
             image_book = call_tool(
                 proc,
@@ -140,6 +158,22 @@ def main() -> int:
             )
             if image_book["source_count"] != 1 or not Path(image_book["book"]).exists():
                 raise RuntimeError(f"Image book rebuild failed: {image_book}")
+
+            async_image_book_dir = tmpdir / "async-image-book"
+            async_image_book = call_tool(
+                proc,
+                86,
+                "start_image_book_rebuild",
+                {
+                    "input": str(image_dir),
+                    "output": str(async_image_book_dir),
+                    "recursive": False,
+                    "ocr": "never",
+                },
+            )
+            async_image_book_final = poll_job(proc, async_image_book["job_id"])
+            if async_image_book_final["status"] != "done" or not async_image_book_final.get("artifacts"):
+                raise RuntimeError(f"Async image book rebuild failed: {async_image_book_final}")
 
             book_artifact = call_tool(
                 proc,

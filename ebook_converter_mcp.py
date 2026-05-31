@@ -268,6 +268,24 @@ def tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "start_location_index",
+            "description": "Start a background page/image-level location indexing job. Poll with get_job_status.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"},
+                    "output": {"type": "string"},
+                    "recursive": {"type": "boolean", "default": True},
+                    "include_hidden": {"type": "boolean", "default": False},
+                    "ocr": {"type": "string", "enum": ["auto", "always", "never"], "default": "auto"},
+                    "umi_render_dpi": {"type": "integer", "default": 200},
+                    "umi_paddle_exe": {"type": "string"},
+                    "umi_paddle_module": {"type": "string"},
+                },
+                "required": ["input", "output"],
+            },
+        },
+        {
             "name": "query_location_index",
             "description": "Search a generated location SQLite index and return source file plus PDF page/image hit.",
             "inputSchema": {
@@ -283,6 +301,23 @@ def tool_schemas() -> list[dict[str, Any]]:
         {
             "name": "rebuild_image_book",
             "description": "OCR a folder of screenshots/images, deduplicate near-repeats, infer order, and write a structured Markdown draft plus review files.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"},
+                    "output": {"type": "string"},
+                    "recursive": {"type": "boolean", "default": True},
+                    "include_hidden": {"type": "boolean", "default": False},
+                    "ocr": {"type": "string", "enum": ["auto", "never"], "default": "auto"},
+                    "umi_paddle_exe": {"type": "string"},
+                    "umi_paddle_module": {"type": "string"},
+                },
+                "required": ["input", "output"],
+            },
+        },
+        {
+            "name": "start_image_book_rebuild",
+            "description": "Start a background screenshot/image-book rebuild job. Poll with get_job_status.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -319,10 +354,14 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return read_artifact(arguments)
     if name == "build_location_index":
         return build_location_index_tool(arguments)
+    if name == "start_location_index":
+        return start_location_index(arguments)
     if name == "query_location_index":
         return query_location_index_tool(arguments)
     if name == "rebuild_image_book":
         return rebuild_image_book_tool(arguments)
+    if name == "start_image_book_rebuild":
+        return start_image_book_rebuild(arguments)
     raise ValueError(f"Unknown tool: {name}")
 
 
@@ -459,6 +498,42 @@ def update_job(job_id: str, **updates: Any) -> None:
             JOBS[job_id].update(updates)
 
 
+def create_job(kind: str, *, input_path: Path, output_path: Path, total: int | None = None) -> str:
+    job_id = f"job-{int(time.time())}-{len(JOBS) + 1}"
+    job = {
+        "job_id": job_id,
+        "kind": kind,
+        "status": "running",
+        "started_at": timestamp(),
+        "input": str(input_path),
+        "output": str(output_path),
+        "total": total,
+        "completed": 0,
+        "events": [],
+        "results": [],
+        "artifacts": [],
+        "error": None,
+    }
+    with JOBS_LOCK:
+        JOBS[job_id] = job
+    return job_id
+
+
+def append_job_event(job_id: str, event: dict[str, Any]) -> None:
+    with JOBS_LOCK:
+        current = JOBS.get(job_id)
+        if current is None:
+            return
+        current["events"].append({"time": timestamp(), **event})
+        current["events"] = current["events"][-200:]
+        index = event.get("index")
+        total = event.get("total")
+        if isinstance(index, int):
+            current["completed"] = max(int(current.get("completed") or 0), index)
+        if isinstance(total, int):
+            current["total"] = total
+
+
 def get_job_status(arguments: dict[str, Any]) -> dict[str, Any]:
     job_id = str(arguments["job_id"])
     with JOBS_LOCK:
@@ -579,6 +654,31 @@ def build_location_index_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def start_location_index(arguments: dict[str, Any]) -> dict[str, Any]:
+    input_path = Path(arguments["input"])
+    output_path = Path(arguments["output"])
+    job_id = create_job("location_index", input_path=input_path, output_path=output_path)
+
+    def worker() -> None:
+        try:
+            append_job_event(job_id, {"event": "start", "message": "Build location index"})
+            result = build_location_index_tool(arguments)
+            update_job(
+                job_id,
+                status="done",
+                finished_at=timestamp(),
+                results=[result],
+                artifacts=result.get("artifacts", []),
+                completed=result.get("source_count", 0),
+                total=result.get("source_count", 0),
+            )
+        except Exception as exc:  # noqa: BLE001
+            update_job(job_id, status="failed", finished_at=timestamp(), error=str(exc), traceback=traceback.format_exc())
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {"job_id": job_id, "status": "running", "kind": "location_index"}
+
+
 def query_location_index_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     return query_location_index(
         Path(arguments["index"]),
@@ -597,6 +697,51 @@ def rebuild_image_book_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         umi_paddle_exe=arguments.get("umi_paddle_exe"),
         umi_paddle_module=arguments.get("umi_paddle_module"),
     )
+
+
+def start_image_book_rebuild(arguments: dict[str, Any]) -> dict[str, Any]:
+    input_path = Path(arguments["input"])
+    output_path = Path(arguments["output"])
+    job_id = create_job("image_book_rebuild", input_path=input_path, output_path=output_path)
+
+    def progress_callback(event: dict[str, Any]) -> None:
+        append_job_event(
+            job_id,
+            {
+                "event": event.get("stage") or "progress",
+                "message": event.get("message", ""),
+                "index": event.get("index"),
+                "total": event.get("total"),
+                "source": event.get("source", ""),
+            },
+        )
+
+    def worker() -> None:
+        try:
+            result = rebuild_image_book(
+                input_path=input_path,
+                output_dir=output_path,
+                recursive=bool(arguments.get("recursive", True)),
+                include_hidden=bool(arguments.get("include_hidden", False)),
+                ocr_mode=str(arguments.get("ocr") or "auto"),
+                umi_paddle_exe=arguments.get("umi_paddle_exe"),
+                umi_paddle_module=arguments.get("umi_paddle_module"),
+                progress_callback=progress_callback,
+            )
+            update_job(
+                job_id,
+                status="done",
+                finished_at=timestamp(),
+                results=[result],
+                artifacts=result.get("artifacts", []),
+                completed=result.get("source_count", 0),
+                total=result.get("source_count", 0),
+            )
+        except Exception as exc:  # noqa: BLE001
+            update_job(job_id, status="failed", finished_at=timestamp(), error=str(exc), traceback=traceback.format_exc())
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {"job_id": job_id, "status": "running", "kind": "image_book_rebuild"}
 
 
 def serialize_result(result: Any) -> Any:

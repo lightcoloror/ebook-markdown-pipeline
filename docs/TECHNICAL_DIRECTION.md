@@ -195,9 +195,8 @@
 3. 将 Docling 接为通用默认后端。
 4. 将 MinerU 保留为复杂文档增强后端，并继续完善分段、超时、复查报告。
 5. 将 `rebuild_image_book` 的排序结果支持人工修正后重跑。
-6. 给 MCP/HTTP 增加异步 job 模式覆盖截图成书和定位索引。
-7. 提供 Docker image 和固定 `/health` 检查。
-8. 为 OpenClaw、Hermes Agent、Codex 等 agent 提供最小调用示例。
+6. 提供 Docker image 和固定 `/health` 检查。
+7. 为 OpenClaw、Hermes Agent、Codex 等 agent 提供最小调用示例。
 
 ## 非目标
 
