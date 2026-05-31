@@ -24,6 +24,7 @@ from ebook_markdown_pipeline import (  # noqa: E402
     normalize_command_options,
     write_batch_summary,
 )
+from ebook_markdown_pipeline.document_locator import build_location_index, query_location_index  # noqa: E402
 
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -218,6 +219,37 @@ def tool_schemas() -> list[dict[str, Any]]:
                 "required": ["path"],
             },
         },
+        {
+            "name": "build_location_index",
+            "description": "Build a page/image-level searchable index for PDFs and image files.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"},
+                    "output": {"type": "string"},
+                    "recursive": {"type": "boolean", "default": True},
+                    "include_hidden": {"type": "boolean", "default": False},
+                    "ocr": {"type": "string", "enum": ["auto", "always", "never"], "default": "auto"},
+                    "umi_render_dpi": {"type": "integer", "default": 200},
+                    "umi_paddle_exe": {"type": "string"},
+                    "umi_paddle_module": {"type": "string"},
+                },
+                "required": ["input", "output"],
+            },
+        },
+        {
+            "name": "query_location_index",
+            "description": "Search a generated location SQLite index and return source file plus PDF page/image hit.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "index": {"type": "string"},
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer", "default": 20},
+                },
+                "required": ["index", "query"],
+            },
+        },
     ]
 
 
@@ -234,6 +266,10 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return read_report(arguments)
     if name == "read_pdf_tool_log":
         return read_pdf_tool_log(arguments)
+    if name == "build_location_index":
+        return build_location_index_tool(arguments)
+    if name == "query_location_index":
+        return query_location_index_tool(arguments)
     raise ValueError(f"Unknown tool: {name}")
 
 
@@ -381,6 +417,27 @@ def read_pdf_tool_log(arguments: dict[str, Any]) -> dict[str, Any]:
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     tail = lines[-max_lines:]
     return {"path": str(path), "lines": tail, "log": "\n".join(tail), "total_lines": len(lines)}
+
+
+def build_location_index_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    return build_location_index(
+        input_path=Path(arguments["input"]),
+        output_dir=Path(arguments["output"]),
+        recursive=bool(arguments.get("recursive", True)),
+        include_hidden=bool(arguments.get("include_hidden", False)),
+        ocr_mode=str(arguments.get("ocr") or "auto"),
+        umi_render_dpi=int(arguments.get("umi_render_dpi") or 200),
+        umi_paddle_exe=arguments.get("umi_paddle_exe"),
+        umi_paddle_module=arguments.get("umi_paddle_module"),
+    )
+
+
+def query_location_index_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    return query_location_index(
+        Path(arguments["index"]),
+        str(arguments["query"]),
+        limit=int(arguments.get("limit") or 20),
+    )
 
 
 def serialize_result(result: Any) -> Any:

@@ -118,6 +118,28 @@ python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_http.py --host 0
 powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipeline\scripts\run_docker_agent_smoke.ps1
 ```
 
+## 轻量定位索引
+
+如果只需要知道关键词出现在“哪份 PDF 的哪一页”或“哪张图片”，不需要精确坐标，可以使用页级/图片级定位索引：
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\document_locator.py index `
+  D:\documents `
+  D:\documents-index `
+  --recursive `
+  --ocr auto
+```
+
+查询：
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\document_locator.py query `
+  D:\documents-index\document_locations.sqlite `
+  "合同金额"
+```
+
+输出会包含源文件、PDF 页码或图片文件、匹配片段。`--ocr never` 只用 PDF 文本层，速度最快；`--ocr auto` 会对无文本层 PDF 页和图片调用 Umi-OCR。
+
 失败后只重跑未完成项：
 
 ```powershell

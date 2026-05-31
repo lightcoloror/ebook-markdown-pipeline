@@ -47,6 +47,8 @@ def main() -> int:
                 "get_job_status",
                 "read_report",
                 "read_pdf_tool_log",
+                "build_location_index",
+                "query_location_index",
             }
             missing = sorted(required_tools - tool_names)
             if missing:
@@ -80,6 +82,21 @@ def main() -> int:
                 final = poll_job(proc, job_id)
                 if final["status"] != "done":
                     raise RuntimeError(f"Conversion job did not finish: {final}")
+
+            location_dir = tmpdir / "locations"
+            location = call_tool(
+                proc,
+                80,
+                "build_location_index",
+                {
+                    "input": str(input_file),
+                    "output": str(location_dir),
+                    "recursive": False,
+                    "ocr": "never",
+                },
+            )
+            if location["record_count"] != 0:
+                raise RuntimeError(f"TXT should not be indexed by the location indexer: {location}")
 
             print("MCP stdio smoke test passed.")
             return 0

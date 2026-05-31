@@ -30,6 +30,8 @@ Use these tools:
 - `get_job_status`: poll progress and results.
 - `read_report`: inspect a generated report JSON.
 - `read_pdf_tool_log`: inspect Marker/MinerU logs.
+- `build_location_index`: build a lightweight PDF-page/image search index when exact layout is not required.
+- `query_location_index`: search the lightweight location index and return source plus page/image.
 
 ## CLI Fallback
 
@@ -42,6 +44,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py INPUT OUT
 - Always scan before conversion when the user provides a folder or multiple files.
 - Run health check before the first conversion in a new machine/session.
 - Use `pdf_pipeline_mode=auto` by default.
+- If the user only needs to know which PDF page or image contains information, use the location index tools instead of full Markdown conversion.
 - Do not force Marker on long PDFs unless the user explicitly asks.
 - For long jobs, start conversion and poll status instead of blocking indefinitely.
 - If a PDF conversion fails or looks poor, inspect `.reports/summary.md`, `.reports/review-checklist.md`, per-book report JSON, and `.reports/pdf-tool-logs/*.log`.

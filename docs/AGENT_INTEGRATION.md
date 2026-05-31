@@ -128,10 +128,36 @@ Reads a generated `.reports/*.report.json` file.
 
 Reads the tail of a persisted Marker/MinerU log file from `.reports/pdf-tool-logs/*.log`.
 
+### `build_location_index`
+
+Builds a lightweight page/image-level search index for PDF and image files.
+
+Use this when the user only needs fuzzy location:
+
+- PDF file plus page number.
+- Image filename.
+- Text snippet around the match.
+
+Important options:
+
+- `ocr=never`: only use existing PDF text layers.
+- `ocr=auto`: use PDF text layers first, OCR empty PDF pages and images with Umi-OCR.
+- `ocr=always`: OCR every PDF page and image.
+
+Outputs:
+
+- `document_locations.jsonl`
+- `document_locations.sqlite`
+
+### `query_location_index`
+
+Searches `document_locations.sqlite` and returns `source`, `kind`, `page`, `engine`, and `snippet`.
+
 ## Agent Usage Policy
 
 - Prefer `scan_books` before `start_conversion`.
 - Run `health_check` before the first conversion in a new environment.
+- Use `build_location_index` instead of full conversion when the user only needs to find which page/image contains a keyword.
 - For PDFs, keep `pdf_pipeline_mode=auto` unless the user explicitly chooses another mode.
 - For long-running conversions, call `start_conversion`, then poll `get_job_status`.
 - If output quality is questionable, inspect `summary.md`, `review-checklist.md`, per-book report JSON, and PDF tool logs.
