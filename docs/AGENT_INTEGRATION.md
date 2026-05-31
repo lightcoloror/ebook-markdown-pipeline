@@ -101,6 +101,16 @@ Useful optional parameters:
 
 Checks required external commands, Python dependencies, CUDA status, and model cache.
 
+### `inspect_document`
+
+Lightweight preflight inspection for a file or folder. It does not run heavy document models.
+
+Use it to decide the next tool:
+
+- PDF: returns page count, text-layer ratio, image/layout/table/two-column signals, scanned likelihood, and recommended PDF route.
+- Image: returns dimensions, hash, OCR risk warnings, and whether to use location indexing or image-book rebuilding.
+- Folder: returns supported document/image counts and sample inspection results.
+
 ### `start_conversion`
 
 Starts a background conversion job and returns `job_id`.

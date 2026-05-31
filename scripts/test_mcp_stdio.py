@@ -45,6 +45,7 @@ def main() -> int:
             required_tools = {
                 "scan_books",
                 "health_check",
+                "inspect_document",
                 "start_conversion",
                 "get_job_status",
                 "read_report",
@@ -70,6 +71,10 @@ def main() -> int:
             )
             if scan["count"] != 1:
                 raise RuntimeError(f"Expected one scanned file, got {scan['count']}")
+
+            inspected_txt = call_tool(proc, 31, "inspect_document", {"input": str(input_file)})
+            if inspected_txt["status"] != "ok" or inspected_txt["kind"] != "pandoc":
+                raise RuntimeError(f"TXT inspection failed: {inspected_txt}")
 
             if args.convert:
                 start = call_tool(
@@ -107,6 +112,20 @@ def main() -> int:
             pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 80, 80), 0)
             pixmap.clear_with(255)
             pixmap.save(str(image_dir / "shot-001.png"))
+            inspected_image_dir = call_tool(proc, 32, "inspect_document", {"input": str(image_dir), "recursive": False})
+            if inspected_image_dir["kind"] != "directory" or inspected_image_dir["counts"]["images"] != 1:
+                raise RuntimeError(f"Image directory inspection failed: {inspected_image_dir}")
+
+            pdf_path = tmpdir / "sample.pdf"
+            pdf_doc = fitz.open()
+            pdf_page = pdf_doc.new_page()
+            pdf_page.insert_text((72, 72), "MCP inspect PDF text layer")
+            pdf_doc.save(pdf_path)
+            pdf_doc.close()
+            inspected_pdf = call_tool(proc, 33, "inspect_document", {"input": str(pdf_path)})
+            if inspected_pdf["kind"] != "pdf" or inspected_pdf["preflight"]["page_count"] != 1:
+                raise RuntimeError(f"PDF inspection failed: {inspected_pdf}")
+
             image_book_dir = tmpdir / "image-book"
             image_book = call_tool(
                 proc,

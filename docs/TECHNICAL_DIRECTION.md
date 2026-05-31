@@ -191,7 +191,7 @@
 优先级从高到低：
 
 1. 扩展 `read_artifact`，覆盖更多 artifact 类型和安全读取策略。
-2. 新增 `inspect_document` 工具，先做轻量预检，再逐步接 Docling。
+2. 扩展 `inspect_document`，逐步接入 Docling 的结构化预检。
 3. 将 Docling 接为通用默认后端。
 4. 将 MinerU 保留为复杂文档增强后端，并继续完善分段、超时、复查报告。
 5. 将 `rebuild_image_book` 的排序结果支持人工修正后重跑。

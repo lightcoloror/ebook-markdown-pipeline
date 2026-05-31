@@ -25,6 +25,7 @@ from ebook_markdown_pipeline import (  # noqa: E402
     write_batch_summary,
 )
 from ebook_markdown_pipeline.document_locator import build_location_index, query_location_index  # noqa: E402
+from ebook_markdown_pipeline.document_inspector import inspect_document  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book  # noqa: E402
 
 
@@ -167,6 +168,20 @@ def tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "inspect_document",
+            "description": "Lightweight preflight inspection for a document/image/folder. Returns type, risks, and recommended next tool.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"},
+                    "recursive": {"type": "boolean", "default": True},
+                    "include_hidden": {"type": "boolean", "default": False},
+                    "sample_pages": {"type": "integer", "default": 8},
+                },
+                "required": ["input"],
+            },
+        },
+        {
             "name": "start_conversion",
             "description": "Start a background conversion job. Poll with get_job_status.",
             "inputSchema": {
@@ -290,6 +305,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return scan_books(arguments)
     if name == "health_check":
         return health_check(arguments)
+    if name == "inspect_document":
+        return inspect_document_tool(arguments)
     if name == "start_conversion":
         return start_conversion(arguments)
     if name == "get_job_status":
@@ -352,6 +369,15 @@ def health_check(arguments: dict[str, Any]) -> dict[str, Any]:
         _, sources = resolve_sources_and_root(options)
     checks = dependency_health_report(sources, options)
     return {"checks": checks, "ok": all(item["status"] != "missing" for item in checks)}
+
+
+def inspect_document_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    return inspect_document(
+        Path(arguments["input"]),
+        recursive=bool(arguments.get("recursive", True)),
+        include_hidden=bool(arguments.get("include_hidden", False)),
+        sample_pages=int(arguments.get("sample_pages") or 8),
+    )
 
 
 def start_conversion(arguments: dict[str, Any]) -> dict[str, Any]:
