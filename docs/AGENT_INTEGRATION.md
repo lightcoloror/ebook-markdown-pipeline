@@ -130,6 +130,21 @@ Reads a generated `.reports/*.report.json` file.
 
 Reads the tail of a persisted Marker/MinerU log file from `.reports/pdf-tool-logs/*.log`.
 
+### `read_artifact`
+
+Reads text-like artifacts returned by other tools, with `max_chars` and `max_lines` limits.
+
+Use this for:
+
+- Markdown outputs.
+- JSON reports.
+- JSONL previews.
+- Review checklists.
+- Order reports.
+- Tool logs.
+
+Do not use it to read SQLite artifacts directly. For `location_index_sqlite`, call `query_location_index`.
+
 ### `build_location_index`
 
 Builds a lightweight page/image-level search index for PDF and image files.

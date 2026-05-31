@@ -49,6 +49,7 @@ def main() -> int:
                 "get_job_status",
                 "read_report",
                 "read_pdf_tool_log",
+                "read_artifact",
                 "build_location_index",
                 "query_location_index",
                 "rebuild_image_book",
@@ -121,6 +122,34 @@ def main() -> int:
             if image_book["source_count"] != 1 or not Path(image_book["book"]).exists():
                 raise RuntimeError(f"Image book rebuild failed: {image_book}")
 
+            book_artifact = call_tool(
+                proc,
+                82,
+                "read_artifact",
+                {
+                    "path": image_book["book"],
+                    "artifact_type": "markdown",
+                    "max_chars": 2000,
+                    "max_lines": 50,
+                },
+            )
+            if book_artifact["artifact_type"] != "markdown" or "text" not in book_artifact:
+                raise RuntimeError(f"Markdown artifact read failed: {book_artifact}")
+
+            clusters_artifact = call_tool(proc, 83, "read_artifact", {"path": image_book["clusters"]})
+            if clusters_artifact["artifact_type"] != "clusters_json" or "json" not in clusters_artifact:
+                raise RuntimeError(f"JSON artifact read failed: {clusters_artifact}")
+
+            sqlite_artifact = call_tool(
+                proc,
+                84,
+                "read_artifact",
+                {"path": str(location_dir / "document_locations.sqlite")},
+                allow_error=True,
+            )
+            if not sqlite_artifact.get("error"):
+                raise RuntimeError(f"SQLite artifact should require a specific query tool: {sqlite_artifact}")
+
             print("MCP stdio smoke test passed.")
             return 0
         finally:
@@ -143,11 +172,18 @@ def call(proc: subprocess.Popen[str], request_id: int, method: str, params: dict
     return response
 
 
-def call_tool(proc: subprocess.Popen[str], request_id: int, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+def call_tool(
+    proc: subprocess.Popen[str],
+    request_id: int,
+    name: str,
+    arguments: dict[str, Any],
+    *,
+    allow_error: bool = False,
+) -> dict[str, Any]:
     response = call(proc, request_id, "tools/call", {"name": name, "arguments": arguments})
     content = response["result"]["content"][0]["text"]
     payload = json.loads(content)
-    if payload.get("error"):
+    if payload.get("error") and not allow_error:
         raise RuntimeError(payload)
     return payload
 

@@ -221,6 +221,20 @@ def tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "read_artifact",
+            "description": "Read a text/JSON/JSONL/Markdown artifact by path with size and line limits.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "artifact_type": {"type": "string"},
+                    "max_chars": {"type": "integer", "default": 20000},
+                    "max_lines": {"type": "integer", "default": 300},
+                },
+                "required": ["path"],
+            },
+        },
+        {
             "name": "build_location_index",
             "description": "Build a page/image-level searchable index for PDFs and image files.",
             "inputSchema": {
@@ -284,6 +298,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return read_report(arguments)
     if name == "read_pdf_tool_log":
         return read_pdf_tool_log(arguments)
+    if name == "read_artifact":
+        return read_artifact(arguments)
     if name == "build_location_index":
         return build_location_index_tool(arguments)
     if name == "query_location_index":
@@ -437,6 +453,91 @@ def read_pdf_tool_log(arguments: dict[str, Any]) -> dict[str, Any]:
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     tail = lines[-max_lines:]
     return {"path": str(path), "lines": tail, "log": "\n".join(tail), "total_lines": len(lines)}
+
+
+def read_artifact(arguments: dict[str, Any]) -> dict[str, Any]:
+    path = Path(arguments["path"])
+    artifact_type = str(arguments.get("artifact_type") or infer_artifact_type(path))
+    max_chars = clamp_int(arguments.get("max_chars"), default=20000, minimum=1000, maximum=200000)
+    max_lines = clamp_int(arguments.get("max_lines"), default=300, minimum=20, maximum=5000)
+
+    if not path.exists() or not path.is_file():
+        return {"error": True, "message": f"Artifact file not found: {path}", "path": str(path)}
+    if path.suffix.lower() in {".sqlite", ".db"} or artifact_type.endswith("_sqlite"):
+        return {
+            "error": True,
+            "message": "SQLite artifacts are not read directly. Use query_location_index or a specific query tool.",
+            "path": str(path),
+            "artifact_type": artifact_type,
+        }
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+    limited_lines = lines[:max_lines]
+    limited_text = "\n".join(limited_lines)
+    truncated_by_lines = len(lines) > len(limited_lines)
+    truncated_by_chars = len(limited_text) > max_chars
+    if truncated_by_chars:
+        limited_text = limited_text[:max_chars]
+    payload: dict[str, Any] = {
+        "path": str(path),
+        "artifact_type": artifact_type,
+        "size_bytes": path.stat().st_size,
+        "total_lines": len(lines),
+        "returned_lines": min(len(lines), max_lines),
+        "truncated": truncated_by_lines or truncated_by_chars,
+        "text": limited_text,
+    }
+    if artifact_type in {"json", "clusters_json"} and not payload["truncated"]:
+        try:
+            payload["json"] = json.loads(text)
+        except json.JSONDecodeError:
+            payload["json_error"] = "Invalid JSON."
+    if artifact_type in {"pages_jsonl", "location_index_jsonl"}:
+        payload["records"] = parse_jsonl_preview(limited_lines)
+    return payload
+
+
+def infer_artifact_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    name = path.name.lower()
+    if suffix in {".md", ".markdown"}:
+        return "markdown"
+    if suffix == ".jsonl":
+        if "location" in name:
+            return "location_index_jsonl"
+        return "pages_jsonl"
+    if suffix == ".json":
+        if "cluster" in name:
+            return "clusters_json"
+        return "json"
+    if suffix in {".log", ".txt"}:
+        return "text"
+    if suffix in {".html", ".htm"}:
+        return "html"
+    return suffix.lstrip(".") or "artifact"
+
+
+def parse_jsonl_preview(lines: list[str]) -> list[dict[str, Any]]:
+    records = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            records.append(value)
+    return records
+
+
+def clamp_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except Exception:
+        parsed = default
+    return min(max(parsed, minimum), maximum)
 
 
 def build_location_index_tool(arguments: dict[str, Any]) -> dict[str, Any]:
