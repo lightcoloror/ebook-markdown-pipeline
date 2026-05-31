@@ -9,7 +9,7 @@ import sys
 from dataclasses import asdict, dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -44,7 +44,11 @@ class ScreenshotPage:
     order_index: int | None = None
     order_confidence: float = 0.0
     previous_overlap_chars: int = 0
+    order_reason: str = ""
     title_candidates: list[str] | None = None
+
+
+ProgressCallback = Callable[[dict], None]
 
 
 def main() -> int:
@@ -85,7 +89,9 @@ def rebuild_image_book(
     ocr_mode: str = "auto",
     umi_paddle_exe: str | None = None,
     umi_paddle_module: str | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict:
+    emit_progress(progress_callback, "collect", f"Collected image sources from {input_path}")
     sources = collect_image_sources(input_path, recursive=recursive, include_hidden=include_hidden)
     return rebuild_image_book_from_sources(
         sources,
@@ -95,6 +101,7 @@ def rebuild_image_book(
         ocr_mode=ocr_mode,
         umi_paddle_exe=umi_paddle_exe,
         umi_paddle_module=umi_paddle_module,
+        progress_callback=progress_callback,
     )
 
 
@@ -107,6 +114,7 @@ def rebuild_image_book_from_sources(
     ocr_mode: str = "auto",
     umi_paddle_exe: str | None = None,
     umi_paddle_module: str | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     source_list = [
@@ -114,14 +122,18 @@ def rebuild_image_book_from_sources(
         for source in sources
         if source.exists() and source.is_file() and source.suffix.lower() in IMAGE_EXTENSIONS
     ]
+    emit_progress(progress_callback, "ocr", f"OCR {len(source_list)} image(s)", index=0, total=len(source_list))
     pages = ocr_screenshot_pages(
         source_list,
         ocr_mode=ocr_mode,
         umi_paddle_exe=umi_paddle_exe,
         umi_paddle_module=umi_paddle_module,
+        progress_callback=progress_callback,
     )
+    emit_progress(progress_callback, "dedupe", "Detect duplicate screenshots")
     duplicate_groups = mark_duplicates(pages)
     representatives = choose_representatives(pages)
+    emit_progress(progress_callback, "order", "Infer screenshot order")
     ordered_pages = infer_page_order(representatives)
 
     pages_jsonl = output_dir / "pages.jsonl"
@@ -130,6 +142,7 @@ def rebuild_image_book_from_sources(
     review_md = output_dir / "review.md"
     book_md = output_dir / "book.md"
 
+    emit_progress(progress_callback, "write", f"Write outputs to {output_dir}")
     write_pages_jsonl(pages_jsonl, pages)
     clusters_json.write_text(json.dumps(duplicate_groups, ensure_ascii=False, indent=2), encoding="utf-8")
     order_md.write_text(render_order_markdown(ordered_pages), encoding="utf-8")
@@ -175,6 +188,7 @@ def ocr_screenshot_pages(
     ocr_mode: str,
     umi_paddle_exe: str | None,
     umi_paddle_module: str | None,
+    progress_callback: ProgressCallback | None = None,
 ) -> list[ScreenshotPage]:
     options = normalize_command_options(
         default_options(
@@ -187,7 +201,9 @@ def ocr_screenshot_pages(
     try:
         if ocr_mode != "never":
             ocr_engine = create_umi_paddle_engine(options)
-        for source in sources:
+        source_list = list(sources)
+        for index, source in enumerate(source_list, start=1):
+            emit_progress(progress_callback, "ocr_page", f"OCR image {index}/{len(source_list)}: {source.name}", index=index, total=len(source_list), source=source)
             text = umi_ocr_image(source, ocr_engine).strip() if ocr_engine is not None else ""
             width, height, image_hash = image_metadata(source)
             normalized_text = normalize_text_for_hash(text)
@@ -295,6 +311,7 @@ def infer_page_order(pages: list[ScreenshotPage]) -> list[ScreenshotPage]:
     start_index = choose_start_page_index(remaining)
     ordered = [remaining.pop(start_index)]
     ordered[0].order_confidence = base_order_confidence(ordered[0])
+    ordered[0].order_reason = "start"
 
     while remaining:
         previous = ordered[-1]
@@ -311,6 +328,7 @@ def infer_page_order(pages: list[ScreenshotPage]) -> list[ScreenshotPage]:
         next_page = remaining.pop(best_index)
         next_page.previous_overlap_chars = best_overlap
         next_page.order_confidence = min(max(best_score, 0.0), 1.0)
+        next_page.order_reason = order_reason(previous, next_page, best_overlap)
         ordered.append(next_page)
 
     for index, page in enumerate(ordered, start=1):
@@ -361,6 +379,23 @@ def continuity_score(previous: ScreenshotPage, candidate: ScreenshotPage) -> tup
     if starts_new_section(candidate.text):
         return 0.48, overlap
     return 0.35, overlap
+
+
+def order_reason(previous: ScreenshotPage, candidate: ScreenshotPage, overlap: int) -> str:
+    if previous.page_number is not None and candidate.page_number is not None:
+        distance = candidate.page_number - previous.page_number
+        if distance == 1:
+            return "page_number_continuity"
+        if distance > 1:
+            return f"page_number_gap_{distance}"
+        return "page_number_conflict"
+    if overlap:
+        return f"text_overlap_{overlap}"
+    if starts_new_section(candidate.text):
+        return "starts_new_section"
+    if candidate.filename_number is not None:
+        return "filename_number"
+    return "fallback_order"
 
 
 def suffix_prefix_overlap(left: str, right: str, *, max_chars: int = 500) -> int:
@@ -441,13 +476,13 @@ def infer_heading_level(line: str, *, previous_blank: bool) -> int | None:
 
 def render_order_markdown(pages: list[ScreenshotPage]) -> str:
     lines = ["# 图片顺序推断 / Inferred Screenshot Order", ""]
-    lines.append("| # | Source | Page | Confidence | Overlap | Title candidates |")
-    lines.append("| --- | --- | --- | --- | --- | --- |")
+    lines.append("| # | Source | Page | Confidence | Reason | Overlap | Title candidates |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- |")
     for page in pages:
         titles = "; ".join(page.title_candidates or [])
         lines.append(
             f"| {page.order_index} | {markdown_cell(page.source)} | {page.page_number or ''} | "
-            f"{page.order_confidence:.2f} | {page.previous_overlap_chars} | {markdown_cell(titles)} |"
+            f"{page.order_confidence:.2f} | {markdown_cell(page.order_reason)} | {page.previous_overlap_chars} | {markdown_cell(titles)} |"
         )
     return "\n".join(lines).rstrip() + "\n"
 
@@ -549,6 +584,28 @@ def short_hash(value: str | bytes) -> str:
 
 def markdown_cell(value: str) -> str:
     return value.replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+
+
+def emit_progress(
+    callback: ProgressCallback | None,
+    stage: str,
+    message: str,
+    *,
+    index: int | None = None,
+    total: int | None = None,
+    source: Path | None = None,
+) -> None:
+    if callback is None:
+        return
+    callback(
+        {
+            "stage": stage,
+            "message": message,
+            "index": index,
+            "total": total,
+            "source": str(source) if source else "",
+        }
+    )
 
 
 if __name__ == "__main__":

@@ -681,12 +681,16 @@ class BookConverterUI:
 
         def worker() -> None:
             try:
+                def progress_callback(event: dict) -> None:
+                    self.queue.put(("image_book_progress", event))
+
                 result = rebuild_image_book_from_sources(
                     sources,
                     output_path,
                     input_label=str(input_root),
                     title=input_root.name or "Rebuilt Image Book",
                     ocr_mode="auto",
+                    progress_callback=progress_callback,
                 )
                 self.queue.put(("image_book_done", result))
             except Exception as exc:  # noqa: BLE001
@@ -735,6 +739,8 @@ class BookConverterUI:
                     self.write_log(f"Book: {payload.get('book')}")
                     self.write_log(f"Order: {payload.get('order')}")
                     self.write_log(f"Review: {payload.get('review')}")
+                elif kind == "image_book_progress":
+                    self.handle_image_book_progress(payload)
                 elif kind == "error":
                     self.set_running_state(False)
                     self.status_var.set("执行失败 / Failed")
@@ -785,6 +791,21 @@ class BookConverterUI:
             self.write_log(result.message)
         if getattr(result, "report", None):
             self.write_log(f"报告 / Report: {result.report}")
+
+    def handle_image_book_progress(self, payload: dict) -> None:
+        stage = payload.get("stage", "")
+        message = payload.get("message", "")
+        index = payload.get("index")
+        total = payload.get("total") or self.total_files or 1
+        if isinstance(index, int) and index > 0:
+            self.progress.configure(value=min(index, total))
+            self.status_var.set(f"截图成书 / Image Book {index}/{total}")
+        elif stage in {"dedupe", "order", "write"}:
+            offset = {"dedupe": 0.65, "order": 0.78, "write": 0.9}.get(stage, 0.5)
+            self.progress.configure(value=max(1, self.total_files * offset))
+        self.current_stage_var.set(str(message or stage))
+        if message:
+            self.write_log(f"  - {message}")
 
     def open_review_checklist(self) -> None:
         output_text = self.output_var.get().strip()

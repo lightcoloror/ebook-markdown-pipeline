@@ -48,6 +48,8 @@ def main() -> int:
         raise RuntimeError(f"Expected overlap-aware order, got {[page.source for page in ordered]}")
     if ordered[1].previous_overlap_chars < 6:
         raise RuntimeError("Expected duplicated overlap to be recorded as ordering evidence.")
+    if not ordered[1].order_reason.startswith("text_overlap_"):
+        raise RuntimeError(f"Expected text-overlap ordering reason: {ordered[1].order_reason}")
 
     markdown = text_to_markdown("第一章 开始\n\n1.1 小节\n正文")
     if "## 第一章 开始" not in markdown or "### 1.1 小节" not in markdown:
@@ -56,6 +58,24 @@ def main() -> int:
     book = render_book_markdown(Path("截图集"), ordered)
     if "<!-- source: b.png -->" not in book or "## 第一章 开始" not in book:
         raise RuntimeError(f"Expected traceable rebuilt Markdown: {book}")
+
+    events = []
+    from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book_from_sources  # noqa: PLC0415
+
+    output_dir = Path.cwd().joinpath(".tmp_image_book_progress").resolve()
+    result = rebuild_image_book_from_sources(
+        [],
+        output_dir,
+        ocr_mode="never",
+        progress_callback=events.append,
+    )
+    if not Path(result["book"]).exists():
+        raise RuntimeError(f"Expected output files from empty rebuild: {result}")
+    if not {"ocr", "dedupe", "order", "write"}.issubset({event["stage"] for event in events}):
+        raise RuntimeError(f"Expected progress events, got: {events}")
+    for path in output_dir.glob("*"):
+        path.unlink()
+    output_dir.rmdir()
 
     print("Image book rebuilder smoke test passed.")
     return 0

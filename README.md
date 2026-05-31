@@ -156,7 +156,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\image_book_rebuilder.py build `
   --recursive
 ```
 
-输出包括 `book.md`、`order.md`、`review.md`、`pages.jsonl`、`clusters.json`。排序会综合图片内页码、文件名数字、文件时间、文本前后重叠和重复截图分组；重复截图会作为排序和复查依据保留在 `review.md`，不会静默丢弃。
+输出包括 `book.md`、`order.md`、`review.md`、`pages.jsonl`、`clusters.json`。排序会综合图片内页码、文件名数字、文件时间、文本前后重叠和重复截图分组；`order.md` 会写明排序置信度和排序依据，重复截图会作为排序和复查依据保留在 `review.md`，不会静默丢弃。
 
 失败后只重跑未完成项：
 
