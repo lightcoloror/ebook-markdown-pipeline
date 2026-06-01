@@ -213,8 +213,11 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\stress_agent_http.py `
   --manifest D:\used-by-codex\ebook_markdown_pipeline\benchmarks\samples.local.json `
   --iterations 20 `
   --concurrency 4 `
+  --retries 2 `
   --pdf-pipeline-mode pymupdf4llm
 ```
+
+压力测试报告会记录成功率、artifact 读取率、平均耗时和最长耗时；HTTP 连接错误、5xx 或 `/call` 返回的 `retryable=true` 错误会按 `--retries` 做有限重试。
 
 ## 截图成书重建
 

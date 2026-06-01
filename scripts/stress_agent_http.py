@@ -24,6 +24,8 @@ def main() -> int:
     parser.add_argument("--iterations", type=int, default=20)
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--timeout", type=float, default=300)
+    parser.add_argument("--retries", type=int, default=2)
+    parser.add_argument("--retry-delay", type=float, default=0.5)
     parser.add_argument("--ocr", choices=["auto", "never"], default="never")
     parser.add_argument("--intent", choices=["auto", "convert", "locate", "rebuild"], default="auto")
     parser.add_argument("--query", default="")
@@ -50,6 +52,7 @@ def main() -> int:
         "manifest": str(args.manifest),
         "iterations": args.iterations,
         "concurrency": args.concurrency,
+        "retries": args.retries,
         "duration_seconds": round(time.monotonic() - started, 3),
         "summary": summarize(results),
         "results": sorted(results, key=lambda item: item["iteration"]),
@@ -57,7 +60,7 @@ def main() -> int:
     write_json(args.output / "agent-stress-results.json", payload)
     (args.output / "agent-stress-summary.md").write_text(render_summary(payload), encoding="utf-8")
     print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
-    return 0 if payload["summary"].get("failed", 0) == 0 else 3
+    return 0 if payload["summary"].get("counts", {}).get("failed", 0) == 0 else 3
 
 
 def run_iteration(args: argparse.Namespace, sample: dict, iteration: int) -> dict[str, Any]:
@@ -94,7 +97,15 @@ def run_iteration(args: argparse.Namespace, sample: dict, iteration: int) -> dic
                 "read_artifact",
                 {"path": artifact["path"], "artifact_type": artifact["type"], "max_chars": 1000, "max_lines": 40},
             )
-        return finish(base, started, "ok" if job.get("status") == "done" else "failed", routed=routed, job=job, artifact=artifact_result)
+        return finish(
+            base,
+            started,
+            "ok" if job.get("status") == "done" else "failed",
+            routed=routed,
+            job=job,
+            artifact=artifact_result,
+            artifact_read=bool(artifact_result),
+        )
     except Exception as exc:  # noqa: BLE001
         return finish(base, started, "failed", failure_reason=str(exc))
 
@@ -105,13 +116,38 @@ def call_tool(args: argparse.Namespace, name: str, arguments: dict[str, Any]) ->
     if args.token:
         headers["Authorization"] = f"Bearer {args.token}"
     request = urllib.request.Request(args.url.rstrip("/") + "/call", data=payload, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            body = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        body = json.loads(exc.read().decode("utf-8", errors="replace"))
-        raise RuntimeError(body) from exc
-    return body.get("result") if isinstance(body.get("result"), dict) else body
+    last_error: Exception | None = None
+    for attempt in range(args.retries + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                body = json.loads(response.read().decode("utf-8"))
+            if body.get("ok") is False:
+                error = RuntimeError(body)
+                if body.get("retryable") and attempt < args.retries:
+                    last_error = error
+                    time.sleep(args.retry_delay * (attempt + 1))
+                    continue
+                raise error
+            return body.get("result") if isinstance(body.get("result"), dict) else body
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode("utf-8", errors="replace")
+            try:
+                body = json.loads(raw)
+            except json.JSONDecodeError:
+                body = {"ok": False, "code": f"http_{exc.code}", "message": raw, "retryable": exc.code >= 500}
+            error = RuntimeError(body)
+            if body.get("retryable") and attempt < args.retries:
+                last_error = error
+                time.sleep(args.retry_delay * (attempt + 1))
+                continue
+            raise error from exc
+        except urllib.error.URLError as exc:
+            last_error = exc
+            if attempt < args.retries:
+                time.sleep(args.retry_delay * (attempt + 1))
+                continue
+            raise RuntimeError(f"HTTP call failed after {args.retries + 1} attempt(s): {exc}") from exc
+    raise RuntimeError(f"HTTP call failed after retries: {last_error}")
 
 
 def poll_job(args: argparse.Namespace, job_id: str) -> dict[str, Any]:
@@ -141,11 +177,20 @@ def finish(base: dict, started: float, status: str, **updates) -> dict:
     return payload
 
 
-def summarize(results: list[dict[str, Any]]) -> dict[str, int]:
+def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
     counts: dict[str, int] = {}
     for item in results:
         counts[item["status"]] = counts.get(item["status"], 0) + 1
-    return counts
+    total = max(len(results), 1)
+    durations = [float(item.get("duration_seconds") or 0) for item in results]
+    counts["artifact_reads"] = sum(1 for item in results if item.get("artifact_read"))
+    return {
+        "counts": counts,
+        "success_rate": round(counts.get("ok", 0) / total, 3),
+        "artifact_read_rate": round(counts.get("artifact_reads", 0) / total, 3),
+        "avg_duration_seconds": round(sum(durations) / total, 3),
+        "max_duration_seconds": round(max(durations or [0]), 3),
+    }
 
 
 def render_summary(payload: dict[str, Any]) -> str:
@@ -155,15 +200,16 @@ def render_summary(payload: dict[str, Any]) -> str:
         f"- Created: {payload['created_at']}",
         f"- Iterations: {payload['iterations']}",
         f"- Concurrency: {payload['concurrency']}",
+        f"- Retries: {payload.get('retries', 0)}",
         f"- Duration seconds: {payload['duration_seconds']}",
         f"- Summary: {payload['summary']}",
         "",
-        "| Status | Seconds | Sample | Category | Failure |",
-        "| --- | ---: | --- | --- | --- |",
+        "| Status | Artifact read | Seconds | Sample | Category | Failure |",
+        "| --- | --- | ---: | --- | --- | --- |",
     ]
     for item in payload["results"]:
         lines.append(
-            f"| {item.get('status')} | {item.get('duration_seconds')} | "
+            f"| {item.get('status')} | {item.get('artifact_read', False)} | {item.get('duration_seconds')} | "
             f"{Path(str(item.get('source') or '')).name} | {item.get('category', '')} | "
             f"{escape_table(str(item.get('failure_reason') or ''))[:180]} |"
         )
