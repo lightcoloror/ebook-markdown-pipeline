@@ -137,8 +137,12 @@ Important options:
 - `report_dir`
 - `pdf_tool_idle_timeout`
 - `pdf_tool_finalize_timeout`
+- `docling_timeout`
+- `docling_fallback_to_pandoc`
 - `mineru_segment_min_pages`
 - `mineru_segment_pages`
+
+Reports may include `pdf_fallback_diagnostics` and `docling_diagnostics`. Agents should surface these fields when a job succeeds through fallback, because a successful artifact can still mean a lower-structure fallback pipeline was used.
 
 ### `get_job_status`
 

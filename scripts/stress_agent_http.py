@@ -37,6 +37,8 @@ def main() -> int:
     parser.add_argument("--intent", choices=["auto", "convert", "locate", "rebuild"], default="auto")
     parser.add_argument("--query", default="")
     parser.add_argument("--pdf-pipeline-mode", default="auto")
+    parser.add_argument("--pdf-tool-idle-timeout", type=float, default=None)
+    parser.add_argument("--pdf-tool-finalize-timeout", type=float, default=None)
     parser.add_argument("--docling-timeout", type=float, default=None)
     args = parser.parse_args()
 
@@ -187,6 +189,10 @@ def run_iteration(args: argparse.Namespace, sample: dict, iteration: int) -> dic
         }
         if args.docling_timeout is not None:
             material_args["docling_timeout"] = args.docling_timeout
+        if args.pdf_tool_idle_timeout is not None:
+            material_args["pdf_tool_idle_timeout"] = args.pdf_tool_idle_timeout
+        if args.pdf_tool_finalize_timeout is not None:
+            material_args["pdf_tool_finalize_timeout"] = args.pdf_tool_finalize_timeout
         if args.query:
             material_args["query"] = args.query
         routed = call_tool(args, "process_material", material_args)

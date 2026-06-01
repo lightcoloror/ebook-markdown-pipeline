@@ -60,3 +60,5 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\stress_agent_http.py `
 The stress summary records success rate, artifact read rate, average duration, and max duration. Transient network errors, 5xx responses, and `/call` envelopes with `retryable=true` are retried according to `--retries`.
 
 Use `--run-timeout` to put a wall-clock limit on the whole stress run. Completed iterations are written incrementally to `agent-stress-results.partial.json` and `agent-stress-summary.partial.md`, so interrupted or timeboxed runs still preserve evidence. Use `--http-timeout` to keep individual `/call` requests from hanging too long while polling jobs or reading artifacts.
+
+For agent-facing PDF stability checks, combine `--pdf-pipeline-mode`, `--pdf-tool-idle-timeout`, `--pdf-tool-finalize-timeout`, and `--docling-timeout`. Conversion reports include `pdf_fallback_diagnostics` when a slow or failed PDF backend falls back to PyMuPDF4LLM, and `docling_diagnostics` when Docling itself is timeboxed.

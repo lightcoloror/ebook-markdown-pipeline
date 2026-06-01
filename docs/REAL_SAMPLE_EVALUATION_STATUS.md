@@ -1,6 +1,6 @@
 # Real Sample Evaluation Status
 
-Last updated: 2026-06-01 17:05
+Last updated: 2026-06-01 17:12
 
 This document tracks the evidence needed before changing default pipelines, especially the optional Docling backend.
 
@@ -197,6 +197,20 @@ Additional result after adding Docling task isolation:
 
 Docling document conversion now runs in an isolated subprocess when `docling_timeout > 0`. The default timeout is 45 seconds, and DOCX/HTML/Markdown/CSV can fall back to a lightweight Pandoc/text path unless `--no-docling-fallback` is set.
 
+PDF fallback verification directories:
+
+- `benchmarks/runs/pdf-docling-fallback`
+- `benchmarks/runs/agent-http-pdf-docling-fallback`
+
+Additional PDF fallback result:
+
+| Run | Result |
+| --- | --- |
+| PDF CLI with `--pdf-pipeline-mode docling --docling-timeout 8` | Conversion succeeded as `pymupdf4llm(fallback from docling)`; report records Docling timeout and `pdf_fallback_diagnostics.status=ok`. |
+| PDF over HTTP `/call` with `pdf_pipeline_mode=docling`, `docling_timeout=8`, and PDF tool timeouts | 1 / 1 ok, artifact read 1 / 1, duration 20.371 seconds; report records Docling timeout and PyMuPDF4LLM fallback success. |
+
+`process_material` and `start_conversion` now expose `pdf_tool_idle_timeout`, `pdf_tool_finalize_timeout`, `docling_timeout`, and fallback controls so agents can timebox heavy PDF/document backends without losing artifact access.
+
 ## Current Blockers For Final Decision
 
 - Docling 2.96.1 is installed and passed the current document-format threshold. Keep it as the default backend for DOCX/PPTX/XLSX/HTML/Markdown/CSV when the optional dependency is installed.
@@ -205,7 +219,7 @@ Docling document conversion now runs in an isolated subprocess when `docling_tim
 - Docling's PDF/OCR path may need a writable model/cache directory; the latest PDF comparison failed on a permission issue inside the global Python/site-packages path.
 - Installing Docling into the global Python 3.13 environment introduced or exposed dependency conflicts reported by `pip check` for CrewAI, AutoGen, LiteLLM, and related packages. For long-term stability, prefer a project-specific virtual environment for this converter.
 - GitHub push is currently blocked by an invalid `gh` token, but local commits are clean.
-- Agent HTTP calls are now stable for fast real samples and produce useful partial/final evidence for mixed samples. Slow Docling document jobs now have subprocess isolation, timeout diagnostics, and fallback for DOCX/HTML/Markdown/CSV. The remaining agent-facing risk is mostly heavy PDF backends such as MinerU/Marker on long or complex PDFs.
+- Agent HTTP calls are now stable for fast real samples and produce useful partial/final evidence for mixed samples. Slow Docling document jobs now have subprocess isolation, timeout diagnostics, and fallback for DOCX/HTML/Markdown/CSV. PDF fallback diagnostics now record failed/slow Docling/Marker/MinerU attempts and PyMuPDF4LLM fallback status. The remaining agent-facing risk is mostly long-running high-quality PDF backends such as MinerU/Marker on large books, where more representative long-PDF samples should still be benchmarked.
 
 ## Next Required Runs
 

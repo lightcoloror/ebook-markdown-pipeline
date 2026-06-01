@@ -820,6 +820,7 @@ def convert_one(
     output_path = output_path or build_output_path(source, input_root, output_root, args)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     args._pdf_tool_diagnostics = []
+    args._pdf_fallback_diagnostics = []
     args._docling_diagnostics = []
     args._last_pdf_pipeline = None
     args._last_docling_pipeline = None
@@ -1283,6 +1284,20 @@ def run_pdf_convert(
     except Exception as exc:  # noqa: BLE001
         if not should_fallback_from_pdf_tool(exc, selected, args):
             raise
+        fallback_diagnostic: dict[str, object] = {
+            "source": str(source),
+            "output": str(output_path),
+            "started_at": timestamp_now(),
+            "from_pipeline": selected,
+            "to_pipeline": "pymupdf4llm",
+            "reason": str(exc),
+            "reason_type": type(exc).__name__,
+            "status": "running",
+        }
+        if isinstance(exc, PdfToolTimeoutError):
+            fallback_diagnostic["timeout_diagnostic"] = exc.diagnostic
+        getattr(args, "_pdf_fallback_diagnostics", []).append(fallback_diagnostic)
+        fallback_started = time.monotonic()
         emit_stage(
             progress_callback,
             source,
@@ -1291,7 +1306,18 @@ def run_pdf_convert(
             "fallback",
             f"{selected} 失败/超时，自动回退到 PyMuPDF4LLM",
         )
-        run_pymupdf4llm_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        try:
+            run_pymupdf4llm_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        except Exception as fallback_exc:  # noqa: BLE001
+            fallback_diagnostic["status"] = "failed"
+            fallback_diagnostic["fallback_error"] = str(fallback_exc)
+            fallback_diagnostic["fallback_error_type"] = type(fallback_exc).__name__
+            fallback_diagnostic["duration_seconds"] = round(time.monotonic() - fallback_started, 3)
+            fallback_diagnostic["finished_at"] = timestamp_now()
+            raise RuntimeError(f"{selected} failed and PyMuPDF4LLM fallback also failed: {fallback_exc}") from fallback_exc
+        fallback_diagnostic["status"] = "ok"
+        fallback_diagnostic["duration_seconds"] = round(time.monotonic() - fallback_started, 3)
+        fallback_diagnostic["finished_at"] = timestamp_now()
         args._last_pdf_pipeline = f"pymupdf4llm(fallback from {selected})"
 
 
@@ -2355,6 +2381,9 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
         diagnostics = getattr(args, "_pdf_tool_diagnostics", [])
         if diagnostics:
             payload["pdf_tool_diagnostics"] = diagnostics
+        fallback_diagnostics = getattr(args, "_pdf_fallback_diagnostics", [])
+        if fallback_diagnostics:
+            payload["pdf_fallback_diagnostics"] = fallback_diagnostics
     docling_diagnostics = getattr(args, "_docling_diagnostics", [])
     if docling_diagnostics:
         payload["docling_diagnostics"] = docling_diagnostics
@@ -3650,7 +3679,7 @@ def should_fallback_from_pdf_tool(exc: Exception, selected: str, args: argparse.
             "marker completed but no markdown file was produced",
         )
         return any(token in details for token in retryable_markers)
-    return selected in {"marker", "mineru"}
+    return selected in {"marker", "mineru", "docling"}
 
 
 if __name__ == "__main__":
