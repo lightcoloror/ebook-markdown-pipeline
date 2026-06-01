@@ -90,6 +90,7 @@ class BookConverterUI:
         self.marker_extra_var = tk.StringVar()
         self.pdf_idle_timeout_var = tk.StringVar(value="1800")
         self.pdf_finalize_timeout_var = tk.StringVar(value="480")
+        self.compare_pipeline_timeout_var = tk.StringVar(value="600")
         self.status_var = tk.StringVar(value="就绪 / Ready")
         self.current_stage_var = tk.StringVar(value="")
         self.selected_input_files: list[Path] = []
@@ -186,6 +187,8 @@ class BookConverterUI:
         ttk.Entry(settings, textvariable=self.pdf_idle_timeout_var, width=10).grid(row=3, column=1, sticky="w", padx=8)
         ttk.Label(settings, text="收尾超时(s) / Finalize").grid(row=3, column=2, sticky="w", pady=4)
         ttk.Entry(settings, textvariable=self.pdf_finalize_timeout_var, width=10).grid(row=3, column=3, sticky="w", padx=8)
+        ttk.Label(settings, text="对比超时(s) / Compare").grid(row=3, column=4, sticky="w", pady=4)
+        ttk.Entry(settings, textvariable=self.compare_pipeline_timeout_var, width=10).grid(row=3, column=5, sticky="w", padx=8)
 
         actions = ttk.Frame(container)
         actions.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
@@ -242,6 +245,7 @@ class BookConverterUI:
         ttk.Button(buttons, text="选中报告 / Report", command=self.open_selected_report).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="打开Artifact / Artifact", command=self.open_latest_artifact).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="PDF日志 / PDF log", command=self.open_latest_pdf_log).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="复制失败 / Copy Fail", command=self.copy_selected_failure_reason).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="复制Agent调用 / Copy Agent", command=self.copy_agent_call).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="重跑失败 / Retry Failed", command=self.retry_failed_items).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="推荐重跑 / Rerun Rec", command=self.rerun_selected_recommended).pack(side="left", padx=(8, 0))
@@ -953,6 +957,61 @@ class BookConverterUI:
         self.write_log(text)
         messagebox.showinfo("已复制 / Copied", "Agent 调用 JSON 已复制到剪贴板。/ Agent call JSON copied to clipboard.")
 
+    def copy_selected_failure_reason(self) -> None:
+        selected = self.selected_tree_values()
+        if not selected:
+            return
+        source = selected.get("source", "")
+        reason = ""
+        for result in self.latest_results:
+            if str(getattr(result, "source", "")) == source:
+                status = str(getattr(result, "status", ""))
+                message = str(getattr(result, "message", "") or "")
+                report = str(getattr(result, "report", "") or "")
+                reason = "\n".join(
+                    part
+                    for part in [
+                        f"source: {source}",
+                        f"status: {status}" if status else "",
+                        f"message: {message}" if message else "",
+                        f"report: {report}" if report else "",
+                    ]
+                    if part
+                )
+                break
+        if not reason:
+            output = Path(selected.get("output", ""))
+            report = output.parent / ".reports" / f"{output.stem[:140].rstrip(' ._-')}.report.json"
+            reason = self.failure_reason_from_report(report) or f"未找到失败原因 / No failure reason found for: {source}"
+        self.root.clipboard_clear()
+        self.root.clipboard_append(reason)
+        self.write_log("已复制失败原因 / Copied failure reason:")
+        self.write_log(reason)
+        messagebox.showinfo("已复制 / Copied", "失败原因已复制到剪贴板。/ Failure reason copied to clipboard.")
+
+    def failure_reason_from_report(self, report: Path) -> str:
+        if not report.exists():
+            return ""
+        try:
+            payload = json.loads(report.read_text(encoding="utf-8"))
+        except Exception:
+            return ""
+        source = payload.get("source", "")
+        status = payload.get("status", "")
+        message = payload.get("message", "")
+        output = payload.get("output", "")
+        return "\n".join(
+            part
+            for part in [
+                f"source: {source}" if source else "",
+                f"status: {status}" if status else "",
+                f"message: {message}" if message else "",
+                f"output: {output}" if output else "",
+                f"report: {report}",
+            ]
+            if part
+        )
+
     def retry_failed_items(self) -> None:
         failed = [
             Path(str(getattr(result, "source", "")))
@@ -1001,6 +1060,11 @@ class BookConverterUI:
         if source.suffix.lower() != ".pdf" or not source.exists():
             messagebox.showwarning("请选择 PDF / PDF required", "请先选择一个 PDF 文件。/ Please select a PDF file first.")
             return
+        try:
+            pipeline_timeout = float(self.compare_pipeline_timeout_var.get().strip() or "0")
+        except ValueError:
+            messagebox.showwarning("超时无效 / Invalid timeout", "PDF 对比超时必须是数字。/ Compare timeout must be numeric.")
+            return
         output_text = self.output_var.get().strip() or str(source.parent)
         compare_dir = Path(output_text) / ".reports" / "pipeline-compare" / source.stem[:80]
         self.set_running_state(True)
@@ -1023,11 +1087,25 @@ class BookConverterUI:
                     "umi",
                     "docling",
                     "--overwrite",
+                    "--pipeline-timeout",
+                    str(pipeline_timeout),
                 ]
                 completed = subprocess.run(cmd, cwd=Path(__file__).resolve().parent, text=True, encoding="utf-8", errors="replace", capture_output=True)
                 if completed.returncode not in {0, 3}:
                     raise RuntimeError((completed.stderr or completed.stdout or "").strip() or f"compare_pipelines exited {completed.returncode}")
-                self.queue.put(("artifact_done", {"message": "PDF pipeline comparison finished", "artifacts": [{"path": str(compare_dir / "pipeline-comparison.md")}]}))
+                self.queue.put(
+                    (
+                        "artifact_done",
+                        {
+                            "message": "PDF pipeline comparison finished",
+                            "artifacts": [
+                                {"path": str(compare_dir / "pipeline-comparison.md")},
+                                {"path": str(compare_dir / "pipeline-comparison.json")},
+                                {"path": str(compare_dir / "pipeline-comparison.partial.md")},
+                            ],
+                        },
+                    )
+                )
             except Exception as exc:  # noqa: BLE001
                 self.queue.put(("error", str(exc)))
 
@@ -1137,6 +1215,7 @@ class BookConverterUI:
             "marker_extra": self.marker_extra_var,
             "pdf_idle_timeout": self.pdf_idle_timeout_var,
             "pdf_finalize_timeout": self.pdf_finalize_timeout_var,
+            "compare_pipeline_timeout": self.compare_pipeline_timeout_var,
         }.items():
             if key in data and data[key] is not None:
                 variable.set(str(data[key]))
@@ -1166,6 +1245,7 @@ class BookConverterUI:
             "marker_extra": self.marker_extra_var.get(),
             "pdf_idle_timeout": self.pdf_idle_timeout_var.get(),
             "pdf_finalize_timeout": self.pdf_finalize_timeout_var.get(),
+            "compare_pipeline_timeout": self.compare_pipeline_timeout_var.get(),
         }
         try:
             self.config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")

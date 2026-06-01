@@ -56,6 +56,7 @@ This is not enough to make Docling default because the dependency is missing; it
 - On Windows, timed-out samples terminate the child process tree with `taskkill /T /F` so MinerU/Marker subprocesses do not remain as long-lived orphans.
 - Image-book rebuilding now treats per-image Umi-OCR failures as review items instead of failing the whole screenshot set; it restarts the OCR engine once and records `ocr_status` / `ocr_message` in `pages.jsonl`.
 - Screenshot page-number parsing now handles OCR-noisy page markers such as `01108`, `03108`, and `041 08` as `01/08`, `03/08`, and `04/08` when filename ordering supports that interpretation.
+- The desktop UI exposes review-flow buttons for opening outputs/reports/artifacts, opening the review checklist, retrying failures, rerunning with the recommended pipeline, copying failure reasons, and exporting PDF comparison reports with per-pipeline timeouts.
 
 ## Latest Image Set Verification
 
