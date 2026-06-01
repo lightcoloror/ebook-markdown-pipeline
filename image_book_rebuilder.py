@@ -40,6 +40,8 @@ class ScreenshotPage:
     char_count: int
     text_hash: str
     image_hash: str
+    ocr_status: str = "ok"
+    ocr_message: str = ""
     duplicate_group: int | None = None
     duplicate_of: str = ""
     order_index: int | None = None
@@ -380,16 +382,37 @@ def ocr_screenshot_pages(
     )
     ocr_engine = None
     pages: list[ScreenshotPage] = []
+    def reset_ocr_engine() -> None:
+        nonlocal ocr_engine
+        if ocr_engine is not None:
+            close_umi_paddle_engine(ocr_engine)
+        ocr_engine = create_umi_paddle_engine(options)
+
     try:
         if ocr_mode != "never":
-            ocr_engine = create_umi_paddle_engine(options)
+            reset_ocr_engine()
         source_list = list(sources)
         for index, source in enumerate(source_list, start=1):
             emit_progress(progress_callback, "ocr_page", f"OCR image {index}/{len(source_list)}: {source.name}", index=index, total=len(source_list), source=source)
-            text = umi_ocr_image(source, ocr_engine).strip() if ocr_engine is not None else ""
+            text = ""
+            ocr_status = "skipped" if ocr_engine is None else "ok"
+            ocr_message = ""
+            if ocr_engine is not None:
+                try:
+                    text = umi_ocr_image(source, ocr_engine).strip()
+                except Exception as exc:  # noqa: BLE001
+                    first_error = str(exc)
+                    try:
+                        reset_ocr_engine()
+                        text = umi_ocr_image(source, ocr_engine).strip()
+                        ocr_message = f"Recovered after OCR engine restart: {first_error}"
+                    except Exception as retry_exc:  # noqa: BLE001
+                        ocr_status = "failed"
+                        ocr_message = f"{first_error}; retry failed: {retry_exc}"
             width, height, image_hash = image_metadata(source)
             normalized_text = normalize_text_for_hash(text)
             titles = detect_title_candidates(text)
+            filename_number = extract_filename_number(source)
             pages.append(
                 ScreenshotPage(
                     source=str(source),
@@ -397,12 +420,14 @@ def ocr_screenshot_pages(
                     width=width,
                     height=height,
                     mtime=source.stat().st_mtime,
-                    filename_number=extract_filename_number(source),
-                    page_number=extract_page_number(text),
+                    filename_number=filename_number,
+                    page_number=extract_page_number(text, filename_number=filename_number),
                     text=text,
                     char_count=len(text),
                     text_hash=short_hash(normalized_text),
                     image_hash=image_hash,
+                    ocr_status=ocr_status,
+                    ocr_message=ocr_message,
                     title_candidates=titles,
                 )
             )
@@ -676,12 +701,16 @@ def render_review_markdown(
 ) -> str:
     low_confidence = [page for page in ordered_pages if page.order_confidence < 0.45]
     no_text = [page for page in pages if page.char_count == 0]
+    ocr_failed = [page for page in pages if page.ocr_status == "failed"]
+    ocr_recovered = [page for page in pages if page.ocr_status == "ok" and page.ocr_message]
     lines = ["# 截图成书复查清单 / Image Book Review", ""]
     lines.append(f"- Total images: {len(pages)}")
     lines.append(f"- Ordered representatives: {len(ordered_pages)}")
     lines.append(f"- Duplicate groups: {len(duplicate_groups)}")
     lines.append(f"- Low-confidence order items: {len(low_confidence)}")
     lines.append(f"- Empty OCR items: {len(no_text)}")
+    lines.append(f"- OCR failed items: {len(ocr_failed)}")
+    lines.append(f"- OCR recovered items: {len(ocr_recovered)}")
     lines.append("")
 
     if duplicate_groups:
@@ -703,6 +732,16 @@ def render_review_markdown(
         for page in no_text:
             lines.append(f"- `{page.source}`")
         lines.append("")
+    if ocr_failed:
+        lines.extend(["## OCR 失败 / OCR Failed", ""])
+        for page in ocr_failed:
+            lines.append(f"- `{page.source}`: {markdown_cell(page.ocr_message)}")
+        lines.append("")
+    if ocr_recovered:
+        lines.extend(["## OCR 重试恢复 / OCR Recovered After Retry", ""])
+        for page in ocr_recovered:
+            lines.append(f"- `{page.source}`: {markdown_cell(page.ocr_message)}")
+        lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -723,10 +762,28 @@ def detect_title_candidates(text: str) -> list[str]:
     return candidates
 
 
-def extract_page_number(text: str) -> int | None:
+def extract_page_number(text: str, *, filename_number: int | None = None) -> int | None:
     candidates = []
     for line in text.splitlines()[:8] + text.splitlines()[-8:]:
         stripped = line.strip()
+        fraction = re.search(r"\b0*(\d{1,4})\s*[/／]\s*0*(\d{1,4})\b", stripped)
+        if fraction:
+            page = int(fraction.group(1))
+            total = int(fraction.group(2))
+            if 1 <= page <= max(total, page):
+                return page
+        compact_digits = re.sub(r"\D+", "", stripped)
+        if filename_number is not None and compact_digits:
+            # OCR often turns "01/08" into "01108" or "041 08".
+            # If the OCR line begins with the filename/page sequence, trust
+            # the filename-local number instead of the noisy raw OCR number.
+            filename_variants = {
+                str(filename_number),
+                str(filename_number).zfill(2),
+                str(filename_number).zfill(3),
+            }
+            if any(compact_digits.startswith(prefix) for prefix in filename_variants) and len(compact_digits) >= 3:
+                return filename_number
         match = re.search(r"(?:第\s*)?(\d{1,5})(?:\s*页)?$", stripped)
         if match:
             candidates.append(int(match.group(1)))

@@ -54,12 +54,30 @@ This is not enough to make Docling default because the dependency is missing; it
 - `benchmark-results.partial.json` is written after every sample.
 - `benchmark-summary.partial.md` and `docling-decision.partial.md` are also written for interrupted runs.
 - On Windows, timed-out samples terminate the child process tree with `taskkill /T /F` so MinerU/Marker subprocesses do not remain as long-lived orphans.
+- Image-book rebuilding now treats per-image Umi-OCR failures as review items instead of failing the whole screenshot set; it restarts the OCR engine once and records `ocr_status` / `ocr_message` in `pages.jsonl`.
+- Screenshot page-number parsing now handles OCR-noisy page markers such as `01108`, `03108`, and `041 08` as `01/08`, `03/08`, and `04/08` when filename ordering supports that interpretation.
+
+## Latest Image Set Verification
+
+Run directory: `benchmarks/runs/image-set-order-smoke`
+
+The previously failing image set `2026年3月21日Claude制作的图文笔记堪称范本` now completes successfully:
+
+| Metric | Result |
+| --- | --- |
+| Benchmark status | ok |
+| Images | 8 |
+| Parsed page numbers | 1, 2, 3, 4, 5, 6, 7, 8 |
+| Low-confidence order items | 0 |
+| OCR failed items | 0 |
+
+This verifies both the Umi-OCR per-image failure isolation path and the noisy page-number ordering improvement on a real screenshot set.
 
 ## Current Blockers For Final Decision
 
 - Docling is not installed in the active Python environment.
 - MinerU is available through a separate local venv path but not importable in the active Python environment; timeboxed PDF runs show MinerU-like paths can still leave heavy subprocesses if the parent process is externally aborted.
-- Umi-OCR can return invalid JSON for some image batches; this needs either input isolation, per-image retry, or better stderr/stdout capture in the image rebuild pipeline.
+- Umi-OCR can still return invalid JSON for some image batches, but image-book rebuilding now isolates failures per image and records them in the review report instead of failing the whole set.
 - GitHub push is currently blocked by an invalid `gh` token, but local commits are clean.
 
 ## Next Required Runs

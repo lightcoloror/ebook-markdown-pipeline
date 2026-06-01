@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from ebook_markdown_pipeline.image_book_rebuilder import (  # noqa: E402
     ScreenshotPage,
+    extract_page_number,
     infer_page_order,
     mark_duplicates,
     rebuild_image_book_from_order,
@@ -57,6 +58,12 @@ def main() -> int:
     markdown = text_to_markdown("第一章 开始\n\n1.1 小节\n正文")
     if "## 第一章 开始" not in markdown or "### 1.1 小节" not in markdown:
         raise RuntimeError(f"Expected heading promotion: {markdown}")
+    if extract_page_number("03/08", filename_number=3) != 3:
+        raise RuntimeError("Expected slash page number extraction.")
+    if extract_page_number("03108", filename_number=3) != 3:
+        raise RuntimeError("Expected OCR-noisy page number to trust filename sequence.")
+    if extract_page_number("041 08", filename_number=4) != 4:
+        raise RuntimeError("Expected spaced OCR-noisy page number to trust filename sequence.")
 
     book = render_book_markdown(Path("截图集"), ordered)
     if "<!-- source: b.png -->" not in book or "## 第一章 开始" not in book:
@@ -83,6 +90,46 @@ def main() -> int:
     for path in output_dir.glob("*"):
         path.unlink()
     output_dir.rmdir()
+
+    with tempfile.TemporaryDirectory(prefix="image-book-ocr-failure-") as tmp:
+        root = Path(tmp)
+        image_a = root / "001.png"
+        image_b = root / "002.png"
+        image_a.write_bytes(b"not-a-real-png-a")
+        image_b.write_bytes(b"not-a-real-png-b")
+
+        import ebook_markdown_pipeline.image_book_rebuilder as rebuilder  # noqa: PLC0415
+
+        original_create = rebuilder.create_umi_paddle_engine
+        original_close = rebuilder.close_umi_paddle_engine
+        original_ocr = rebuilder.umi_ocr_image
+        calls = {"ocr": 0}
+
+        try:
+            rebuilder.create_umi_paddle_engine = lambda options: object()
+            rebuilder.close_umi_paddle_engine = lambda engine: None
+
+            def flaky_ocr(source: Path, engine) -> str:
+                calls["ocr"] += 1
+                if source.name == "001.png":
+                    raise RuntimeError("simulated Umi-OCR JSON failure")
+                return "第二页 正文"
+
+            rebuilder.umi_ocr_image = flaky_ocr
+            robust_output = root / "robust"
+            robust = rebuild_image_book_from_sources([image_a, image_b], robust_output, ocr_mode="auto")
+            review = Path(robust["review"]).read_text(encoding="utf-8")
+            pages_text = Path(robust["pages"]).read_text(encoding="utf-8")
+            if "OCR 失败" not in review or "simulated Umi-OCR JSON failure" not in review:
+                raise RuntimeError(f"Expected per-image OCR failure in review: {review}")
+            if '"ocr_status": "failed"' not in pages_text:
+                raise RuntimeError(f"Expected failed OCR status in pages.jsonl: {pages_text}")
+            if calls["ocr"] < 3:
+                raise RuntimeError("Expected OCR retry after first-image failure.")
+        finally:
+            rebuilder.create_umi_paddle_engine = original_create
+            rebuilder.close_umi_paddle_engine = original_close
+            rebuilder.umi_ocr_image = original_ocr
 
     with tempfile.TemporaryDirectory(prefix="image-book-manual-order-") as tmp:
         root = Path(tmp)
