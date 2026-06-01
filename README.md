@@ -170,6 +170,8 @@ python D:\used-by-codex\ebook_markdown_pipeline\document_locator.py export-revie
 
 ## 真实样本评测 / Benchmarks
 
+当前真实样本评测状态和 Docling 默认策略证据见 [docs/REAL_SAMPLE_EVALUATION_STATUS.md](docs/REAL_SAMPLE_EVALUATION_STATUS.md)。
+
 先从本机目录发现 20-50 个真实样本，生成本地清单：
 
 ```powershell
@@ -194,9 +196,10 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\run_benchmarks.py `
 - `benchmark-results.json`：机器可读的完整结果，适合后续汇总或 agent 读取。
 - `benchmark-results.partial.json`：每个样本结束后增量写入；即使某次长评测被中断，也能保留已完成证据。
 - `benchmark-summary.md`：人工快速浏览的样本状态、质量和失败原因。
+- `benchmark-summary.partial.md`：中断前可读的阶段性摘要。
 - `docling-decision.md`：根据真实样本自动给出 Docling 是否默认启用的建议；在样本不足、依赖缺失或成功率偏低时会保持 Docling 为可选后端。
 
-`--sample-timeout` 可以避免单个坏文件、慢 OCR 或模型收尾卡住拖死整批评测；超时样本会记录为 `timeout` 并继续处理后续样本。
+`--sample-timeout` 可以避免单个坏文件、慢 OCR 或模型收尾卡住拖死整批评测；超时样本会记录为 `timeout` 并继续处理后续样本。Windows 下会用进程树终止，避免 MinerU/Marker 等子进程留下孤儿进程。
 
 对同一个 PDF 比较多条管道：
 

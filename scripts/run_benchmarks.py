@@ -4,6 +4,7 @@ import argparse
 import json
 import multiprocessing
 import queue
+import subprocess
 import sys
 import time
 from dataclasses import asdict
@@ -74,6 +75,9 @@ def write_run_payload(args: argparse.Namespace, results: list[dict], *, final: b
         "results": results,
     }
     write_json(args.output / ("benchmark-results.json" if final else "benchmark-results.partial.json"), payload)
+    if not final:
+        (args.output / "benchmark-summary.partial.md").write_text(render_benchmark_summary(payload), encoding="utf-8")
+        (args.output / "docling-decision.partial.md").write_text(render_docling_decision(payload), encoding="utf-8")
     return payload
 
 
@@ -89,8 +93,7 @@ def run_sample_with_timeout(sample: dict, output_root: Path, *, overwrite: bool,
     process.start()
     process.join(sample_timeout)
     if process.is_alive():
-        process.terminate()
-        process.join(10)
+        terminate_process_tree(process)
         source = Path(sample["path"])
         sample_id = safe_id(str(sample.get("id") or source.stem))
         return {
@@ -119,6 +122,23 @@ def run_sample_with_timeout(sample: dict, output_root: Path, *, overwrite: bool,
             "duration_seconds": round(time.monotonic() - started, 3),
         }
     return payload
+
+
+def terminate_process_tree(process: multiprocessing.Process) -> None:
+    if process.pid and sys.platform.startswith("win"):
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    else:
+        process.terminate()
+    process.join(10)
+    if process.is_alive():
+        process.kill()
+        process.join(5)
 
 
 def _run_sample_worker(sample: dict, output_root: Path, overwrite: bool, skip_heavy: bool, result_queue: multiprocessing.Queue) -> None:

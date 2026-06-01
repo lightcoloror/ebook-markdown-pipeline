@@ -26,9 +26,10 @@ Each run writes:
 - `benchmark-results.json`: complete machine-readable records for agents and later aggregation.
 - `benchmark-results.partial.json`: incrementally updated after each sample, so interrupted long runs still preserve completed evidence.
 - `benchmark-summary.md`: human review table with status, quality, runtime, sample category, and failure reason.
+- `benchmark-summary.partial.md`: readable partial summary for interrupted runs.
 - `docling-decision.md`: evidence-based recommendation for whether Docling should become default for document-like formats. Missing dependencies or weak real-sample success keep Docling optional.
 
-Use `--sample-timeout` to mark one stuck sample as `timeout` and continue the rest of the run.
+Use `--sample-timeout` to mark one stuck sample as `timeout` and continue the rest of the run. On Windows, the runner terminates the timed-out process tree so MinerU/Marker children do not linger as orphan processes.
 
 Compare PDF pipelines:
 
