@@ -34,6 +34,8 @@ CALIBRE_INTERMEDIATE_FORMATS = {".azw", ".azw3", ".mobi", ".rtf"}
 EBOOK_DIRECT_FORMATS = PANDOC_DIRECT_FORMATS
 EBOOK_NEEDS_CALIBRE_FORMATS = CALIBRE_INTERMEDIATE_FORMATS
 PDF_FORMATS = {".pdf"}
+DOCLING_PANDOC_FALLBACK_FORMATS = {".docx", ".html", ".htm", ".md"}
+DOCLING_TEXT_FALLBACK_FORMATS = {".csv"}
 SUPPORTED_FORMATS = PANDOC_DIRECT_FORMATS | CALIBRE_INTERMEDIATE_FORMATS | PDF_FORMATS | DOCLING_FORMATS
 
 OUTPUT_FORMATS = {
@@ -122,6 +124,12 @@ class PdfPreflight:
 
 
 class PdfToolTimeoutError(RuntimeError):
+    def __init__(self, message: str, diagnostic: dict[str, object]):
+        super().__init__(message)
+        self.diagnostic = diagnostic
+
+
+class DoclingTimeoutError(RuntimeError):
     def __init__(self, message: str, diagnostic: dict[str, object]):
         super().__init__(message)
         self.diagnostic = diagnostic
@@ -283,6 +291,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable automatic fallback to PyMuPDF4LLM when Marker/MinerU fails or times out.",
     )
+    parser.add_argument(
+        "--docling-timeout",
+        type=float,
+        default=45.0,
+        help="Abort Docling document conversion after this many seconds; 0 disables isolation/timeout. Default: 45.",
+    )
+    parser.add_argument(
+        "--no-docling-fallback",
+        action="store_true",
+        help="Disable automatic fallback to Pandoc/lightweight text output when Docling fails or times out.",
+    )
     return parser.parse_args()
 
 
@@ -317,6 +336,8 @@ def default_options(**overrides) -> SimpleNamespace:
         "pdf_fallback_to_pymupdf4llm": True,
         "pdf_tool_idle_timeout": 1800.0,
         "pdf_tool_finalize_timeout": 480.0,
+        "docling_timeout": 45.0,
+        "docling_fallback_to_pandoc": True,
         "pdf_pipeline_mode": "auto",
         "marker_default_max_pages": 12,
         "marker_seconds_per_page_estimate": 10.0,
@@ -338,6 +359,8 @@ def main() -> int:
 def run_batch(args: argparse.Namespace) -> int:
     if getattr(args, "no_pdf_auto_fallback", False):
         args.pdf_fallback_to_pymupdf4llm = False
+    if getattr(args, "no_docling_fallback", False):
+        args.docling_fallback_to_pandoc = False
     normalize_command_options(args)
     sources = collect_sources(
         args.input,
@@ -797,7 +820,9 @@ def convert_one(
     output_path = output_path or build_output_path(source, input_root, output_root, args)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     args._pdf_tool_diagnostics = []
+    args._docling_diagnostics = []
     args._last_pdf_pipeline = None
+    args._last_docling_pipeline = None
 
     if output_path.exists() and not args.overwrite:
         return ConversionResult(
@@ -848,9 +873,17 @@ def convert_one(
         source=str(source),
         output=str(output_path),
         status="ok",
-        pipeline=getattr(args, "_last_pdf_pipeline", None) if kind == "pdf" else pipeline_name(source, args),
+        pipeline=final_pipeline_name(source, kind, args),
         message="",
     )
+
+
+def final_pipeline_name(source: Path, kind: str, args: argparse.Namespace) -> str:
+    if kind == "pdf":
+        return getattr(args, "_last_pdf_pipeline", None) or pipeline_name(source, args)
+    if kind == "docling":
+        return getattr(args, "_last_docling_pipeline", None) or pipeline_name(source, args)
+    return pipeline_name(source, args)
 
 
 def pipeline_name(source: Path, args: argparse.Namespace | None = None) -> str:
@@ -998,7 +1031,23 @@ def run_docling_convert(
     emit_stage(progress_callback, source, progress_index, progress_total, "docling", "Docling 文档解析")
     if args.dry_run:
         return
-    result = convert_with_docling(source)
+    try:
+        result = run_docling_backend(source, output_path, args)
+        args._last_docling_pipeline = "docling"
+    except Exception as exc:  # noqa: BLE001
+        if not should_fallback_from_docling(source, args):
+            raise
+        args._last_docling_pipeline = "docling(fallback)"
+        emit_stage(
+            progress_callback,
+            source,
+            progress_index,
+            progress_total,
+            "fallback",
+            f"Docling 失败/超时，自动回退到轻量转换: {exc}",
+        )
+        run_docling_fallback_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        return
     markdown = result["markdown"]
     if args.output_format == "markdown":
         output_path.write_text(markdown, encoding="utf-8", newline="\n")
@@ -1018,6 +1067,195 @@ def run_docling_convert(
         temp_md = Path(tmpdir) / f"{source.stem}.md"
         temp_md.write_text(markdown, encoding="utf-8", newline="\n")
         convert_markdown_file(temp_md, output_path, args, progress_callback, source, progress_index, progress_total)
+
+
+def run_docling_backend(source: Path, output_path: Path, args: argparse.Namespace) -> dict:
+    timeout = float(getattr(args, "docling_timeout", 60.0) or 0.0)
+    diagnostic: dict[str, object] = {
+        "tool": "Docling",
+        "source": str(source),
+        "output": str(output_path),
+        "started_at": timestamp_now(),
+        "timeout_seconds": timeout,
+        "duration_seconds": None,
+        "status": "running",
+    }
+    getattr(args, "_docling_diagnostics", []).append(diagnostic)
+    started = time.monotonic()
+    if timeout <= 0:
+        try:
+            result = convert_with_docling(source)
+            diagnostic["status"] = "ok"
+            return result
+        except Exception as exc:  # noqa: BLE001
+            diagnostic["status"] = "failed"
+            diagnostic["error"] = str(exc)
+            raise
+        finally:
+            diagnostic["duration_seconds"] = round(time.monotonic() - started, 3)
+            diagnostic["finished_at"] = timestamp_now()
+
+    with tempfile.TemporaryDirectory(prefix="docling-worker-") as tmpdir:
+        result_json = Path(tmpdir) / "result.json"
+        backend_script = Path(__file__).resolve().parent / "docling_backend.py"
+        cmd = [sys.executable, str(backend_script), str(source), "--output-json", str(result_json)]
+        diagnostic["command"] = cmd
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        diagnostic["pid"] = process.pid
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            terminate_process_tree(process)
+            stdout = exc.stdout or ""
+            stderr = exc.stderr or ""
+            diagnostic["status"] = "timeout"
+            diagnostic["duration_seconds"] = round(time.monotonic() - started, 3)
+            diagnostic["finished_at"] = timestamp_now()
+            diagnostic["stdout_tail"] = str(stdout)[-4000:]
+            diagnostic["stderr_tail"] = str(stderr)[-4000:]
+            raise DoclingTimeoutError(f"Docling timed out after {format_duration(timeout)}", diagnostic) from exc
+        diagnostic["duration_seconds"] = round(time.monotonic() - started, 3)
+        diagnostic["finished_at"] = timestamp_now()
+        diagnostic["exit_code"] = process.returncode
+        diagnostic["stdout_tail"] = (stdout or "")[-4000:]
+        diagnostic["stderr_tail"] = (stderr or "")[-4000:]
+        payload = load_docling_worker_result(result_json)
+        if process.returncode != 0 or not payload.get("ok"):
+            diagnostic["status"] = "failed"
+            diagnostic["error"] = str(payload.get("error") or diagnostic.get("stderr_tail") or "Docling failed")
+            raise RuntimeError(str(diagnostic["error"]))
+        diagnostic["status"] = "ok"
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            diagnostic["status"] = "failed"
+            diagnostic["error"] = "Docling worker returned an invalid result."
+            raise RuntimeError(str(diagnostic["error"]))
+        return result
+
+
+def load_docling_worker_result(result_json: Path) -> dict:
+    if not result_json.exists():
+        return {"ok": False, "error": "Docling worker produced no result JSON."}
+    try:
+        payload = json.loads(result_json.read_text(encoding="utf-8-sig"))
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"Could not read Docling worker result: {exc}"}
+    return payload if isinstance(payload, dict) else {"ok": False, "error": "Invalid Docling worker result JSON."}
+
+
+def should_fallback_from_docling(source: Path, args: argparse.Namespace) -> bool:
+    if not getattr(args, "docling_fallback_to_pandoc", True):
+        return False
+    suffix = source.suffix.lower()
+    return suffix in DOCLING_PANDOC_FALLBACK_FORMATS or suffix in DOCLING_TEXT_FALLBACK_FORMATS
+
+
+def run_docling_fallback_convert(
+    source: Path,
+    output_path: Path,
+    args: argparse.Namespace,
+    progress_callback=None,
+    progress_index: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    suffix = source.suffix.lower()
+    getattr(args, "_docling_diagnostics", []).append(
+        {
+            "tool": "Docling fallback",
+            "source": str(source),
+            "output": str(output_path),
+            "started_at": timestamp_now(),
+            "status": "running",
+            "fallback": "text" if suffix in DOCLING_TEXT_FALLBACK_FORMATS else "pandoc",
+        }
+    )
+    fallback_diagnostic = getattr(args, "_docling_diagnostics", [])[-1]
+    started = time.monotonic()
+    if suffix in DOCLING_TEXT_FALLBACK_FORMATS:
+        emit_stage(progress_callback, source, progress_index, progress_total, "fallback", "CSV 轻量文本兜底")
+        text = source.read_text(encoding="utf-8-sig", errors="replace")
+        if args.output_format == "markdown":
+            output_path.write_text(f"# {source.stem}\n\n```csv\n{text.rstrip()}\n```\n", encoding="utf-8", newline="\n")
+            finish_docling_fallback_diagnostic(fallback_diagnostic, started, "ok")
+            return
+        with tempfile.TemporaryDirectory(prefix="docling-fallback-") as tmpdir:
+            temp_md = Path(tmpdir) / f"{source.stem}.md"
+            temp_md.write_text(f"# {source.stem}\n\n```csv\n{text.rstrip()}\n```\n", encoding="utf-8", newline="\n")
+            convert_markdown_file(temp_md, output_path, args, progress_callback, source, progress_index, progress_total)
+            finish_docling_fallback_diagnostic(fallback_diagnostic, started, "ok")
+            return
+
+    if suffix == ".md":
+        emit_stage(progress_callback, source, progress_index, progress_total, "fallback", "Markdown 轻量兜底")
+        if args.output_format == "markdown":
+            shutil.copyfile(source, output_path)
+            postprocess_text_output(
+                output_path,
+                args,
+                source_kind="docling-fallback",
+                note_source_path=source,
+                progress_callback=progress_callback,
+                progress_source=source,
+                progress_index=progress_index,
+                progress_total=progress_total,
+            )
+            finish_docling_fallback_diagnostic(fallback_diagnostic, started, "ok")
+            return
+        convert_markdown_file(source, output_path, args, progress_callback, source, progress_index, progress_total)
+        finish_docling_fallback_diagnostic(fallback_diagnostic, started, "ok")
+        return
+
+    if suffix in DOCLING_PANDOC_FALLBACK_FORMATS:
+        emit_stage(progress_callback, source, progress_index, progress_total, "fallback", "Pandoc 文档兜底")
+        pandoc_cmd = [
+            args.pandoc_command,
+            str(source),
+            "-t",
+            pandoc_target(args),
+            "-o",
+            str(output_path),
+        ]
+        run_command(pandoc_cmd, args.dry_run)
+        if args.output_format == "markdown":
+            postprocess_text_output(
+                output_path,
+                args,
+                source_kind="docling-fallback",
+                note_source_path=source,
+                progress_callback=progress_callback,
+                progress_source=source,
+                progress_index=progress_index,
+                progress_total=progress_total,
+            )
+        finish_docling_fallback_diagnostic(fallback_diagnostic, started, "ok")
+        return
+    finish_docling_fallback_diagnostic(
+        fallback_diagnostic,
+        started,
+        "failed",
+        f"No lightweight fallback is available for {source.suffix.lower()}",
+    )
+    raise RuntimeError(f"No lightweight fallback is available for {source.suffix.lower()}")
+
+
+def finish_docling_fallback_diagnostic(
+    diagnostic: dict[str, object],
+    started: float,
+    status: str,
+    error: str | None = None,
+) -> None:
+    diagnostic["status"] = status
+    diagnostic["duration_seconds"] = round(time.monotonic() - started, 3)
+    diagnostic["finished_at"] = timestamp_now()
+    if error:
+        diagnostic["error"] = error
 
 
 def run_pdf_convert(
@@ -2117,6 +2355,9 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
         diagnostics = getattr(args, "_pdf_tool_diagnostics", [])
         if diagnostics:
             payload["pdf_tool_diagnostics"] = diagnostics
+    docling_diagnostics = getattr(args, "_docling_diagnostics", [])
+    if docling_diagnostics:
+        payload["docling_diagnostics"] = docling_diagnostics
     report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     result.report = str(report_path)
 

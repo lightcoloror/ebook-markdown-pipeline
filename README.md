@@ -5,6 +5,7 @@
 - `EPUB / FB2 / ODT / TXT` 直接用 `pandoc`
 - `AZW / AZW3 / MOBI / RTF` 用 `calibre -> EPUB -> pandoc`
 - `DOCX / PPTX / XLSX / HTML / Markdown / CSV` 默认用已验证的 `Docling` 后端；未安装时会在环境检查和报告里明确提示
+- Docling 文档转换默认在独立子进程中运行，超过 45 秒会中止；DOCX/HTML/Markdown/CSV 会自动降级到 Pandoc 或轻量文本输出，并在 report 中记录 `docling(fallback)`
 - `PDF` 自动模式下短文档用 `Marker`，长文档自动使用 `MinerU pipeline` 做结构化解析；`Umi-OCR` 仅作为手动兜底模式
 
 脚本文件：
@@ -215,6 +216,8 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_pipelines.py `
 ```
 
 输出的 `pipeline-comparison.md` 会对比各管道的耗时、标题数量、正文长度、表格迹象、页码噪声和人工评分入口。`--pipeline-timeout` 会限制单条管道耗时，并在每条管道结束后写出 `pipeline-comparison.partial.json/md`，避免 MinerU、Marker、Docling PDF OCR 等慢管道拖死整次对比。桌面 UI 里选中 PDF 后也可以点 `PDF对比 / Compare` 生成同类报告；选中失败或待复查条目后，`推荐重跑 / Rerun Rec` 会按报告里的推荐管道重新执行该文件。
+
+Agent/批量场景下可用 `--docling-timeout <秒>` 控制 Docling 文档后端的最长运行时间；`--no-docling-fallback` 可关闭 DOCX/HTML/Markdown/CSV 的自动轻量兜底。HTTP `/call` 的 `start_conversion` / `process_material` 也支持 `docling_timeout` 和 `docling_fallback_to_pandoc` 参数。
 
 对 HTTP agent 调用做并发稳定性测试：
 
