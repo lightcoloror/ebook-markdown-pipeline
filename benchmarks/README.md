@@ -46,6 +46,17 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_pipelines.py `
 
 The comparison report writes `pipeline-comparison.md` with runtime, heading count, text length, table hints, page-number noise hints, and manual scoring slots. `--pipeline-timeout` marks one slow pipeline as `timeout` and continues; partial JSON/Markdown reports are written after every pipeline. The desktop UI exposes the same workflow through `PDF对比 / Compare`; `推荐重跑 / Rerun Rec` reprocesses the selected item with its recommended pipeline.
 
+Summarize multiple PDF comparisons:
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\summarize_pdf_comparisons.py `
+  D:\used-by-codex\ebook_markdown_pipeline\benchmarks\compare-runs\sample-a `
+  D:\used-by-codex\ebook_markdown_pipeline\benchmarks\compare-runs\sample-b `
+  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\compare-runs\summary.md
+```
+
+The summary report lists the requested pipeline, actual pipeline, status, score, headings, text length, runtime, and links back to each detailed comparison. Actual pipeline matters when a requested backend succeeds through fallback, such as `docling` producing `pymupdf4llm(fallback from docling)`.
+
 Stress HTTP agent calls:
 
 ```powershell

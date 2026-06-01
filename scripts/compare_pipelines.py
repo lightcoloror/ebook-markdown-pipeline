@@ -133,6 +133,7 @@ def run_pipeline(source: Path, output_root: Path, pipeline: str, *, overwrite: b
     metrics = markdown_metrics(Path(result.output) if result.output else None)
     return {
         "pipeline": pipeline,
+        "actual_pipeline": result.pipeline,
         "status": result.status,
         "message": result.message,
         "output": result.output,
@@ -158,13 +159,13 @@ def render_comparison_markdown(payload: dict) -> str:
         "",
         "## Results",
         "",
-        "| Pipeline | Status | Seconds | Score | Headings | Chars | Table lines | Page noise | Output | Message | Manual score | Notes |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- |",
+        "| Requested | Actual | Status | Seconds | Score | Headings | Chars | Table lines | Page noise | Output | Message | Manual score | Notes |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- |",
     ]
     for item in payload["comparisons"]:
         metrics = item.get("metrics") or {}
         lines.append(
-            f"| {item['pipeline']} | {item['status']} | {item.get('duration_seconds', '')} | "
+            f"| {item['pipeline']} | {item.get('actual_pipeline') or item['pipeline']} | {item['status']} | {item.get('duration_seconds', '')} | "
             f"{metrics.get('score', '')} | {metrics.get('headings', '')} | {metrics.get('characters', '')} | "
             f"{metrics.get('table_like_lines', '')} | {metrics.get('page_number_lines', '')} | "
             f"`{item.get('output') or ''}` | {escape_table(str(item.get('message') or ''))[:120]} |  |  |"
