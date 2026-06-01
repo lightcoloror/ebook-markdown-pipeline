@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ DOCLING_FORMATS = {".docx", ".pptx", ".xlsx", ".html", ".htm", ".md", ".csv"}
 
 def docling_available() -> bool:
     try:
+        suppress_requests_dependency_warning()
         from docling.document_converter import DocumentConverter  # noqa: F401
     except Exception:
         return False
@@ -22,6 +24,7 @@ def docling_supported_format(path: Path) -> bool:
 
 def convert_with_docling(source: Path) -> dict[str, Any]:
     try:
+        suppress_requests_dependency_warning()
         from docling.document_converter import DocumentConverter
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError("Docling is not installed. Install optional dependency with: pip install docling") from exc
@@ -39,6 +42,15 @@ def convert_with_docling(source: Path) -> dict[str, Any]:
         "errors": serialize_docling_errors(getattr(result, "errors", [])),
         "timings": serialize_docling_value(getattr(result, "timings", None)),
     }
+
+
+def suppress_requests_dependency_warning() -> None:
+    warnings.filterwarnings(
+        "ignore",
+        message=r"urllib3 .* doesn't match a supported version!",
+        category=Warning,
+        module=r"requests",
+    )
 
 
 def serialize_docling_errors(errors: Any) -> list[str]:

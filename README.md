@@ -4,7 +4,7 @@
 
 - `EPUB / FB2 / ODT / TXT` 直接用 `pandoc`
 - `AZW / AZW3 / MOBI / RTF` 用 `calibre -> EPUB -> pandoc`
-- `DOCX / PPTX / XLSX / HTML / Markdown / CSV` 可选用 `Docling` 后端
+- `DOCX / PPTX / XLSX / HTML / Markdown / CSV` 默认用已验证的 `Docling` 后端；未安装时会在环境检查和报告里明确提示
 - `PDF` 自动模式下短文档用 `Marker`，长文档自动使用 `MinerU pipeline` 做结构化解析；`Umi-OCR` 仅作为手动兜底模式
 
 脚本文件：
@@ -292,14 +292,16 @@ python D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py `
 - `ebook-convert` from calibre
 - `mineru`
 - `marker_single`
-- `docling` 可选，用于 DOCX、PPTX、XLSX、HTML、Markdown、CSV，以及手动选择 `--pdf-pipeline-mode docling` 的 PDF
+- `docling` 可选安装包，但安装后是 DOCX、PPTX、XLSX、HTML、Markdown、CSV 的默认后端；PDF 只有手动选择 `--pdf-pipeline-mode docling` 时才走 Docling
 - Python packages in [requirements.txt](requirements.txt), including `PyMuPDF` and `PyMuPDF4LLM`
 
-Docling 是可选后端，不默认安装；需要时运行：
+Docling 是可选安装依赖，不默认随基础环境安装；需要处理 DOCX、PPTX、XLSX、HTML、Markdown、CSV 或手动对比 PDF Docling 管道时运行：
 
 ```powershell
 python -m pip install -r D:\used-by-codex\ebook_markdown_pipeline\requirements-docling.txt
 ```
+
+当前真实样本验证版本为 `docling==2.96.1`。如果你的全局 Python 同时装了其他 agent 框架，建议在独立虚拟环境中安装 Docling，避免与 CrewAI、AutoGen、LiteLLM 等工具的依赖范围互相影响。
 
 如果命令不在 `PATH`，可以显式传：
 

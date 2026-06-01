@@ -1,6 +1,6 @@
 # Real Sample Evaluation Status
 
-Last updated: 2026-06-01 15:50
+Last updated: 2026-06-01 16:20
 
 This document tracks the evidence needed before changing default pipelines, especially the optional Docling backend.
 
@@ -75,17 +75,17 @@ This verifies both the Umi-OCR per-image failure isolation path and the noisy pa
 
 ## Latest Fast PDF Benchmark Verification
 
-Run directory: `benchmarks/runs/fast-real-20`
+Run directory: `benchmarks/runs/fast-real-20-docling`
 
 Command:
 
 ```powershell
 python scripts\run_benchmarks.py `
   --manifest benchmarks\samples.local.json `
-  --output benchmarks\runs\fast-real-20 `
+  --output benchmarks\runs\fast-real-20-docling `
   --limit 20 `
   --overwrite `
-  --sample-timeout 60 `
+  --sample-timeout 90 `
   --pdf-mode-for-benchmark fast
 ```
 
@@ -94,25 +94,27 @@ Result:
 | Metric | Result |
 | --- | --- |
 | Samples | 20 |
-| Status | 11 ok, 8 failed, 1 timeout |
-| Quality | 6 good, 4 review |
+| Status | 18 ok, 2 timeout |
+| Quality | 12 good, 5 review |
 | PDF mode | fast -> `pymupdf4llm` |
-| PDF runtime | Most sampled PDFs completed in about 5-15 seconds; one scanned PDF took about 30 seconds; one complex layered PDF timed out at 60 seconds. |
-| Failures | 8 Docling document samples failed because `docling` is not installed. |
-| Docling decision | keep_optional |
+| PDF runtime | Most sampled PDFs completed in about 5-15 seconds; one scanned PDF took about 30 seconds; one complex layered PDF timed out at 90 seconds. |
+| Docling docs | 7 ok, 1 timeout |
+| Docling version | 2.96.1 |
+| Docling decision | enable_docling_for_docling_formats |
 
 This separates broad sample-set stability benchmarking from slow high-quality PDF pipeline comparison. Use `--pdf-mode-for-benchmark fast` for 20-50 sample runs, then use `compare_pipelines.py` for selected representative PDFs.
 
 ## Current Blockers For Final Decision
 
-- Docling is not installed in the active Python environment.
+- Docling 2.96.1 is installed and passed the current document-format threshold. Keep it as the default backend for DOCX/PPTX/XLSX/HTML/Markdown/CSV when the optional dependency is installed.
 - MinerU is available through a separate local venv path but not importable in the active Python environment; timeboxed PDF runs show MinerU-like paths can still leave heavy subprocesses if the parent process is externally aborted.
 - Umi-OCR can still return invalid JSON for some image batches, but image-book rebuilding now isolates failures per image and records them in the review report instead of failing the whole set.
+- Installing Docling into the global Python 3.13 environment introduced or exposed dependency conflicts reported by `pip check` for CrewAI, AutoGen, LiteLLM, and related packages. For long-term stability, prefer a project-specific virtual environment for this converter.
 - GitHub push is currently blocked by an invalid `gh` token, but local commits are clean.
 
 ## Next Required Runs
 
-After installing Docling and confirming MinerU command paths, run:
+After confirming MinerU command paths, run:
 
 ```powershell
 python scripts\run_benchmarks.py `
@@ -135,11 +137,13 @@ python scripts\compare_pipelines.py `
 
 ## Decision Rule For Docling
 
-Keep Docling optional until real local runs show:
+The current local evidence meets the threshold for document-like formats:
 
 - at least 8 document-like samples are attempted with Docling installed,
 - success rate is at least 80%,
 - good-quality rate is at least 60%,
 - failures are actionable or isolated to unsupported file types.
 
-Only then consider making Docling the default for DOCX/PPTX/XLSX/HTML/CSV. PDF should still be decided by the PDF comparison reports, not by Docling document-format performance.
+Decision: enable Docling by default for DOCX/PPTX/XLSX/HTML/CSV/Markdown when the optional dependency is installed.
+
+PDF should still be decided by the PDF comparison reports, not by Docling document-format performance.

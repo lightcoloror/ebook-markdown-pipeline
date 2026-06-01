@@ -12,7 +12,7 @@ dialogue_epub_extract/
 *.log
 *.tmp
 benchmarks/runs/
-benchmarks/samples.local.json
+benchmarks/*.local.json
 benchmarks/compare-runs/
 .tmp-bench/
 
