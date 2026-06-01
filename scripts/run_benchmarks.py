@@ -54,6 +54,7 @@ def main() -> int:
     }
     write_json(args.output / "benchmark-results.json", payload)
     (args.output / "benchmark-summary.md").write_text(render_benchmark_summary(payload), encoding="utf-8")
+    (args.output / "docling-decision.md").write_text(render_docling_decision(payload), encoding="utf-8")
     return 0
 
 
@@ -128,7 +129,41 @@ def summarize_results(results: list[dict]) -> dict:
         level = (item.get("metrics") or {}).get("level")
         if level:
             quality_counts[level] = quality_counts.get(level, 0) + 1
-    return {"count": len(results), "status_counts": counts, "quality_counts": quality_counts}
+    return {"count": len(results), "status_counts": counts, "quality_counts": quality_counts, "docling_policy": recommend_docling_policy(results)}
+
+
+def recommend_docling_policy(results: list[dict]) -> dict:
+    docling_items = [item for item in results if item.get("category") == "docling_doc"]
+    if not docling_items:
+        return {
+            "decision": "insufficient_data",
+            "recommendation": "没有 Docling 文档样本，暂时保持 Docling 为可选后端。",
+            "sample_count": 0,
+        }
+    ok_items = [item for item in docling_items if item.get("status") == "ok"]
+    good_items = [item for item in ok_items if (item.get("metrics") or {}).get("level") == "good"]
+    review_or_poor = [item for item in ok_items if (item.get("metrics") or {}).get("level") in {"review", "poor"}]
+    success_rate = len(ok_items) / max(len(docling_items), 1)
+    good_rate = len(good_items) / max(len(docling_items), 1)
+    if success_rate >= 0.8 and good_rate >= 0.6:
+        decision = "enable_docling_for_docling_formats"
+        recommendation = "Docling 文档样本表现较稳定，可考虑对 DOCX/PPTX/XLSX/HTML/CSV 默认使用 Docling。"
+    elif success_rate >= 0.5:
+        decision = "keep_optional_collect_more"
+        recommendation = "Docling 有一定可用性，但质量或失败率仍需更多样本验证，暂时保持可选。"
+    else:
+        decision = "keep_optional"
+        recommendation = "Docling 样本成功率偏低，继续保持可选后端，不建议默认启用。"
+    return {
+        "decision": decision,
+        "recommendation": recommendation,
+        "sample_count": len(docling_items),
+        "success_count": len(ok_items),
+        "good_count": len(good_items),
+        "review_or_poor_count": len(review_or_poor),
+        "success_rate": round(success_rate, 3),
+        "good_rate": round(good_rate, 3),
+    }
 
 
 def render_benchmark_summary(payload: dict) -> str:
@@ -139,6 +174,7 @@ def render_benchmark_summary(payload: dict) -> str:
         f"- Samples: {payload['summary']['count']}",
         f"- Status: {payload['summary']['status_counts']}",
         f"- Quality: {payload['summary']['quality_counts']}",
+        f"- Docling decision: {payload['summary']['docling_policy']['decision']}",
         "",
         "| Status | Quality | Seconds | Category | Sample | Failure |",
         "| --- | --- | ---: | --- | --- | --- |",
@@ -149,6 +185,36 @@ def render_benchmark_summary(payload: dict) -> str:
             f"| {item.get('status')} | {metrics.get('level', '')} {metrics.get('score', '')} | "
             f"{item.get('duration_seconds', '')} | {item.get('category', '')} | "
             f"{Path(item.get('source', '')).name} | {escape_table(str(item.get('failure_reason') or ''))[:220]} |"
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_docling_decision(payload: dict) -> str:
+    policy = payload["summary"]["docling_policy"]
+    lines = [
+        "# Docling Default Decision",
+        "",
+        f"- Decision: `{policy['decision']}`",
+        f"- Recommendation: {policy['recommendation']}",
+        f"- Sample count: {policy['sample_count']}",
+        f"- Success count: {policy.get('success_count', 0)}",
+        f"- Good count: {policy.get('good_count', 0)}",
+        f"- Success rate: {policy.get('success_rate', 0)}",
+        f"- Good rate: {policy.get('good_rate', 0)}",
+        "",
+        "## Relevant Samples",
+        "",
+        "| Status | Quality | Seconds | Sample | Failure |",
+        "| --- | --- | ---: | --- | --- |",
+    ]
+    for item in payload["results"]:
+        if item.get("category") != "docling_doc":
+            continue
+        metrics = item.get("metrics") or {}
+        lines.append(
+            f"| {item.get('status')} | {metrics.get('level', '')} {metrics.get('score', '')} | "
+            f"{item.get('duration_seconds', '')} | {Path(item.get('source', '')).name} | "
+            f"{escape_table(str(item.get('failure_reason') or ''))[:220]} |"
         )
     return "\n".join(lines).rstrip() + "\n"
 

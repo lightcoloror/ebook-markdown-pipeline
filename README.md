@@ -188,6 +188,12 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\run_benchmarks.py `
   --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\latest
 ```
 
+输出目录会包含：
+
+- `benchmark-results.json`：机器可读的完整结果，适合后续汇总或 agent 读取。
+- `benchmark-summary.md`：人工快速浏览的样本状态、质量和失败原因。
+- `docling-decision.md`：根据真实样本自动给出 Docling 是否默认启用的建议；在样本不足、依赖缺失或成功率偏低时会保持 Docling 为可选后端。
+
 对同一个 PDF 比较多条管道：
 
 ```powershell
@@ -196,6 +202,8 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_pipelines.py `
   --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\compare-runs\sample `
   --pipelines pymupdf4llm mineru umi docling
 ```
+
+输出的 `pipeline-comparison.md` 会对比各管道的耗时、标题数量、正文长度、表格迹象、页码噪声和人工评分入口。桌面 UI 里选中 PDF 后也可以点 `PDF对比 / Compare` 生成同类报告；选中失败或待复查条目后，`推荐重跑 / Rerun Rec` 会按报告里的推荐管道重新执行该文件。
 
 对 HTTP agent 调用做并发稳定性测试：
 

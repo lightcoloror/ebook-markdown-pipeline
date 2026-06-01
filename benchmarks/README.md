@@ -20,6 +20,12 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\run_benchmarks.py `
   --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\latest
 ```
 
+Each run writes:
+
+- `benchmark-results.json`: complete machine-readable records for agents and later aggregation.
+- `benchmark-summary.md`: human review table with status, quality, runtime, sample category, and failure reason.
+- `docling-decision.md`: evidence-based recommendation for whether Docling should become default for document-like formats. Missing dependencies or weak real-sample success keep Docling optional.
+
 Compare PDF pipelines:
 
 ```powershell
@@ -28,6 +34,8 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_pipelines.py `
   --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\compare-runs\sample `
   --pipelines pymupdf4llm mineru umi docling
 ```
+
+The comparison report writes `pipeline-comparison.md` with runtime, heading count, text length, table hints, page-number noise hints, and manual scoring slots. The desktop UI exposes the same workflow through `PDF对比 / Compare`; `推荐重跑 / Rerun Rec` reprocesses the selected item with its recommended pipeline.
 
 Stress HTTP agent calls:
 

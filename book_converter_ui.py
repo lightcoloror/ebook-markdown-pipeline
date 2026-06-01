@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import json
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -243,6 +244,8 @@ class BookConverterUI:
         ttk.Button(buttons, text="PDF日志 / PDF log", command=self.open_latest_pdf_log).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="复制Agent调用 / Copy Agent", command=self.copy_agent_call).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="重跑失败 / Retry Failed", command=self.retry_failed_items).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="推荐重跑 / Rerun Rec", command=self.rerun_selected_recommended).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="PDF对比 / Compare", command=self.start_pdf_pipeline_compare).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="清空日志 / Clear", command=self.clear_log).pack(side="left")
 
         self.progress = ttk.Progressbar(buttons, mode="determinate", length=220)
@@ -746,6 +749,15 @@ class BookConverterUI:
                     self.write_log(f"Book: {payload.get('book')}")
                     self.write_log(f"Order: {payload.get('order')}")
                     self.write_log(f"Review: {payload.get('review')}")
+                elif kind == "artifact_done":
+                    self.set_running_state(False)
+                    self.worker = None
+                    self.latest_artifacts = self.artifact_paths_from_payload(payload)
+                    self.status_var.set("Artifact 已生成 / Artifact finished")
+                    self.current_stage_var.set(str(payload.get("message") or ""))
+                    self.write_log(str(payload.get("message") or "Artifact finished"))
+                    for path in self.latest_artifacts:
+                        self.write_log(f"Artifact: {path}")
                 elif kind == "image_book_progress":
                     self.handle_image_book_progress(payload)
                 elif kind == "error":
@@ -957,6 +969,70 @@ class BookConverterUI:
         self.resume_var.set(False)
         self.write_log(f"准备重跑失败项 {len(failed)} 个；已自动开启覆盖并关闭续跑。/ Retrying {len(failed)} failed item(s); overwrite on, resume off.")
         self.start_convert()
+
+    def rerun_selected_recommended(self) -> None:
+        selected = self.selected_tree_values()
+        if not selected:
+            return
+        source = Path(selected.get("source", ""))
+        if not source.exists():
+            messagebox.showwarning("文件不存在 / File not found", str(source))
+            return
+        pipeline = selected.get("pipeline", "").lower()
+        for candidate in ("mineru", "pymupdf4llm", "umi", "docling", "marker"):
+            if candidate in pipeline:
+                self.pdf_mode_var.set(candidate)
+                break
+        self.selected_input_files = [source]
+        self.input_var.set(str(source))
+        self.overwrite_var.set(True)
+        self.resume_var.set(False)
+        self.write_log(f"按推荐管道重跑 / Rerun with recommended pipeline: {self.pdf_mode_var.get()} -> {source}")
+        self.start_convert()
+
+    def start_pdf_pipeline_compare(self) -> None:
+        if self.worker and self.worker.is_alive():
+            messagebox.showinfo("忙碌 / Busy", "已有任务正在运行。/ A task is already running.")
+            return
+        selected = self.selected_tree_values()
+        if not selected:
+            return
+        source = Path(selected.get("source", ""))
+        if source.suffix.lower() != ".pdf" or not source.exists():
+            messagebox.showwarning("请选择 PDF / PDF required", "请先选择一个 PDF 文件。/ Please select a PDF file first.")
+            return
+        output_text = self.output_var.get().strip() or str(source.parent)
+        compare_dir = Path(output_text) / ".reports" / "pipeline-compare" / source.stem[:80]
+        self.set_running_state(True)
+        self.status_var.set("PDF 管道对比中 / Comparing PDF pipelines")
+        self.current_stage_var.set(str(compare_dir))
+        self.write_log(f"开始 PDF 管道对比 / Start PDF pipeline compare: {source}")
+
+        def worker() -> None:
+            try:
+                cmd = [
+                    sys.executable,
+                    str(Path(__file__).resolve().parent / "scripts" / "compare_pipelines.py"),
+                    "--input",
+                    str(source),
+                    "--output",
+                    str(compare_dir),
+                    "--pipelines",
+                    "pymupdf4llm",
+                    "mineru",
+                    "umi",
+                    "docling",
+                    "--overwrite",
+                ]
+                completed = subprocess.run(cmd, cwd=Path(__file__).resolve().parent, text=True, encoding="utf-8", errors="replace", capture_output=True)
+                if completed.returncode not in {0, 3}:
+                    raise RuntimeError((completed.stderr or completed.stdout or "").strip() or f"compare_pipelines exited {completed.returncode}")
+                self.queue.put(("artifact_done", {"message": "PDF pipeline comparison finished", "artifacts": [{"path": str(compare_dir / "pipeline-comparison.md")}]}))
+            except Exception as exc:  # noqa: BLE001
+                self.queue.put(("error", str(exc)))
+
+        self.worker = threading.Thread(target=worker, daemon=True)
+        self.worker.start()
 
     def set_running_state(self, is_running: bool) -> None:
         state = "disabled" if is_running else "normal"
