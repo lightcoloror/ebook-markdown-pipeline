@@ -1,6 +1,7 @@
 param(
   [int]$Port = 8766,
   [string]$Token = "ebook-test-20260531",
+  [string]$ReportDir = "",
   [switch]$KeepTestFiles
 )
 
@@ -16,6 +17,10 @@ $ServerErr = Join-Path $TestRoot "http-bridge.err.log"
 $Python = (Get-Command python).Source
 $Formats = @()
 $PSNativeCommandUseErrorActionPreference = $false
+
+if ([string]::IsNullOrWhiteSpace($ReportDir)) {
+  $ReportDir = Join-Path $ProjectRoot "benchmarks\runs\docker-agent-smoke-current"
+}
 
 function Assert-UnderProject {
   param([string]$Path)
@@ -106,6 +111,8 @@ Add-Fixture "pdf"
 
 $Process = $null
 try {
+  New-Item -ItemType Directory -Force -Path $ReportDir | Out-Null
+
   $Process = Start-Process -FilePath $Python `
     -ArgumentList @("-B", "-m", "ebook_markdown_pipeline.ebook_converter_http", "--host", "127.0.0.1", "--port", "$Port", "--token", $Token) `
     -WorkingDirectory $WorkspaceRoot `
@@ -202,7 +209,9 @@ try {
   }
 
   $outputs = Get-ChildItem -LiteralPath $OutputDir -File -Recurse | Select-Object -ExpandProperty FullName
-  [pscustomobject]@{
+  $report = [pscustomobject]@{
+    schema_version = "docker-agent-smoke-v1"
+    created_at = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     port = $Port
     server_pid = $Process.Id
     generated_formats = $Formats
@@ -214,7 +223,41 @@ try {
     result_outputs = @($final.results | ForEach-Object { $_.output })
     outputs = $outputs
     docker = $dockerResults
-  } | ConvertTo-Json -Depth 8
+  }
+
+  $reportPath = Join-Path $ReportDir "docker-agent-smoke.json"
+  $summaryPath = Join-Path $ReportDir "docker-agent-smoke.md"
+  $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding UTF8
+
+  $containerRows = @()
+  foreach ($item in $dockerResults) {
+    $containerRows += "| $($item.container) | $($item.health_exit) | $($item.scan_exit) |"
+  }
+  $formatList = ($Formats | ForEach-Object { "``$($_)``" }) -join ", "
+  $statusList = (@($final.results | ForEach-Object { $_.status }) | Group-Object | ForEach-Object { "$($_.Name): $($_.Count)" }) -join ", "
+  $summary = @"
+# Docker Agent Smoke
+
+- Created: $($report.created_at)
+- HTTP bridge: `http://127.0.0.1:$Port`
+- Generated formats: $formatList
+- Scan count: $($scan.count)
+- Conversion status: $($final.status)
+- Completed: $($final.completed) / $($final.total)
+- Result statuses: $statusList
+
+| Container | Health exit | Scan exit |
+| --- | ---: | ---: |
+$($containerRows -join "`n")
+
+Evidence:
+
+- `docker-agent-smoke.json`: full machine-readable response, including `/health` and `/call` output from each Docker container.
+- This smoke verifies host-to-container access through `host.docker.internal` for OpenClaw and Hermes. It does not prove that their LLM planners autonomously selected the tool; it proves the stable callable HTTP surface that those agents can use.
+"@
+  $summary | Set-Content -LiteralPath $summaryPath -Encoding UTF8
+
+  $report
 } finally {
   if ($Process -and -not $Process.HasExited) {
     Stop-Process -Id $Process.Id -Force

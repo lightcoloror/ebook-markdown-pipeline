@@ -86,3 +86,13 @@ The stress summary records success rate, artifact read rate, average duration, a
 Use `--run-timeout` to put a wall-clock limit on the whole stress run. Completed iterations are written incrementally to `agent-stress-results.partial.json` and `agent-stress-summary.partial.md`, so interrupted or timeboxed runs still preserve evidence. Use `--http-timeout` to keep individual `/call` requests from hanging too long while polling jobs or reading artifacts.
 
 For agent-facing PDF stability checks, combine `--pdf-pipeline-mode`, `--pdf-tool-idle-timeout`, `--pdf-tool-finalize-timeout`, and `--docling-timeout`. Conversion reports include `pdf_fallback_diagnostics` when a slow or failed PDF backend falls back to PyMuPDF4LLM, and `docling_diagnostics` when Docling itself is timeboxed.
+
+Docker container smoke:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipeline\scripts\run_docker_agent_smoke.ps1 `
+  -Port 8770 `
+  -ReportDir D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\docker-agent-smoke-current
+```
+
+This starts the converter HTTP bridge, creates tiny fixtures for common formats, runs one local conversion job, then calls `/health` and `/call scan_books` from the `openclaw-openclaw-gateway-1` and `hermes-agent` Docker containers through `host.docker.internal`. The report is written as `docker-agent-smoke.json` and `docker-agent-smoke.md`.

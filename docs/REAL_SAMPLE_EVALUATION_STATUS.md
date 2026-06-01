@@ -264,6 +264,29 @@ Additional PDF fallback result:
 
 `process_material` and `start_conversion` now expose `pdf_tool_idle_timeout`, `pdf_tool_finalize_timeout`, `docling_timeout`, and fallback controls so agents can timebox heavy PDF/document backends without losing artifact access.
 
+Docker agent smoke directory: `benchmarks/runs/docker-agent-smoke-current`
+
+Command shape:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_docker_agent_smoke.ps1 `
+  -Port 8770 `
+  -ReportDir benchmarks\runs\docker-agent-smoke-current
+```
+
+Result:
+
+| Metric | Result |
+| --- | --- |
+| Generated formats | txt, fb2, rtf, epub, odt, azw3, mobi, azw, pdf |
+| Local HTTP conversion | 10 / 10 ok |
+| OpenClaw container `/health` | exit 0 |
+| OpenClaw container `/call scan_books` | exit 0, 10 plans |
+| Hermes container `/health` | exit 0 |
+| Hermes container `/call scan_books` | exit 0, 10 plans |
+
+This verifies that the Dockerized OpenClaw gateway container and Hermes agent container can reach the converter through `host.docker.internal` and call the stable HTTP surface. It is intentionally a deterministic gateway/tool smoke rather than an LLM-planner evaluation: it proves the callable integration path that those agents should use, while avoiding model/auth flakiness from each agent's own LLM provider.
+
 ## Current Blockers For Final Decision
 
 - Docling 2.96.1 is installed and passed the current document-format threshold. Keep it as the default backend for DOCX/PPTX/XLSX/HTML/Markdown/CSV when the optional dependency is installed.
@@ -272,7 +295,7 @@ Additional PDF fallback result:
 - Docling's PDF/OCR path may need a writable model/cache directory; the latest PDF comparison failed on a permission issue inside the global Python/site-packages path.
 - Installing Docling into the global Python 3.13 environment introduced or exposed dependency conflicts reported by `pip check` for CrewAI, AutoGen, LiteLLM, and related packages. For long-term stability, prefer a project-specific virtual environment for this converter.
 - GitHub push is currently blocked by an invalid `gh` token, but local commits are clean.
-- Agent HTTP calls are now stable for fast real samples and produce useful partial/final evidence for mixed samples. Slow Docling document jobs now have subprocess isolation, timeout diagnostics, and fallback for DOCX/HTML/Markdown/CSV. PDF fallback diagnostics now record failed/slow Docling/Marker/MinerU attempts and PyMuPDF4LLM fallback status. The remaining agent-facing risk is mostly long-running high-quality PDF backends such as MinerU/Marker on large books, where more representative long-PDF samples should still be benchmarked.
+- Agent HTTP calls are now stable for fast real samples, mixed samples, and direct Docker container access from OpenClaw/Hermes. Slow Docling document jobs now have subprocess isolation, timeout diagnostics, and fallback for DOCX/HTML/Markdown/CSV. PDF fallback diagnostics now record failed/slow Docling/Marker/MinerU attempts and PyMuPDF4LLM fallback status. The remaining agent-facing risk is mostly long-running high-quality PDF backends such as MinerU/Marker on large books, where more representative long-PDF samples should still be benchmarked.
 
 ## Next Required Runs
 

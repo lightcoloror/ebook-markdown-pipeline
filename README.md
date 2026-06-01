@@ -238,6 +238,16 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\stress_agent_http.py `
 
 压力测试报告会记录成功率、artifact 读取率、平均耗时和最长耗时；HTTP 连接错误、5xx 或 `/call` 返回的 `retryable=true` 错误会按 `--retries` 做有限重试。
 
+如果要验证 Docker 中的 OpenClaw/Hermes 是否能访问本工具的 HTTP `/call`，可以运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipeline\scripts\run_docker_agent_smoke.ps1 `
+  -Port 8770 `
+  -ReportDir D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\docker-agent-smoke-current
+```
+
+该 smoke 会生成 txt、fb2、rtf、epub、odt、azw3、mobi、azw、pdf 小样本，启动本项目 HTTP bridge，并从 `openclaw-openclaw-gateway-1` 和 `hermes-agent` 容器内通过 `host.docker.internal` 调用 `/health` 与 `/call scan_books`。报告写入 `docker-agent-smoke.json/md`。
+
 ## 截图成书重建
 
 如果有一批乱序、重复、部分重叠的截图，可以先用截图重建管道生成可复查的 Markdown 草稿：
