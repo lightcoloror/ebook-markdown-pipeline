@@ -1,0 +1,36 @@
+{
+  "schema_version": "benchmark-samples-v1",
+  "created_by": "example",
+  "samples": [
+    {
+      "id": "example-epub",
+      "path": "D:/books/sample.epub",
+      "category": "ebook",
+      "notes": "Structured ebook sample"
+    },
+    {
+      "id": "example-scanned-pdf",
+      "path": "D:/books/scanned.pdf",
+      "category": "scanned_pdf",
+      "notes": "Scanned PDF sample"
+    },
+    {
+      "id": "example-complex-pdf",
+      "path": "D:/books/table-heavy.pdf",
+      "category": "complex_pdf",
+      "notes": "Complex PDF with tables or multi-column layout"
+    },
+    {
+      "id": "example-docx",
+      "path": "D:/docs/sample.docx",
+      "category": "docling_doc",
+      "notes": "Office document sample"
+    },
+    {
+      "id": "example-screenshots",
+      "path": "D:/screenshots/book",
+      "category": "image_set",
+      "notes": "Screenshot folder sample"
+    }
+  ]
+}

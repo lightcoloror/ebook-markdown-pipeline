@@ -191,17 +191,18 @@
 - `process_material` 高层 agent 路由入口。
 - `read_artifact` 和统一 artifact schema。
 - Dockerfile、docker compose 示例和固定 `/health` / `/tools` / `/call` HTTP 接口。
+- 真实样本 benchmark 发现、批量评测、PDF 多管道对比和 HTTP agent 压测脚本。
 - Tkinter UI，支持拖放、批量文件、定位索引和截图成书。
 
 ## 后续路线
 
 优先级从高到低：
 
-1. 继续评估 Docling 真实样本效果，再决定是否升为通用默认后端。
-2. 扩展 `inspect_document`，逐步读取 Docling 的结构化预检信息。
-3. 将 MinerU 保留为复杂文档增强后端，并继续完善分段、超时、复查报告。
-4. 将 `rebuild_image_book` 的排序结果支持人工修正后重跑。
-5. 为 OpenClaw、Hermes Agent、Codex 等 agent 提供更完整的真实样例和失败恢复样例。
+1. 用 `benchmarks/samples.local.json` 持续积累 20-50 个真实样本，定期跑 benchmark。
+2. 基于 PDF 多管道对比结果，决定 Docling 是否对部分格式默认启用。
+3. 扩展 `inspect_document`，逐步读取 Docling 的结构化预检信息。
+4. 将 MinerU 保留为复杂文档增强后端，并继续完善分段、超时、复查报告。
+5. 继续扩展 UI 的复查包、对比报告和推荐重跑按钮。
 6. 继续扩展 `read_artifact`，覆盖更多 artifact 类型和安全读取策略。
 
 ## 非目标

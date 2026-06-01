@@ -168,6 +168,46 @@ python D:\used-by-codex\ebook_markdown_pipeline\document_locator.py export-revie
 
 复查包会生成 `review.md`、`matches.json` 和 `pages/`，PDF 命中会尽量渲染对应页，图片命中会复制原图，方便人工检查。
 
+## 真实样本评测 / Benchmarks
+
+先从本机目录发现 20-50 个真实样本，生成本地清单：
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\discover_benchmark_samples.py `
+  D:\downloads `
+  D:\BaiduSyncdisk\电子书 `
+  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\samples.local.json `
+  --limit 50
+```
+
+运行批量评测，记录推荐管道、耗时、质量评分和失败原因：
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\run_benchmarks.py `
+  --manifest D:\used-by-codex\ebook_markdown_pipeline\benchmarks\samples.local.json `
+  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\latest
+```
+
+对同一个 PDF 比较多条管道：
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_pipelines.py `
+  --input D:\books\sample.pdf `
+  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\compare-runs\sample `
+  --pipelines pymupdf4llm mineru umi docling
+```
+
+对 HTTP agent 调用做并发稳定性测试：
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\stress_agent_http.py `
+  --url http://127.0.0.1:8765 `
+  --manifest D:\used-by-codex\ebook_markdown_pipeline\benchmarks\samples.local.json `
+  --iterations 20 `
+  --concurrency 4 `
+  --pdf-pipeline-mode pymupdf4llm
+```
+
 ## 截图成书重建
 
 如果有一批乱序、重复、部分重叠的截图，可以先用截图重建管道生成可复查的 Markdown 草稿：

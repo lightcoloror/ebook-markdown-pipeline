@@ -11,6 +11,10 @@ dialogue_epub_extract/
 *.quality.md
 *.log
 *.tmp
+benchmarks/runs/
+benchmarks/samples.local.json
+benchmarks/compare-runs/
+.tmp-bench/
 
 # Local environment files
 .venv/
