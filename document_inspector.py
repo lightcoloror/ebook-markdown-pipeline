@@ -19,6 +19,7 @@ from ebook_markdown_pipeline.batch_convert_books import (  # noqa: E402
     detect_source_kind,
     inspect_pdf_preflight,
 )
+from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, docling_available  # noqa: E402
 from ebook_markdown_pipeline.document_locator import IMAGE_EXTENSIONS  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import collect_image_sources, image_metadata  # noqa: E402
 
@@ -162,8 +163,13 @@ def inspect_supported_document(input_path: Path) -> dict[str, Any]:
         recommendation = "convert_document_pandoc"
     elif suffix in CALIBRE_INTERMEDIATE_FORMATS:
         recommendation = "convert_document_calibre_then_pandoc"
+    elif suffix in DOCLING_FORMATS:
+        recommendation = "convert_document_docling"
     else:
         recommendation = "convert_document"
+    warnings = []
+    if suffix in DOCLING_FORMATS and not docling_available():
+        warnings.append("Docling optional backend is not installed.")
     return {
         "status": "ok",
         "input": str(input_path),
@@ -171,7 +177,7 @@ def inspect_supported_document(input_path: Path) -> dict[str, Any]:
         "extension": suffix,
         "size_bytes": input_path.stat().st_size,
         "recommendation": recommendation,
-        "warnings": [],
+        "warnings": warnings,
     }
 
 

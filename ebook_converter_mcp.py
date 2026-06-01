@@ -195,7 +195,7 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "recursive": {"type": "boolean", "default": True},
                     "include_hidden": {"type": "boolean", "default": False},
                     "output_format": {"type": "string", "enum": ["markdown", "html", "text"], "default": "markdown"},
-                    "pdf_pipeline_mode": {"type": "string", "enum": ["auto", "marker", "mineru", "pymupdf4llm", "umi"], "default": "auto"},
+                    "pdf_pipeline_mode": {"type": "string", "enum": ["auto", "marker", "mineru", "pymupdf4llm", "umi", "docling"], "default": "auto"},
                     "image_book_threshold": {"type": "integer", "default": 8},
                     "sample_pages": {"type": "integer", "default": 8},
                     "ocr": {"type": "string", "enum": ["auto", "always", "never"], "default": "auto"},
@@ -542,7 +542,7 @@ def choose_material_route(inspection: dict[str, Any], *, intent: str, query: str
             return "start_conversion"
     if kind == "image":
         return "start_location_index"
-    if kind in {"pdf", "pandoc", "calibre"}:
+    if kind in {"pdf", "pandoc", "calibre", "docling"}:
         return "start_conversion"
     return "unsupported"
 
@@ -556,7 +556,7 @@ def choose_pdf_pipeline_mode(inspection: dict[str, Any], requested: str) -> str:
     if preflight.get("scanned_likely"):
         return "mineru"
     recommended = str(preflight.get("recommended_pipeline") or "auto")
-    return recommended if recommended in {"marker", "mineru", "umi", "pymupdf4llm"} else "auto"
+    return recommended if recommended in {"marker", "mineru", "umi", "pymupdf4llm", "docling"} else "auto"
 
 
 def start_conversion(arguments: dict[str, Any]) -> dict[str, Any]:

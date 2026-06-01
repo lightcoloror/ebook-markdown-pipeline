@@ -23,13 +23,18 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Iterable
 
+try:
+    from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
+except ModuleNotFoundError:  # Allows running this file directly by absolute path.
+    from docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
+
 
 PANDOC_DIRECT_FORMATS = {".epub", ".fb2", ".odt", ".txt"}
 CALIBRE_INTERMEDIATE_FORMATS = {".azw", ".azw3", ".mobi", ".rtf"}
 EBOOK_DIRECT_FORMATS = PANDOC_DIRECT_FORMATS
 EBOOK_NEEDS_CALIBRE_FORMATS = CALIBRE_INTERMEDIATE_FORMATS
 PDF_FORMATS = {".pdf"}
-SUPPORTED_FORMATS = PANDOC_DIRECT_FORMATS | CALIBRE_INTERMEDIATE_FORMATS | PDF_FORMATS
+SUPPORTED_FORMATS = PANDOC_DIRECT_FORMATS | CALIBRE_INTERMEDIATE_FORMATS | PDF_FORMATS | DOCLING_FORMATS
 
 OUTPUT_FORMATS = {
     "markdown": {"suffix": ".md", "pandoc_target": "gfm"},
@@ -37,7 +42,7 @@ OUTPUT_FORMATS = {
     "text": {"suffix": ".txt", "pandoc_target": "plain"},
 }
 
-PDF_PIPELINE_MODES = ("auto", "marker", "mineru", "umi", "pymupdf4llm")
+PDF_PIPELINE_MODES = ("auto", "marker", "mineru", "umi", "pymupdf4llm", "docling")
 
 COMMON_WINDOWS_COMMAND_PATHS = {
     "pandoc": [
@@ -485,6 +490,8 @@ def detect_source_kind(path: Path) -> str:
         return "calibre"
     if suffix in PDF_FORMATS:
         return "pdf"
+    if suffix in DOCLING_FORMATS:
+        return "docling"
     return "unsupported"
 
 
@@ -605,6 +612,10 @@ def find_missing_dependencies(sources: Iterable[Path], args: argparse.Namespace)
     required = required_dependencies(sources, args)
     missing = []
     for command in sorted(required):
+        if command == "docling":
+            if not docling_available():
+                missing.append("Missing optional Python dependency: docling. Install with: pip install docling")
+            continue
         if resolve_command_path(command):
             continue
         missing.append(
@@ -633,6 +644,13 @@ def required_dependencies(sources: Iterable[Path], args: argparse.Namespace) -> 
                 required.add(getattr(args, "umi_paddle_exe", suggested_umi_paddle_exe()))
             elif selected == "pymupdf4llm" and not pymupdf4llm_available():
                 required.add("pymupdf4llm")
+            elif selected == "docling" and not docling_available():
+                required.add("docling")
+            if args.output_format != "markdown":
+                required.add(args.pandoc_command)
+        elif kind == "docling":
+            if not docling_available():
+                required.add("docling")
             if args.output_format != "markdown":
                 required.add(args.pandoc_command)
     return required
@@ -673,6 +691,14 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace) 
             "kind": "python",
             "status": "ok" if pymupdf4llm_available() else "missing",
             "detail": "importable" if pymupdf4llm_available() else "not importable",
+        }
+    )
+    checks.append(
+        {
+            "name": "docling",
+            "kind": "python",
+            "status": "ok" if docling_available() else "missing",
+            "detail": "importable" if docling_available() else "optional backend not installed",
         }
     )
     checks.append(
@@ -791,6 +817,8 @@ def convert_one(
             run_calibre_intermediate_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         elif kind == "pdf":
             run_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        elif kind == "docling":
+            run_docling_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         else:
             return ConversionResult(
                 source=str(source),
@@ -831,6 +859,8 @@ def pipeline_name(source: Path, args: argparse.Namespace | None = None) -> str:
         return "pandoc"
     if kind == "calibre":
         return "calibre+pandoc"
+    if kind == "docling":
+        return "docling"
     if kind == "pdf":
         if args:
             return selected_pdf_pipeline_label(source, args)
@@ -957,6 +987,39 @@ def run_calibre_intermediate_convert(
         )
 
 
+def run_docling_convert(
+    source: Path,
+    output_path: Path,
+    args: argparse.Namespace,
+    progress_callback=None,
+    progress_index: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    emit_stage(progress_callback, source, progress_index, progress_total, "docling", "Docling 文档解析")
+    if args.dry_run:
+        return
+    result = convert_with_docling(source)
+    markdown = result["markdown"]
+    if args.output_format == "markdown":
+        output_path.write_text(markdown, encoding="utf-8", newline="\n")
+        postprocess_text_output(
+            output_path,
+            args,
+            source_kind="docling",
+            note_source_path=source,
+            progress_callback=progress_callback,
+            progress_source=source,
+            progress_index=progress_index,
+            progress_total=progress_total,
+        )
+        return
+
+    with tempfile.TemporaryDirectory(prefix="docling-markdown-") as tmpdir:
+        temp_md = Path(tmpdir) / f"{source.stem}.md"
+        temp_md.write_text(markdown, encoding="utf-8", newline="\n")
+        convert_markdown_file(temp_md, output_path, args, progress_callback, source, progress_index, progress_total)
+
+
 def run_pdf_convert(
     source: Path,
     output_path: Path,
@@ -974,6 +1037,8 @@ def run_pdf_convert(
             run_mineru_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         elif selected == "pymupdf4llm":
             run_pymupdf4llm_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        elif selected == "docling":
+            run_docling_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         else:
             run_marker_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         return
@@ -3187,6 +3252,8 @@ def estimate_conversion_seconds(source: Path, args: argparse.Namespace) -> float
         return page_count * 2.0
     if selected == "pymupdf4llm":
         return page_count * 0.5
+    if selected == "docling":
+        return page_count * 2.0
     return None
 
 
@@ -3205,6 +3272,8 @@ def selected_pdf_pipeline_label(source: Path, args: argparse.Namespace) -> str:
         return "mineru(structured)"
     if selected == "umi":
         return "umi-ocr"
+    if selected == "docling":
+        return "docling"
     return selected
 
 
@@ -3236,6 +3305,8 @@ def plan_note(source: Path, args: argparse.Namespace) -> str:
         return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s; using Umi-OCR"
     if selected == "pymupdf4llm":
         return f"{page_count} pages; {metrics}; using PyMuPDF4LLM"
+    if selected == "docling":
+        return f"{page_count} pages; {metrics}; using Docling document converter"
     if mode == "auto":
         return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s; auto-use Marker ({reason})"
     return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s"

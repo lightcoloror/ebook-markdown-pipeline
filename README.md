@@ -4,6 +4,7 @@
 
 - `EPUB / FB2 / ODT / TXT` 直接用 `pandoc`
 - `AZW / AZW3 / MOBI / RTF` 用 `calibre -> EPUB -> pandoc`
+- `DOCX / PPTX / XLSX / HTML / Markdown / CSV` 可选用 `Docling` 后端
 - `PDF` 自动模式下短文档用 `Marker`，长文档自动使用 `MinerU pipeline` 做结构化解析；`Umi-OCR` 仅作为手动兜底模式
 
 脚本文件：
@@ -205,7 +206,14 @@ python D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py `
 - `ebook-convert` from calibre
 - `mineru`
 - `marker_single`
+- `docling` 可选，用于 DOCX、PPTX、XLSX、HTML、Markdown、CSV，以及手动选择 `--pdf-pipeline-mode docling` 的 PDF
 - Python packages in [requirements.txt](requirements.txt), including `PyMuPDF` and `PyMuPDF4LLM`
+
+Docling 是可选后端，不默认安装；需要时运行：
+
+```powershell
+python -m pip install -r D:\used-by-codex\ebook_markdown_pipeline\requirements-docling.txt
+```
 
 如果命令不在 `PATH`，可以显式传：
 

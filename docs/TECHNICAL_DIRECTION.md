@@ -47,7 +47,9 @@
 
 项目策略：
 
-- 后续优先接入为 `inspect_document` 和通用 `parse_document` 的默认实现。
+- 已作为可选后端接入 `inspect_document` 和转换路由；未安装时 health/check 会明确提示。
+- 当前先覆盖 DOCX、PPTX、XLSX、HTML、Markdown、CSV，并允许 PDF 手动选择 `docling` 管道。
+- 后续再评估是否把 Docling 升为通用默认后端。
 - 保持输出 artifact schema 与现有 MCP/HTTP/CLI 一致。
 
 ### MinerU
@@ -183,6 +185,7 @@
 - PDF/图片页级定位索引。
 - 关键词查询定位到 PDF 页或图片。
 - 乱序截图成书重建。
+- Docling 可选后端路由。
 - MCP stdio server。
 - HTTP bridge。
 - `process_material` 高层 agent 路由入口。
@@ -194,8 +197,8 @@
 
 优先级从高到低：
 
-1. 扩展 `inspect_document`，逐步接入 Docling 的结构化预检。
-2. 将 Docling 接为通用默认后端。
+1. 继续评估 Docling 真实样本效果，再决定是否升为通用默认后端。
+2. 扩展 `inspect_document`，逐步读取 Docling 的结构化预检信息。
 3. 将 MinerU 保留为复杂文档增强后端，并继续完善分段、超时、复查报告。
 4. 将 `rebuild_image_book` 的排序结果支持人工修正后重跑。
 5. 为 OpenClaw、Hermes Agent、Codex 等 agent 提供更完整的真实样例和失败恢复样例。
