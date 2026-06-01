@@ -94,6 +94,7 @@ MCP 工具包括：
 - `query_location_index`：查询关键词出现在哪份 PDF 的哪一页或哪张图片。
 - `export_location_review_pack`：把定位命中的 PDF 页或图片导出成复查包。
 - `start_image_book_rebuild`：后台从乱序、重复、部分重叠截图重建 Markdown 草稿。
+- `rebuild_image_book_from_order`：按人工改过的 `order.md` 重新生成截图书 Markdown。
 - `get_job_status`：轮询任务状态、阶段事件和结果。
 - `read_artifact`：按 artifact 类型安全读取 Markdown、JSON、日志、报告等输出。
 - `read_report`：读取转换 report。
@@ -181,6 +182,18 @@ python D:\used-by-codex\ebook_markdown_pipeline\image_book_rebuilder.py build `
 ```
 
 输出包括 `book.md`、`order.md`、`review.md`、`pages.jsonl`、`clusters.json`。排序会综合图片内页码、文件名数字、文件时间、文本前后重叠和重复截图分组；`order.md` 会写明排序置信度和排序依据，重复截图会作为排序和复查依据保留在 `review.md`，不会静默丢弃。
+
+如果自动排序不满意，可以直接调整 `order.md` 表格行顺序，然后不重新 OCR、只按人工顺序重建：
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\image_book_rebuilder.py rebuild-from-order `
+  D:\screenshots-md\pages.jsonl `
+  D:\screenshots-md\order.md `
+  D:\screenshots-md-manual `
+  --title "人工校正截图书"
+```
+
+输出仍然包含新的 `book.md`、`order.md` 和 `review.md`，适合先机器排序、人工拖动表格行、再生成最终 Markdown。
 
 失败后只重跑未完成项：
 

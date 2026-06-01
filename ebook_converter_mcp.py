@@ -27,7 +27,7 @@ from ebook_markdown_pipeline import (  # noqa: E402
 from ebook_markdown_pipeline.artifact_schema import artifact  # noqa: E402
 from ebook_markdown_pipeline.document_locator import build_location_index, export_location_review_pack, query_location_index  # noqa: E402
 from ebook_markdown_pipeline.document_inspector import inspect_document  # noqa: E402
-from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book  # noqa: E402
+from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book, rebuild_image_book_from_order  # noqa: E402
 
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -369,6 +369,20 @@ def tool_schemas() -> list[dict[str, Any]]:
                 "required": ["input", "output"],
             },
         },
+        {
+            "name": "rebuild_image_book_from_order",
+            "description": "Rebuild book.md from pages.jsonl and a manually edited order.md without OCR.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pages": {"type": "string"},
+                    "order": {"type": "string"},
+                    "output": {"type": "string"},
+                    "title": {"type": "string"},
+                },
+                "required": ["pages", "order", "output"],
+            },
+        },
     ]
 
 
@@ -403,6 +417,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return rebuild_image_book_tool(arguments)
     if name == "start_image_book_rebuild":
         return start_image_book_rebuild(arguments)
+    if name == "rebuild_image_book_from_order":
+        return rebuild_image_book_from_order_tool(arguments)
     raise ValueError(f"Unknown tool: {name}")
 
 
@@ -989,6 +1005,15 @@ def rebuild_image_book_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         ocr_mode=str(arguments.get("ocr") or "auto"),
         umi_paddle_exe=arguments.get("umi_paddle_exe"),
         umi_paddle_module=arguments.get("umi_paddle_module"),
+    )
+
+
+def rebuild_image_book_from_order_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    return rebuild_image_book_from_order(
+        Path(arguments["pages"]),
+        Path(arguments["order"]),
+        Path(arguments["output"]),
+        title=str(arguments.get("title") or ""),
     )
 
 

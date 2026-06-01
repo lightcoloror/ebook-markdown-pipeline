@@ -100,6 +100,7 @@ class BookConverterUI:
         self.file_start_times: dict[str, float] = {}
         self.file_estimates: dict[str, float | None] = {}
         self.latest_results = []
+        self.latest_artifacts: list[Path] = []
         self.config_path = Path.home() / ".ebook_markdown_pipeline_ui.json"
 
         self.build_layout()
@@ -238,7 +239,10 @@ class BookConverterUI:
         ttk.Button(buttons, text="复查清单 / Checklist", command=self.open_review_checklist).pack(side="left")
         ttk.Button(buttons, text="选中输出 / Output", command=self.open_selected_output).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="选中报告 / Report", command=self.open_selected_report).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="打开Artifact / Artifact", command=self.open_latest_artifact).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="PDF日志 / PDF log", command=self.open_latest_pdf_log).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="复制Agent调用 / Copy Agent", command=self.copy_agent_call).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="重跑失败 / Retry Failed", command=self.retry_failed_items).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="清空日志 / Clear", command=self.clear_log).pack(side="left")
 
         self.progress = ttk.Progressbar(buttons, mode="determinate", length=220)
@@ -716,6 +720,7 @@ class BookConverterUI:
                     self.current_stage_var.set("全部任务完成 / All done")
                     self.set_running_state(False)
                     self.worker = None
+                    self.latest_artifacts = self.collect_conversion_artifacts(payload)
                     self.write_log(f"完成 / Finished. 成功 / Success: {ok_count}/{len(payload)}")
                     self.write_log(f"汇总 / Summary: {Path(self.output_var.get().strip()) / '.reports' / 'summary.md'}")
                     self.write_log(f"复查清单 / Review checklist: {Path(self.output_var.get().strip()) / '.reports' / 'review-checklist.md'}")
@@ -725,6 +730,7 @@ class BookConverterUI:
                     self.current_stage_var.set("可用 query_location_index 或 CLI 查询 / Ready for query")
                     self.set_running_state(False)
                     self.worker = None
+                    self.latest_artifacts = self.artifact_paths_from_payload(payload)
                     self.write_log("定位索引完成 / Location index finished.")
                     self.write_log(f"SQLite: {payload.get('sqlite')}")
                     self.write_log(f"JSONL: {payload.get('jsonl')}")
@@ -735,6 +741,7 @@ class BookConverterUI:
                     self.current_stage_var.set("请检查 book.md 和 review.md / Check book.md and review.md")
                     self.set_running_state(False)
                     self.worker = None
+                    self.latest_artifacts = self.artifact_paths_from_payload(payload)
                     self.write_log("截图成书完成 / Image book finished.")
                     self.write_log(f"Book: {payload.get('book')}")
                     self.write_log(f"Order: {payload.get('order')}")
@@ -845,6 +852,47 @@ class BookConverterUI:
             return
         self.open_path(logs[0])
 
+    def open_latest_artifact(self) -> None:
+        artifacts = [path for path in self.latest_artifacts if path.exists()]
+        if not artifacts:
+            selected = self.selected_tree_values() if self.tree.selection() else None
+            if selected:
+                candidate = Path(selected.get("output", ""))
+                if candidate.exists():
+                    self.open_path(candidate)
+                    return
+            messagebox.showinfo("没有 Artifact / No artifact", "尚未找到可打开的 artifact。/ No artifact found yet.")
+            return
+        preferred_order = {".md": 0, ".markdown": 0, ".html": 1, ".txt": 2, ".json": 3, ".jsonl": 4, ".log": 5}
+        artifacts.sort(key=lambda path: (preferred_order.get(path.suffix.lower(), 9), str(path).lower()))
+        self.open_path(artifacts[0])
+
+    def collect_conversion_artifacts(self, results) -> list[Path]:
+        artifacts = []
+        for result in results:
+            output = getattr(result, "output", None)
+            report = getattr(result, "report", None)
+            if output:
+                artifacts.append(Path(output))
+            if report:
+                artifacts.append(Path(report))
+        output_text = self.output_var.get().strip()
+        if output_text:
+            report_root = Path(output_text) / ".reports"
+            artifacts.extend([report_root / "summary.md", report_root / "review-checklist.md"])
+        return artifacts
+
+    def artifact_paths_from_payload(self, payload: dict) -> list[Path]:
+        artifacts = []
+        for item in payload.get("artifacts", []) or []:
+            path = item.get("path")
+            if path:
+                artifacts.append(Path(path))
+        for key in ("book", "review", "order", "jsonl", "sqlite"):
+            if payload.get(key):
+                artifacts.append(Path(payload[key]))
+        return artifacts
+
     def selected_tree_values(self) -> dict[str, str] | None:
         selection = self.tree.selection()
         if not selection:
@@ -862,6 +910,53 @@ class BookConverterUI:
             os.startfile(str(path))  # type: ignore[attr-defined]
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("打开失败 / Open failed", str(exc))
+
+    def copy_agent_call(self) -> None:
+        output_text = self.output_var.get().strip()
+        if not output_text:
+            messagebox.showwarning("缺少输出 / Output missing", "请先选择输出文件夹。/ Please choose an output folder first.")
+            return
+        selected = None
+        if self.tree.selection():
+            selected = self.selected_tree_values()
+        input_text = selected.get("source") if selected else self.input_var.get().strip()
+        if not input_text:
+            messagebox.showwarning("缺少输入 / Input missing", "请先选择输入。/ Please choose input first.")
+            return
+        payload = {
+            "name": "process_material",
+            "arguments": {
+                "input": input_text,
+                "output": output_text,
+                "recursive": bool(self.recursive_var.get()),
+                "include_hidden": bool(self.include_hidden_var.get()),
+                "output_format": self.output_format_var.get(),
+                "pdf_pipeline_mode": self.pdf_mode_var.get(),
+            },
+        }
+        text = json.dumps(payload, ensure_ascii=False, indent=2)
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.write_log("已复制 Agent 调用 JSON / Copied agent call JSON:")
+        self.write_log(text)
+        messagebox.showinfo("已复制 / Copied", "Agent 调用 JSON 已复制到剪贴板。/ Agent call JSON copied to clipboard.")
+
+    def retry_failed_items(self) -> None:
+        failed = [
+            Path(str(getattr(result, "source", "")))
+            for result in self.latest_results
+            if getattr(result, "status", "") == "failed" and getattr(result, "source", "")
+        ]
+        failed = [path for path in failed if path.exists()]
+        if not failed:
+            messagebox.showinfo("没有失败项 / No failures", "当前没有可重跑的失败文件。/ No failed files to retry.")
+            return
+        self.selected_input_files = failed
+        self.input_var.set(self.format_selected_files(failed))
+        self.overwrite_var.set(True)
+        self.resume_var.set(False)
+        self.write_log(f"准备重跑失败项 {len(failed)} 个；已自动开启覆盖并关闭续跑。/ Retrying {len(failed)} failed item(s); overwrite on, resume off.")
+        self.start_convert()
 
     def set_running_state(self, is_running: bool) -> None:
         state = "disabled" if is_running else "normal"

@@ -33,6 +33,7 @@ REQUIRED_TOOLS = {
     "query_location_index",
     "export_location_review_pack",
     "start_image_book_rebuild",
+    "rebuild_image_book_from_order",
 }
 
 PROCESS_MATERIAL_FIELDS = {"status", "route", "inspection", "job_id", "warnings", "errors", "next_actions"}

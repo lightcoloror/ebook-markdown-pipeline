@@ -35,6 +35,7 @@ def main() -> int:
         "start_location_index",
         "export_location_review_pack",
         "start_image_book_rebuild",
+        "rebuild_image_book_from_order",
     }
     missing_tools = required - tool_names
     if missing_tools:

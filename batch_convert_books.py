@@ -2275,14 +2275,23 @@ def suggest_review_action(item: dict) -> str:
     pipeline = str(item.get("pipeline") or "")
     quality = item.get("quality") or {}
     preflight = item.get("pdf_preflight") or {}
+    reasons = "；".join(quality.get("reasons") or [])
     if status == "failed":
-        return "检查 report 错误信息；修复依赖或改用备用 PDF 模式后重跑"
+        return "先打开 report 查看 message；若是 PDF 工具失败，按顺序尝试 --pdf-pipeline-mode pymupdf4llm、mineru、umi"
     if preflight.get("scanned_likely") and "mineru" not in pipeline.lower():
-        return "疑似扫描 PDF，建议用 MinerU 或 Umi-OCR 重跑对比"
+        return "疑似扫描 PDF：优先用 --pdf-pipeline-mode mineru 重跑；如果只需文字或页级定位，用 umi 或定位索引"
+    if preflight.get("complex_layout_likely") and "mineru" not in pipeline.lower():
+        return "复杂版面/表格/多栏：建议用 --pdf-pipeline-mode mineru 或 docling 对比结构"
     if quality.get("level") == "poor":
-        return "优先人工复查；必要时换管道重跑"
+        if "没有 Markdown 标题" in reasons or "章节层级" in reasons:
+            return "标题层级差：电子书优先检查 TOC；PDF 建议用 mineru/docling 重跑并对比 review-checklist"
+        if "页码" in reasons:
+            return "页码噪声高：检查是否按页切分；PDF 建议 mineru/docling，电子书检查目录增强结果"
+        if "OCR" in reasons or "短行" in reasons:
+            return "疑似 OCR 断行：抽查原图/PDF；必要时提高 OCR DPI 或改用 Umi-OCR/MinerU"
+        return "质量 poor：先打开输出和 report 人工复查，再换管道重跑对比"
     if quality.get("reasons"):
-        return "抽查标题层级、页码噪声、脚注和乱码"
+        return "按 reasons 抽查对应问题；重点看标题层级、页码噪声、脚注、乱码和 HTML 残留"
     return "人工抽查"
 
 

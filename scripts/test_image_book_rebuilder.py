@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -9,8 +10,10 @@ from ebook_markdown_pipeline.image_book_rebuilder import (  # noqa: E402
     ScreenshotPage,
     infer_page_order,
     mark_duplicates,
+    rebuild_image_book_from_order,
     render_book_markdown,
     text_to_markdown,
+    write_pages_jsonl,
 )
 
 
@@ -80,6 +83,35 @@ def main() -> int:
     for path in output_dir.glob("*"):
         path.unlink()
     output_dir.rmdir()
+
+    with tempfile.TemporaryDirectory(prefix="image-book-manual-order-") as tmp:
+        root = Path(tmp)
+        pages_jsonl = root / "pages.jsonl"
+        order_md = root / "order.md"
+        manual_output = root / "manual"
+        write_pages_jsonl(pages_jsonl, [first, second])
+        order_md.write_text(
+            "\n".join(
+                [
+                    "# 图片顺序推断 / Inferred Screenshot Order",
+                    "",
+                    "| # | Source | Page | Confidence | Reason | Overlap | Title candidates |",
+                    "| --- | --- | --- | --- | --- | --- | --- |",
+                    "| 1 | a.png |  | 0.65 | manual | 0 |  |",
+                    "| 2 | b.png |  | 0.65 | manual | 0 |  |",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        manual = rebuild_image_book_from_order(pages_jsonl, order_md, manual_output, title="人工排序")
+        manual_book = Path(manual["book"]).read_text(encoding="utf-8")
+        if manual_book.find("<!-- source: a.png -->") > manual_book.find("<!-- source: b.png -->"):
+            raise RuntimeError(f"Expected manual order to place a.png before b.png: {manual_book}")
+        if manual["manual_order_count"] != 2 or manual["missing_source_count"] != 0:
+            raise RuntimeError(f"Unexpected manual rebuild metadata: {manual}")
+        manual_artifacts = {item["type"] for item in manual.get("artifacts", [])}
+        if not {"markdown", "order_report", "review_report"}.issubset(manual_artifacts):
+            raise RuntimeError(f"Expected manual rebuild artifacts: {manual}")
 
     print("Image book rebuilder smoke test passed.")
     return 0

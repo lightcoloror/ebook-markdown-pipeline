@@ -159,6 +159,7 @@ Use specialist tools when the desired action is already known:
 - `export_location_review_pack`: export matched PDF pages or images for human review.
 - `rebuild_image_book`: synchronous short screenshot rebuild.
 - `start_image_book_rebuild`: async screenshot rebuild.
+- `rebuild_image_book_from_order`: rebuild Markdown from `pages.jsonl` plus a manually edited `order.md` without rerunning OCR.
 - `read_report`: JSON conversion report reader.
 - `read_pdf_tool_log`: PDF tool log tail reader.
 

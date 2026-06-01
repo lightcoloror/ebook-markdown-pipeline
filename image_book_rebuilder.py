@@ -65,6 +65,12 @@ def main() -> int:
     build_parser.add_argument("--umi-paddle-exe", default=suggested_umi_paddle_exe())
     build_parser.add_argument("--umi-paddle-module", default=suggested_umi_paddle_module())
 
+    reorder_parser = subparsers.add_parser("rebuild-from-order", help="Rebuild Markdown from pages.jsonl and a manually edited order.md.")
+    reorder_parser.add_argument("pages", type=Path)
+    reorder_parser.add_argument("order", type=Path)
+    reorder_parser.add_argument("output", type=Path)
+    reorder_parser.add_argument("--title", default="")
+
     args = parser.parse_args()
     if args.command == "build":
         result = rebuild_image_book(
@@ -76,6 +82,10 @@ def main() -> int:
             umi_paddle_exe=args.umi_paddle_exe,
             umi_paddle_module=args.umi_paddle_module,
         )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "rebuild-from-order":
+        result = rebuild_image_book_from_order(args.pages, args.order, args.output, title=args.title)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     return 2
@@ -172,6 +182,168 @@ def rebuild_image_book_from_sources(
             artifact("review_report", review_md, label="Image book review checklist", media_type="text/markdown"),
         ],
     )
+
+
+def rebuild_image_book_from_order(
+    pages_jsonl: Path,
+    order_markdown: Path,
+    output_dir: Path,
+    *,
+    title: str = "",
+) -> dict:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pages = load_pages_jsonl(pages_jsonl)
+    manual_sources = parse_order_markdown_sources(order_markdown)
+    page_by_source = {normalize_source_key(page.source): page for page in pages}
+    ordered_pages: list[ScreenshotPage] = []
+    missing_sources: list[str] = []
+    used_sources: set[str] = set()
+
+    for source in manual_sources:
+        key = normalize_source_key(source)
+        page = page_by_source.get(key)
+        if page is None:
+            missing_sources.append(source)
+            continue
+        used_sources.add(key)
+        ordered_pages.append(page)
+
+    remaining_pages = [page for page in pages if normalize_source_key(page.source) not in used_sources and not page.duplicate_of]
+    if remaining_pages:
+        ordered_pages.extend(infer_page_order(remaining_pages))
+
+    for index, page in enumerate(ordered_pages, start=1):
+        page.order_index = index
+        if normalize_source_key(page.source) in used_sources:
+            page.order_confidence = max(page.order_confidence, 0.99)
+            page.order_reason = "manual order.md"
+
+    book_md = output_dir / "book.md"
+    order_md = output_dir / "order.md"
+    review_md = output_dir / "review.md"
+    book_title = title or output_dir.name or "Rebuilt Image Book"
+    book_md.write_text(render_book_markdown(book_title, ordered_pages), encoding="utf-8", newline="\n")
+    order_md.write_text(render_order_markdown(ordered_pages), encoding="utf-8", newline="\n")
+    review_md.write_text(render_manual_order_review_markdown(pages_jsonl, order_markdown, ordered_pages, missing_sources, remaining_pages), encoding="utf-8", newline="\n")
+
+    return with_artifacts(
+        {
+            "input": str(pages_jsonl),
+            "order": str(order_markdown),
+            "output": str(output_dir),
+            "page_count": len(pages),
+            "manual_order_count": len(manual_sources),
+            "ordered_count": len(ordered_pages),
+            "missing_source_count": len(missing_sources),
+            "appended_unordered_count": len(remaining_pages),
+            "book": str(book_md),
+            "rebuilt_order": str(order_md),
+            "review": str(review_md),
+            "warnings": manual_order_warnings(missing_sources, remaining_pages),
+        },
+        [
+            artifact("markdown", book_md, label="Manually reordered Markdown", media_type="text/markdown"),
+            artifact("order_report", order_md, label="Rebuilt order report", media_type="text/markdown"),
+            artifact("review_report", review_md, label="Manual order review", media_type="text/markdown"),
+        ],
+    )
+
+
+def load_pages_jsonl(path: Path) -> list[ScreenshotPage]:
+    pages: list[ScreenshotPage] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            data = json.loads(line)
+            pages.append(ScreenshotPage(**data))
+    return pages
+
+
+def parse_order_markdown_sources(path: Path) -> list[str]:
+    sources: list[str] = []
+    for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw_line.strip()
+        if not line.startswith("|") or "Source" in line or re.match(r"^\|\s*-+", line):
+            continue
+        cells = split_markdown_table_row(line)
+        if len(cells) < 2:
+            continue
+        source = cells[1].strip().replace("\\|", "|")
+        if source:
+            sources.append(source)
+    return sources
+
+
+def split_markdown_table_row(line: str) -> list[str]:
+    cells: list[str] = []
+    current = []
+    escaped = False
+    trimmed = line.strip()
+    if trimmed.startswith("|"):
+        trimmed = trimmed[1:]
+    if trimmed.endswith("|"):
+        trimmed = trimmed[:-1]
+    for char in trimmed:
+        if escaped:
+            current.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            current.append(char)
+            escaped = True
+            continue
+        if char == "|":
+            cells.append("".join(current).strip())
+            current = []
+            continue
+        current.append(char)
+    cells.append("".join(current).strip())
+    return cells
+
+
+def normalize_source_key(source: str) -> str:
+    return str(Path(source)).replace("\\", "/").lower()
+
+
+def manual_order_warnings(missing_sources: list[str], remaining_pages: list[ScreenshotPage]) -> list[str]:
+    warnings = []
+    if missing_sources:
+        warnings.append(f"{len(missing_sources)} source(s) in order.md were not found in pages.jsonl.")
+    if remaining_pages:
+        warnings.append(f"{len(remaining_pages)} page(s) were not listed in order.md and were appended automatically.")
+    return warnings
+
+
+def render_manual_order_review_markdown(
+    pages_jsonl: Path,
+    order_markdown: Path,
+    ordered_pages: list[ScreenshotPage],
+    missing_sources: list[str],
+    remaining_pages: list[ScreenshotPage],
+) -> str:
+    lines = [
+        "# 人工顺序重建复查 / Manual Order Rebuild Review",
+        "",
+        f"- Pages: `{pages_jsonl}`",
+        f"- Edited order: `{order_markdown}`",
+        f"- Ordered pages: {len(ordered_pages)}",
+        f"- Missing sources in pages.jsonl: {len(missing_sources)}",
+        f"- Appended unordered pages: {len(remaining_pages)}",
+        "",
+    ]
+    if missing_sources:
+        lines.extend(["## Missing Sources", ""])
+        for source in missing_sources:
+            lines.append(f"- `{source}`")
+        lines.append("")
+    if remaining_pages:
+        lines.extend(["## Appended Pages", ""])
+        for page in remaining_pages:
+            lines.append(f"- `{page.source}`")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def collect_image_sources(input_path: Path, *, recursive: bool, include_hidden: bool) -> list[Path]:
