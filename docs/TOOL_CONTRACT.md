@@ -123,6 +123,7 @@ Common artifact types:
 - `summary_json`
 - `review_report`
 - `review_json`
+- `matches_json`
 - `location_index_sqlite`
 - `location_index_jsonl`
 - `pages_jsonl`
@@ -155,6 +156,7 @@ Use specialist tools when the desired action is already known:
 - `build_location_index`: synchronous short location indexing.
 - `start_location_index`: async location indexing.
 - `query_location_index`: query a generated SQLite location index.
+- `export_location_review_pack`: export matched PDF pages or images for human review.
 - `rebuild_image_book`: synchronous short screenshot rebuild.
 - `start_image_book_rebuild`: async screenshot rebuild.
 - `read_report`: JSON conversion report reader.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -62,6 +63,13 @@ def main() -> int:
     query_parser.add_argument("--limit", type=int, default=20)
     query_parser.add_argument("--format", choices=["json", "markdown"], default="json")
 
+    export_parser = subparsers.add_parser("export-review", help="Export a human review pack for location query matches.")
+    export_parser.add_argument("index", type=Path)
+    export_parser.add_argument("query")
+    export_parser.add_argument("output", type=Path)
+    export_parser.add_argument("--limit", type=int, default=20)
+    export_parser.add_argument("--render-dpi", type=int, default=150)
+
     args = parser.parse_args()
     if args.command == "index":
         result = build_location_index(
@@ -82,6 +90,10 @@ def main() -> int:
             print(render_query_markdown(result))
         else:
             print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "export-review":
+        result = export_location_review_pack(args.index, args.query, args.output, limit=args.limit, render_dpi=args.render_dpi)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     return 2
 
@@ -224,6 +236,103 @@ def query_location_index(index_path: Path, query: str, *, limit: int = 20) -> di
         }
     finally:
         conn.close()
+
+
+def export_location_review_pack(index_path: Path, query: str, output_dir: Path, *, limit: int = 20, render_dpi: int = 150) -> dict:
+    result = query_location_index(index_path, query, limit=limit)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pages_dir = output_dir / "pages"
+    pages_dir.mkdir(parents=True, exist_ok=True)
+    exported_pages = []
+    for index, match in enumerate(result.get("matches", []), start=1):
+        exported = export_match_page(match, pages_dir, index=index, render_dpi=render_dpi)
+        if exported:
+            exported_pages.append(exported)
+            match["review_file"] = str(exported)
+
+    matches_json = output_dir / "matches.json"
+    review_md = output_dir / "review.md"
+    matches_json.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    review_md.write_text(render_review_pack_markdown(result, exported_pages), encoding="utf-8", newline="\n")
+    return with_artifacts(
+        {
+            "index": str(index_path),
+            "query": query,
+            "output": str(output_dir),
+            "match_count": result.get("count", 0),
+            "exported_page_count": len(exported_pages),
+        },
+        [
+            artifact("review_report", review_md, label="Location match review pack", media_type="text/markdown"),
+            artifact("matches_json", matches_json, label="Location match JSON", media_type="application/json"),
+        ],
+    )
+
+
+def export_match_page(match: dict, pages_dir: Path, *, index: int, render_dpi: int) -> Path | None:
+    source = Path(str(match.get("source") or ""))
+    if not source.exists():
+        return None
+    suffix = source.suffix.lower()
+    safe_stem = safe_review_stem(source.stem)
+    page = match.get("page")
+    if suffix in PDF_EXTENSIONS and page:
+        try:
+            import pymupdf
+
+            document = pymupdf.open(str(source))
+            try:
+                page_index = max(int(page) - 1, 0)
+                if page_index >= document.page_count:
+                    return None
+                target = pages_dir / f"{index:03d}-{safe_stem}-p{int(page):04d}.png"
+                document[page_index].get_pixmap(dpi=render_dpi).save(str(target))
+                return target
+            finally:
+                document.close()
+        except Exception:
+            return None
+    if suffix in IMAGE_EXTENSIONS:
+        target = pages_dir / f"{index:03d}-{safe_stem}{suffix}"
+        shutil.copy2(source, target)
+        return target
+    return None
+
+
+def render_review_pack_markdown(result: dict, exported_pages: list[Path]) -> str:
+    lines = [
+        f"# Location Review Pack: {result['query']}",
+        "",
+        f"- Index: `{result['index']}`",
+        f"- Search mode: `{result.get('search_mode', 'fts')}`",
+        f"- Matches: {result.get('count', 0)}",
+        f"- Exported pages/images: {len(exported_pages)}",
+        "",
+    ]
+    if not result.get("matches"):
+        lines.append("No matches.")
+        return "\n".join(lines).rstrip() + "\n"
+    for idx, match in enumerate(result["matches"], start=1):
+        lines.extend(
+            [
+                f"## Match {idx}: {Path(str(match.get('source', ''))).name}",
+                "",
+                f"- Source: `{match.get('source', '')}`",
+                f"- Location: {match.get('location', '')}",
+                f"- Quality: `{match.get('match_quality', '')}`",
+                f"- Engine: `{match.get('engine', '')}`",
+            ]
+        )
+        if match.get("review_file"):
+            lines.append(f"- Review file: `{match['review_file']}`")
+        lines.extend(["", str(match.get("snippet", "")).replace("\n", " "), ""])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def safe_review_stem(value: str) -> str:
+    value = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", value)
+    value = re.sub(r"\s+", " ", value).strip(" ._-")
+    return value[:80] or "source"
 
 
 def clamp_limit(limit: int) -> int:

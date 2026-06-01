@@ -33,6 +33,7 @@ def main() -> int:
         "process_material",
         "read_artifact",
         "start_location_index",
+        "export_location_review_pack",
         "start_image_book_rebuild",
     }
     missing_tools = required - tool_names

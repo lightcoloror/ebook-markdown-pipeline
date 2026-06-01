@@ -92,6 +92,7 @@ MCP 工具包括：
 - `start_conversion`：启动后台转换任务。
 - `start_location_index`：后台建立 PDF/图片页级或图级定位索引。
 - `query_location_index`：查询关键词出现在哪份 PDF 的哪一页或哪张图片。
+- `export_location_review_pack`：把定位命中的 PDF 页或图片导出成复查包。
 - `start_image_book_rebuild`：后台从乱序、重复、部分重叠截图重建 Markdown 草稿。
 - `get_job_status`：轮询任务状态、阶段事件和结果。
 - `read_artifact`：按 artifact 类型安全读取 Markdown、JSON、日志、报告等输出。
@@ -154,6 +155,17 @@ python D:\used-by-codex\ebook_markdown_pipeline\document_locator.py query `
 ```
 
 输出会包含源文件、PDF 页码或图片文件、匹配片段、匹配质量和 token 命中数。查询会先走 SQLite FTS，必要时回退到完整子串匹配和 all-token 子串匹配；英文下划线、中文分词不稳定、OCR 漏字等场景会做轻量 token 回退，所以适合“先定位到哪页/哪张图，再人工复核”的用法。`--ocr never` 只用 PDF 文本层，速度最快；`--ocr auto` 会对无文本层 PDF 页和图片调用 Umi-OCR。批量建索引时，单个坏文件会记录为 `failed`，不会中断整批任务。
+
+导出命中页/图片复查包：
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\document_locator.py export-review `
+  D:\documents-index\document_locations.sqlite `
+  "合同金额" `
+  D:\documents-index\review-pack
+```
+
+复查包会生成 `review.md`、`matches.json` 和 `pages/`，PDF 命中会尽量渲染对应页，图片命中会复制原图，方便人工检查。
 
 ## 截图成书重建
 

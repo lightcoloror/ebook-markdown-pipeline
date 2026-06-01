@@ -25,7 +25,7 @@ from ebook_markdown_pipeline import (  # noqa: E402
     write_batch_summary,
 )
 from ebook_markdown_pipeline.artifact_schema import artifact  # noqa: E402
-from ebook_markdown_pipeline.document_locator import build_location_index, query_location_index  # noqa: E402
+from ebook_markdown_pipeline.document_locator import build_location_index, export_location_review_pack, query_location_index  # noqa: E402
 from ebook_markdown_pipeline.document_inspector import inspect_document  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book  # noqa: E402
 
@@ -321,6 +321,21 @@ def tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "export_location_review_pack",
+            "description": "Export a human review pack for location query matches, including review markdown, JSON, and rendered PDF pages or copied images when possible.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "index": {"type": "string"},
+                    "query": {"type": "string"},
+                    "output": {"type": "string"},
+                    "limit": {"type": "integer", "default": 20},
+                    "render_dpi": {"type": "integer", "default": 150},
+                },
+                "required": ["index", "query", "output"],
+            },
+        },
+        {
             "name": "rebuild_image_book",
             "description": "OCR a folder of screenshots/images, deduplicate near-repeats, infer order, and write a structured Markdown draft plus review files.",
             "inputSchema": {
@@ -382,6 +397,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return start_location_index(arguments)
     if name == "query_location_index":
         return query_location_index_tool(arguments)
+    if name == "export_location_review_pack":
+        return export_location_review_pack_tool(arguments)
     if name == "rebuild_image_book":
         return rebuild_image_book_tool(arguments)
     if name == "start_image_book_rebuild":
@@ -924,6 +941,16 @@ def query_location_index_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         Path(arguments["index"]),
         str(arguments["query"]),
         limit=int(arguments.get("limit") or 20),
+    )
+
+
+def export_location_review_pack_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    return export_location_review_pack(
+        Path(arguments["index"]),
+        str(arguments["query"]),
+        Path(arguments["output"]),
+        limit=int(arguments.get("limit") or 20),
+        render_dpi=int(arguments.get("render_dpi") or 150),
     )
 
 

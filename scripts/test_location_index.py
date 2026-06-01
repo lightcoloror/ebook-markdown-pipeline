@@ -10,7 +10,7 @@ import fitz
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from ebook_markdown_pipeline.document_locator import LocationRecord, build_location_index, query_location_index, write_sqlite
+from ebook_markdown_pipeline.document_locator import LocationRecord, build_location_index, export_location_review_pack, query_location_index, write_sqlite
 
 
 def main() -> int:
@@ -41,6 +41,12 @@ def main() -> int:
             raise RuntimeError(f"Expected a hit on page 2: {json.dumps(result, ensure_ascii=False)}")
         if result["matches"][0]["match_quality"] != "exact" or result["matches"][0]["location"] != "page 2":
             raise RuntimeError(f"Expected location metadata on the hit: {json.dumps(result, ensure_ascii=False)}")
+        review_pack = export_location_review_pack(Path(build["sqlite"]), "300000", root / "review-pack", limit=5)
+        if review_pack["match_count"] != 1 or review_pack["exported_page_count"] != 1:
+            raise RuntimeError(f"Expected a review pack with one exported PDF page: {json.dumps(review_pack, ensure_ascii=False)}")
+        review_artifacts = {item["type"]: item for item in review_pack.get("artifacts", [])}
+        if "review_report" not in review_artifacts or not Path(review_artifacts["review_report"]["path"]).exists():
+            raise RuntimeError(f"Expected review_report artifact: {json.dumps(review_pack, ensure_ascii=False)}")
 
         chinese_index = root / "chinese.sqlite"
         write_sqlite(
