@@ -188,7 +188,8 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\discover_benchmark_sampl
 python D:\used-by-codex\ebook_markdown_pipeline\scripts\run_benchmarks.py `
   --manifest D:\used-by-codex\ebook_markdown_pipeline\benchmarks\samples.local.json `
   --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\latest `
-  --sample-timeout 600
+  --sample-timeout 600 `
+  --pdf-mode-for-benchmark fast
 ```
 
 输出目录会包含：
@@ -200,6 +201,8 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\run_benchmarks.py `
 - `docling-decision.md`：根据真实样本自动给出 Docling 是否默认启用的建议；在样本不足、依赖缺失或成功率偏低时会保持 Docling 为可选后端。
 
 `--sample-timeout` 可以避免单个坏文件、慢 OCR 或模型收尾卡住拖死整批评测；超时样本会记录为 `timeout` 并继续处理后续样本。Windows 下会用进程树终止，避免 MinerU/Marker 等子进程留下孤儿进程。
+
+`--pdf-mode-for-benchmark fast` 会把 PDF 批量评测切到 `PyMuPDF4LLM`，适合先跑完整 20-50 个样本拿到速度、基础结构和失败证据；不要用它替代最终质量判断。需要比较 MinerU / Docling / PyMuPDF4LLM / Umi-OCR 的实际效果时，仍然使用下面的 `compare_pipelines.py` 对代表性 PDF 单独跑多管道。
 
 对同一个 PDF 比较多条管道：
 

@@ -38,7 +38,21 @@ def main() -> int:
             raise RuntimeError(f"Expected discovered TXT and PDF samples: {manifest_payload}")
 
         run_dir = root / "run"
-        run_cmd("run_benchmarks.py", "--manifest", str(manifest), "--output", str(run_dir), "--limit", "1", "--overwrite", "--skip-heavy", "--sample-timeout", "20")
+        run_cmd(
+            "run_benchmarks.py",
+            "--manifest",
+            str(manifest),
+            "--output",
+            str(run_dir),
+            "--limit",
+            "1",
+            "--overwrite",
+            "--skip-heavy",
+            "--sample-timeout",
+            "20",
+            "--pdf-mode-for-benchmark",
+            "fast",
+        )
         if (
             not (run_dir / "benchmark-results.json").exists()
             or not (run_dir / "benchmark-results.partial.json").exists()
@@ -46,6 +60,9 @@ def main() -> int:
             or not (run_dir / "docling-decision.md").exists()
         ):
             raise RuntimeError("Benchmark runner did not write expected reports.")
+        run_payload = json.loads((run_dir / "benchmark-results.json").read_text(encoding="utf-8"))
+        if run_payload.get("pdf_mode_for_benchmark") != "fast":
+            raise RuntimeError(f"Expected benchmark PDF mode in report: {run_payload}")
 
         compare_dir = root / "compare"
         run_cmd("compare_pipelines.py", "--input", str(pdf), "--output", str(compare_dir), "--pipelines", "pymupdf4llm", "--overwrite")

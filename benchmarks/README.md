@@ -18,7 +18,8 @@ Run a benchmark:
 python D:\used-by-codex\ebook_markdown_pipeline\scripts\run_benchmarks.py `
   --manifest D:\used-by-codex\ebook_markdown_pipeline\benchmarks\samples.local.json `
   --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\latest `
-  --sample-timeout 600
+  --sample-timeout 600 `
+  --pdf-mode-for-benchmark fast
 ```
 
 Each run writes:
@@ -30,6 +31,8 @@ Each run writes:
 - `docling-decision.md`: evidence-based recommendation for whether Docling should become default for document-like formats. Missing dependencies or weak real-sample success keep Docling optional.
 
 Use `--sample-timeout` to mark one stuck sample as `timeout` and continue the rest of the run. On Windows, the runner terminates the timed-out process tree so MinerU/Marker children do not linger as orphan processes.
+
+Use `--pdf-mode-for-benchmark fast` to route PDFs through `PyMuPDF4LLM` during broad sample-set runs. This gives a stable baseline for 20-50 samples; use `compare_pipelines.py` for slower high-quality PDF pipeline comparisons.
 
 Compare PDF pipelines:
 

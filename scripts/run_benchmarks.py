@@ -36,6 +36,12 @@ def main() -> int:
     parser.add_argument("--skip-heavy", action="store_true", help="Skip PDF OCR/model-heavy categories.")
     parser.add_argument("--sample-timeout", type=float, default=0, help="Maximum seconds per sample. 0 disables per-sample timeout.")
     parser.add_argument("--no-partial", action="store_true", help="Do not write benchmark-results.partial.json after each sample.")
+    parser.add_argument(
+        "--pdf-mode-for-benchmark",
+        choices=["auto", "fast", "pymupdf4llm", "mineru", "marker", "umi", "docling"],
+        default="auto",
+        help="PDF pipeline for benchmark runs. 'fast' aliases to pymupdf4llm so large sample runs do not default to slow model/OCR pipelines.",
+    )
     args = parser.parse_args()
 
     samples = load_samples(args.manifest)
@@ -51,6 +57,7 @@ def main() -> int:
             overwrite=args.overwrite,
             skip_heavy=args.skip_heavy,
             sample_timeout=args.sample_timeout,
+            pdf_mode_for_benchmark=args.pdf_mode_for_benchmark,
         )
         results.append(result)
         print(json.dumps({"id": sample.get("id"), "status": result.get("status"), "duration_seconds": result.get("duration_seconds")}, ensure_ascii=False))
@@ -70,6 +77,7 @@ def write_run_payload(args: argparse.Namespace, results: list[dict], *, final: b
         "manifest": str(args.manifest),
         "output": str(args.output),
         "sample_timeout_seconds": args.sample_timeout,
+        "pdf_mode_for_benchmark": args.pdf_mode_for_benchmark,
         "final": final,
         "summary": summarize_results(results),
         "results": results,
@@ -81,14 +89,22 @@ def write_run_payload(args: argparse.Namespace, results: list[dict], *, final: b
     return payload
 
 
-def run_sample_with_timeout(sample: dict, output_root: Path, *, overwrite: bool, skip_heavy: bool, sample_timeout: float) -> dict:
+def run_sample_with_timeout(
+    sample: dict,
+    output_root: Path,
+    *,
+    overwrite: bool,
+    skip_heavy: bool,
+    sample_timeout: float,
+    pdf_mode_for_benchmark: str,
+) -> dict:
     if sample_timeout <= 0:
-        return run_sample(sample, output_root, overwrite=overwrite, skip_heavy=skip_heavy)
+        return run_sample(sample, output_root, overwrite=overwrite, skip_heavy=skip_heavy, pdf_mode_for_benchmark=pdf_mode_for_benchmark)
     result_queue: multiprocessing.Queue = multiprocessing.Queue(maxsize=1)
     started = time.monotonic()
     process = multiprocessing.Process(
         target=_run_sample_worker,
-        args=(sample, output_root, overwrite, skip_heavy, result_queue),
+        args=(sample, output_root, overwrite, skip_heavy, pdf_mode_for_benchmark, result_queue),
     )
     process.start()
     process.join(sample_timeout)
@@ -101,6 +117,7 @@ def run_sample_with_timeout(sample: dict, output_root: Path, *, overwrite: bool,
             "source": str(source),
             "category": str(sample.get("category") or ""),
             "recommended_pipeline": sample.get("recommended_pipeline"),
+            "benchmark_pdf_mode": effective_pdf_mode(source, pdf_mode_for_benchmark),
             "status": "timeout",
             "output": str(output_root / sample_id),
             "failure_reason": f"sample exceeded timeout: {sample_timeout}s",
@@ -116,6 +133,7 @@ def run_sample_with_timeout(sample: dict, output_root: Path, *, overwrite: bool,
             "source": str(source),
             "category": str(sample.get("category") or ""),
             "recommended_pipeline": sample.get("recommended_pipeline"),
+            "benchmark_pdf_mode": effective_pdf_mode(source, pdf_mode_for_benchmark),
             "status": "failed",
             "output": str(output_root / sample_id),
             "failure_reason": f"sample process exited with code {process.exitcode} and no result",
@@ -141,9 +159,9 @@ def terminate_process_tree(process: multiprocessing.Process) -> None:
         process.join(5)
 
 
-def _run_sample_worker(sample: dict, output_root: Path, overwrite: bool, skip_heavy: bool, result_queue: multiprocessing.Queue) -> None:
+def _run_sample_worker(sample: dict, output_root: Path, overwrite: bool, skip_heavy: bool, pdf_mode_for_benchmark: str, result_queue: multiprocessing.Queue) -> None:
     try:
-        result_queue.put(run_sample(sample, output_root, overwrite=overwrite, skip_heavy=skip_heavy))
+        result_queue.put(run_sample(sample, output_root, overwrite=overwrite, skip_heavy=skip_heavy, pdf_mode_for_benchmark=pdf_mode_for_benchmark))
     except Exception as exc:  # noqa: BLE001
         source = Path(sample["path"])
         sample_id = safe_id(str(sample.get("id") or source.stem))
@@ -153,6 +171,7 @@ def _run_sample_worker(sample: dict, output_root: Path, overwrite: bool, skip_he
                 "source": str(source),
                 "category": str(sample.get("category") or ""),
                 "recommended_pipeline": sample.get("recommended_pipeline"),
+                "benchmark_pdf_mode": effective_pdf_mode(source, pdf_mode_for_benchmark),
                 "status": "failed",
                 "output": str(output_root / sample_id),
                 "failure_reason": str(exc),
@@ -161,7 +180,7 @@ def _run_sample_worker(sample: dict, output_root: Path, overwrite: bool, skip_he
         )
 
 
-def run_sample(sample: dict, output_root: Path, *, overwrite: bool, skip_heavy: bool) -> dict:
+def run_sample(sample: dict, output_root: Path, *, overwrite: bool, skip_heavy: bool, pdf_mode_for_benchmark: str = "auto") -> dict:
     sample_id = safe_id(str(sample.get("id") or Path(sample["path"]).stem))
     source = Path(sample["path"])
     output_dir = output_root / sample_id
@@ -173,6 +192,7 @@ def run_sample(sample: dict, output_root: Path, *, overwrite: bool, skip_heavy: 
         "source": str(source),
         "category": category,
         "recommended_pipeline": sample.get("recommended_pipeline"),
+        "benchmark_pdf_mode": effective_pdf_mode(source, pdf_mode_for_benchmark),
         "status": "unknown",
         "output": str(output_dir),
     }
@@ -188,7 +208,14 @@ def run_sample(sample: dict, output_root: Path, *, overwrite: bool, skip_heavy: 
         if source.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}:
             result = build_location_index(source, output_dir, recursive=False, ocr_mode="auto")
             return finish_result(base, started, "ok", artifacts=result.get("artifacts", []), metrics={"record_count": result.get("record_count")})
-        options = normalize_command_options(default_options(output=output_dir, overwrite=overwrite, resume=False))
+        options = normalize_command_options(
+            default_options(
+                output=output_dir,
+                overwrite=overwrite,
+                resume=False,
+                pdf_pipeline_mode=effective_pdf_mode(source, pdf_mode_for_benchmark),
+            )
+        )
         sources = collect_sources(source, recursive=False, include_hidden=False)
         if not sources:
             return finish_result(base, started, "failed", failure_reason="no supported sources")
@@ -213,6 +240,14 @@ def run_sample(sample: dict, output_root: Path, *, overwrite: bool, skip_heavy: 
         )
     except Exception as exc:  # noqa: BLE001
         return finish_result(base, started, "failed", failure_reason=str(exc))
+
+
+def effective_pdf_mode(source: Path, pdf_mode_for_benchmark: str) -> str:
+    if source.suffix.lower() != ".pdf":
+        return "auto"
+    if pdf_mode_for_benchmark == "fast":
+        return "pymupdf4llm"
+    return pdf_mode_for_benchmark
 
 
 def finish_result(base: dict, started: float, status: str, **updates) -> dict:
@@ -278,15 +313,16 @@ def render_benchmark_summary(payload: dict) -> str:
         f"- Status: {payload['summary']['status_counts']}",
         f"- Quality: {payload['summary']['quality_counts']}",
         f"- Docling decision: {payload['summary']['docling_policy']['decision']}",
+        f"- PDF benchmark mode: {payload.get('pdf_mode_for_benchmark', 'auto')}",
         "",
-        "| Status | Quality | Seconds | Category | Sample | Failure |",
-        "| --- | --- | ---: | --- | --- | --- |",
+        "| Status | Quality | Seconds | Category | PDF mode | Sample | Failure |",
+        "| --- | --- | ---: | --- | --- | --- | --- |",
     ]
     for item in payload["results"]:
         metrics = item.get("metrics") or {}
         lines.append(
             f"| {item.get('status')} | {metrics.get('level', '')} {metrics.get('score', '')} | "
-            f"{item.get('duration_seconds', '')} | {item.get('category', '')} | "
+            f"{item.get('duration_seconds', '')} | {item.get('category', '')} | {item.get('benchmark_pdf_mode', '')} | "
             f"{Path(item.get('source', '')).name} | {escape_table(str(item.get('failure_reason') or ''))[:220]} |"
         )
     return "\n".join(lines).rstrip() + "\n"

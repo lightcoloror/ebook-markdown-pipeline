@@ -73,6 +73,36 @@ The previously failing image set `2026年3月21日Claude制作的图文笔记堪
 
 This verifies both the Umi-OCR per-image failure isolation path and the noisy page-number ordering improvement on a real screenshot set.
 
+## Latest Fast PDF Benchmark Verification
+
+Run directory: `benchmarks/runs/fast-real-20`
+
+Command:
+
+```powershell
+python scripts\run_benchmarks.py `
+  --manifest benchmarks\samples.local.json `
+  --output benchmarks\runs\fast-real-20 `
+  --limit 20 `
+  --overwrite `
+  --sample-timeout 60 `
+  --pdf-mode-for-benchmark fast
+```
+
+Result:
+
+| Metric | Result |
+| --- | --- |
+| Samples | 20 |
+| Status | 11 ok, 8 failed, 1 timeout |
+| Quality | 6 good, 4 review |
+| PDF mode | fast -> `pymupdf4llm` |
+| PDF runtime | Most sampled PDFs completed in about 5-15 seconds; one scanned PDF took about 30 seconds; one complex layered PDF timed out at 60 seconds. |
+| Failures | 8 Docling document samples failed because `docling` is not installed. |
+| Docling decision | keep_optional |
+
+This separates broad sample-set stability benchmarking from slow high-quality PDF pipeline comparison. Use `--pdf-mode-for-benchmark fast` for 20-50 sample runs, then use `compare_pipelines.py` for selected representative PDFs.
+
 ## Current Blockers For Final Decision
 
 - Docling is not installed in the active Python environment.
@@ -89,7 +119,8 @@ python scripts\run_benchmarks.py `
   --manifest benchmarks\samples.local.json `
   --output benchmarks\runs\full-real-01 `
   --overwrite `
-  --sample-timeout 600
+  --sample-timeout 600 `
+  --pdf-mode-for-benchmark fast
 ```
 
 Then choose 3-5 representative PDFs and run:
