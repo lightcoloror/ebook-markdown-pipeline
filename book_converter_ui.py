@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import json
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -105,6 +106,7 @@ class BookConverterUI:
         self.latest_results = []
         self.latest_artifacts: list[Path] = []
         self.config_path = Path.home() / ".ebook_markdown_pipeline_ui.json"
+        self.sort_desc_by_column: dict[str, bool] = {}
 
         self.build_layout()
         self.load_ui_config()
@@ -228,8 +230,13 @@ class BookConverterUI:
             "output": 380,
         }
         for key in columns:
-            self.tree.heading(key, text=labels[key])
+            self.tree.heading(key, text=labels[key], command=lambda col=key: self.sort_tree_by_column(col))
             self.tree.column(key, width=widths[key], anchor="w")
+        self.tree.tag_configure("quality_good", background="#edf7ed")
+        self.tree.tag_configure("quality_review", background="#fff7db")
+        self.tree.tag_configure("quality_poor", background="#ffe8e3")
+        self.tree.tag_configure("quality_failed", background="#ffd9d9")
+        self.tree.bind("<Double-1>", lambda _event: self.execute_selected_suggestion())
 
         scrollbar = ttk.Scrollbar(preview_box, orient="vertical", command=self.tree.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
@@ -256,6 +263,7 @@ class BookConverterUI:
         ttk.Button(buttons, text="复制Agent调用 / Copy Agent", command=self.copy_agent_call).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="重跑失败 / Retry Failed", command=self.retry_failed_items).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="推荐重跑 / Rerun Rec", command=self.rerun_selected_recommended).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="执行建议 / Do Action", command=self.execute_selected_suggestion).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="PDF对比 / Compare", command=self.start_pdf_pipeline_compare).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="清空日志 / Clear", command=self.clear_log).pack(side="left")
 
@@ -943,7 +951,19 @@ class BookConverterUI:
             quality, action = self.quality_and_action_for_result(result)
             values[3] = quality
             values[4] = action
-            self.tree.item(item_id, values=values)
+            self.tree.item(item_id, values=values, tags=(self.quality_tag_for_label(quality),))
+
+    def quality_tag_for_label(self, quality: str) -> str:
+        lowered = quality.lower()
+        if lowered.startswith("failed"):
+            return "quality_failed"
+        if lowered.startswith("poor"):
+            return "quality_poor"
+        if lowered.startswith("review"):
+            return "quality_review"
+        if lowered.startswith("good"):
+            return "quality_good"
+        return ""
 
     def quality_and_action_for_result(self, result) -> tuple[str, str]:
         status = str(getattr(result, "status", "") or "")
@@ -982,6 +1002,51 @@ class BookConverterUI:
         if "标题" in reasons:
             return "检查原目录 / TOC review"
         return "打开报告 / Report"
+
+    def sort_tree_by_column(self, column: str) -> None:
+        columns = ("source", "format", "pipeline", "quality", "action", "note", "output_format", "output")
+        index = columns.index(column)
+        descending = not self.sort_desc_by_column.get(column, False)
+        self.sort_desc_by_column[column] = descending
+        rows = []
+        for item_id in self.tree.get_children(""):
+            values = self.tree.item(item_id, "values")
+            value = values[index] if index < len(values) else ""
+            rows.append((self.sort_key_for_column(column, str(value)), item_id))
+        rows.sort(reverse=descending)
+        for position, (_key, item_id) in enumerate(rows):
+            self.tree.move(item_id, "", position)
+
+    def sort_key_for_column(self, column: str, value: str):
+        if column == "quality":
+            match = re.search(r"\b(\d{1,3})\b", value)
+            score = int(match.group(1)) if match else -1
+            level_rank = {"good": 0, "review": 1, "poor": 2, "failed": 3}
+            level = value.split()[0].lower() if value.strip() else ""
+            return (level_rank.get(level, -1), 100 - score)
+        return value.lower()
+
+    def execute_selected_suggestion(self) -> None:
+        selected = self.selected_tree_values()
+        if not selected:
+            return
+        quality = selected.get("quality", "")
+        action = selected.get("action", "")
+        source = Path(selected.get("source", ""))
+        action_text = f"{quality} {action}".lower()
+        if "failed" in action_text or "copy fail" in action_text or "复制失败" in action:
+            self.copy_selected_failure_reason()
+            return
+        if source.suffix.lower() == ".pdf" and ("compare" in action_text or "pdf对比" in action or "重跑" in action):
+            self.start_pdf_pipeline_compare()
+            return
+        if "review" in action_text or "复查" in action:
+            self.open_review_checklist()
+            return
+        if "report" in action_text or "报告" in action or "toc" in action_text:
+            self.open_selected_report()
+            return
+        self.open_selected_output()
 
     def open_path(self, path: Path) -> None:
         if not path.exists():
