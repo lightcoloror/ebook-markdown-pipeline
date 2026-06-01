@@ -1,6 +1,6 @@
 # Real Sample Evaluation Status
 
-Last updated: 2026-06-01 17:45
+Last updated: 2026-06-01 17:51
 
 This document tracks the evidence needed before changing default pipelines, especially the optional Docling backend.
 
@@ -172,10 +172,13 @@ Compared representative poor/review PDFs from `benchmarks/runs/full-real-current
 | `03定位认知：如何找到适合自己的内容方向？.pdf` | `umi-ocr` was best: score 90, 2 headings, 5.358 seconds. `pymupdf4llm` scored 74 with no headings; MinerU timed out; Docling fell back to PyMuPDF4LLM. |
 | `Daily-Emotions-Charts-for-Adults.pdf` | `umi-ocr` was best: score 90, 3 headings, 3.642 seconds. `pymupdf4llm` scored 60 with no headings; MinerU timed out; Docling fell back to PyMuPDF4LLM. |
 | `[OCR]_名老中医之路（周凤梧）_20250818_1257.layered.pdf` | All four whole-document pipelines timed out at 75 seconds. The PDF has 1238 pages and 113 bookmarks, so it should be compared by segment or sampled pages rather than whole-book four-pipeline runs. |
+| `[OCR]_名老中医之路（周凤梧）_20250818_1257.layered.pdf`, pages `1-3,100-102,600-602` | Page-range comparison completed. `umi-ocr` produced the most usable text volume and 10 headings in 7.974 seconds, but scored 65 because of OCR short-line noise. `pymupdf4llm` was fast but extracted only 72 characters. MinerU still timed out at 90 seconds; Docling fell back to PyMuPDF4LLM. |
 
 `compare_pipelines.py` now records both requested and actual pipeline. This matters because Docling PDF attempts can succeed through `pymupdf4llm(fallback from docling)`, and the comparison report should not mislabel fallback output as native Docling quality.
 
 Interpretation: for short scanned or visual PDFs where the user mainly wants usable text and rough headings, Umi-OCR is currently the strongest fallback. For long layered books, the next quality task is page-range/segment comparison, not increasing whole-document timeouts blindly.
+
+`compare_pipelines.py --page-ranges` now supports 1-based selected-page comparison for very long PDFs. This makes long-book quality review practical without committing every pipeline to the entire document.
 
 ## Latest Agent HTTP Stress Verification
 
@@ -269,7 +272,7 @@ Additional PDF fallback result:
 
 ## Next Required Runs
 
-The 50-sample fast benchmark and three targeted poor/review PDF comparisons have completed. Next, add a page-range/segment comparison mode for very long PDFs, then rerun the 1238-page layered PDF on selected page ranges:
+The 50-sample fast benchmark, targeted poor/review PDF comparisons, and a selected-page comparison for the 1238-page layered PDF have completed. Next, improve quality post-processing for Umi-OCR outputs and consider UI exposure for page-range PDF comparison:
 
 ```powershell
 python scripts\compare_pipelines.py `

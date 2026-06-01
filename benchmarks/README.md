@@ -46,6 +46,19 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_pipelines.py `
 
 The comparison report writes `pipeline-comparison.md` with runtime, heading count, text length, table hints, page-number noise hints, and manual scoring slots. `--pipeline-timeout` marks one slow pipeline as `timeout` and continues; partial JSON/Markdown reports are written after every pipeline. The desktop UI exposes the same workflow through `PDF对比 / Compare`; `推荐重跑 / Rerun Rec` reprocesses the selected item with its recommended pipeline.
 
+For very long PDFs, compare selected pages instead of the whole book:
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_pipelines.py `
+  --input D:\books\huge.pdf `
+  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\compare-runs\huge-pages `
+  --pipelines pymupdf4llm mineru umi docling `
+  --pipeline-timeout 120 `
+  --page-ranges 1-3,100-102,600-602
+```
+
+`--page-ranges` uses 1-based page numbers, extracts a small comparison PDF, and records both the original PDF and extracted page range in the report.
+
 Summarize multiple PDF comparisons:
 
 ```powershell

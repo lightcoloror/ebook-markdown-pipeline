@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import multiprocessing
 import queue
+import re
 import sys
 import time
 from dataclasses import asdict
@@ -30,10 +31,16 @@ def main() -> int:
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--skip-missing", action="store_true", default=True)
     parser.add_argument("--pipeline-timeout", type=float, default=0, help="Maximum seconds per pipeline. 0 disables timeout.")
+    parser.add_argument(
+        "--page-ranges",
+        default="",
+        help="Optional 1-based pages/ranges to extract before comparison, e.g. '1-3,10,20-22'.",
+    )
     args = parser.parse_args()
 
     args.output.mkdir(parents=True, exist_ok=True)
-    source = args.input
+    original_source = args.input
+    source = prepare_comparison_source(original_source, args.output, args.page_ranges)
     options = normalize_command_options(default_options(output=args.output, overwrite=args.overwrite, resume=False))
     try:
         preflight = asdict(inspect_pdf_preflight(source, options, sample_pages=8))
@@ -43,26 +50,79 @@ def main() -> int:
     comparisons = []
     for pipeline in args.pipelines:
         comparisons.append(run_pipeline_with_timeout(source, args.output, pipeline, overwrite=args.overwrite, pipeline_timeout=args.pipeline_timeout))
-        partial_payload = build_payload(args, source, preflight, comparisons, final=False)
+        partial_payload = build_payload(args, source, original_source, preflight, comparisons, final=False)
         write_json(args.output / "pipeline-comparison.partial.json", partial_payload)
         (args.output / "pipeline-comparison.partial.md").write_text(render_comparison_markdown(partial_payload), encoding="utf-8")
 
-    payload = build_payload(args, source, preflight, comparisons, final=True)
+    payload = build_payload(args, source, original_source, preflight, comparisons, final=True)
     write_json(args.output / "pipeline-comparison.json", payload)
     (args.output / "pipeline-comparison.md").write_text(render_comparison_markdown(payload), encoding="utf-8")
     return 0 if any(item["status"] == "ok" for item in comparisons) else 3
 
 
-def build_payload(args: argparse.Namespace, source: Path, preflight: dict, comparisons: list[dict], *, final: bool) -> dict:
+def build_payload(
+    args: argparse.Namespace,
+    source: Path,
+    original_source: Path,
+    preflight: dict,
+    comparisons: list[dict],
+    *,
+    final: bool,
+) -> dict:
     return {
         "schema_version": PDF_COMPARE_SCHEMA_VERSION,
         "created_at": now(),
+        "original_source": str(original_source),
         "source": str(source),
+        "page_ranges": args.page_ranges,
         "pipeline_timeout_seconds": args.pipeline_timeout,
         "final": final,
         "preflight": preflight,
         "comparisons": comparisons,
     }
+
+
+def prepare_comparison_source(source: Path, output_root: Path, page_ranges: str) -> Path:
+    if not page_ranges:
+        return source
+    pages = parse_page_ranges(page_ranges)
+    if not pages:
+        raise ValueError(f"No valid pages found in --page-ranges: {page_ranges}")
+    target = output_root / f"{safe_id(source.stem)}-pages-{safe_id(page_ranges)}.pdf"
+    extract_pdf_pages(source, target, pages)
+    return target
+
+
+def parse_page_ranges(value: str) -> list[int]:
+    pages: set[int] = set()
+    for part in re.split(r"[,，\s]+", value.strip()):
+        if not part:
+            continue
+        if "-" in part:
+            start_text, end_text = part.split("-", 1)
+            start = int(start_text)
+            end = int(end_text)
+            if end < start:
+                start, end = end, start
+            pages.update(range(start, end + 1))
+        else:
+            pages.add(int(part))
+    return sorted(page for page in pages if page > 0)
+
+
+def extract_pdf_pages(source: Path, target: Path, pages_1based: list[int]) -> None:
+    import fitz
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with fitz.open(source) as src_doc:
+        page_count = src_doc.page_count
+        valid_pages = [page for page in pages_1based if 1 <= page <= page_count]
+        if not valid_pages:
+            raise ValueError(f"Requested pages are outside PDF page range 1-{page_count}: {pages_1based}")
+        with fitz.open() as out_doc:
+            for page in valid_pages:
+                out_doc.insert_pdf(src_doc, from_page=page - 1, to_page=page - 1)
+            out_doc.save(target)
 
 
 def run_pipeline_with_timeout(source: Path, output_root: Path, pipeline: str, *, overwrite: bool, pipeline_timeout: float) -> dict:
@@ -147,7 +207,9 @@ def render_comparison_markdown(payload: dict) -> str:
         f"# PDF Pipeline Comparison: {Path(payload['source']).name}",
         "",
         f"- Created: {payload['created_at']}",
-        f"- Source: `{payload['source']}`",
+        f"- Original source: `{payload.get('original_source') or payload['source']}`",
+        f"- Compared source: `{payload['source']}`",
+        f"- Page ranges: {payload.get('page_ranges') or '(full document)'}",
         f"- Pipeline timeout seconds: {payload.get('pipeline_timeout_seconds', 0)}",
         f"- Final: {payload.get('final', True)}",
         "",
