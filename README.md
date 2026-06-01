@@ -210,10 +210,11 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\run_benchmarks.py `
 python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_pipelines.py `
   --input D:\books\sample.pdf `
   --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\compare-runs\sample `
-  --pipelines pymupdf4llm mineru umi docling
+  --pipelines pymupdf4llm mineru umi docling `
+  --pipeline-timeout 600
 ```
 
-输出的 `pipeline-comparison.md` 会对比各管道的耗时、标题数量、正文长度、表格迹象、页码噪声和人工评分入口。桌面 UI 里选中 PDF 后也可以点 `PDF对比 / Compare` 生成同类报告；选中失败或待复查条目后，`推荐重跑 / Rerun Rec` 会按报告里的推荐管道重新执行该文件。
+输出的 `pipeline-comparison.md` 会对比各管道的耗时、标题数量、正文长度、表格迹象、页码噪声和人工评分入口。`--pipeline-timeout` 会限制单条管道耗时，并在每条管道结束后写出 `pipeline-comparison.partial.json/md`，避免 MinerU、Marker、Docling PDF OCR 等慢管道拖死整次对比。桌面 UI 里选中 PDF 后也可以点 `PDF对比 / Compare` 生成同类报告；选中失败或待复查条目后，`推荐重跑 / Rerun Rec` 会按报告里的推荐管道重新执行该文件。
 
 对 HTTP agent 调用做并发稳定性测试：
 

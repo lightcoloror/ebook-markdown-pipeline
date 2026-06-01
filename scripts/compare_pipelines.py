@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import multiprocessing
+import queue
 import sys
 import time
 from dataclasses import asdict
@@ -8,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from benchmark_utils import PDF_COMPARE_SCHEMA_VERSION, markdown_metrics, now, safe_id, write_json  # noqa: E402
+from run_benchmarks import terminate_process_tree  # noqa: E402
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR.parent))
@@ -26,6 +29,7 @@ def main() -> int:
     parser.add_argument("--pipelines", nargs="+", default=DEFAULT_PIPELINES)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--skip-missing", action="store_true", default=True)
+    parser.add_argument("--pipeline-timeout", type=float, default=0, help="Maximum seconds per pipeline. 0 disables timeout.")
     args = parser.parse_args()
 
     args.output.mkdir(parents=True, exist_ok=True)
@@ -38,18 +42,77 @@ def main() -> int:
 
     comparisons = []
     for pipeline in args.pipelines:
-        comparisons.append(run_pipeline(source, args.output, pipeline, overwrite=args.overwrite))
+        comparisons.append(run_pipeline_with_timeout(source, args.output, pipeline, overwrite=args.overwrite, pipeline_timeout=args.pipeline_timeout))
+        partial_payload = build_payload(args, source, preflight, comparisons, final=False)
+        write_json(args.output / "pipeline-comparison.partial.json", partial_payload)
+        (args.output / "pipeline-comparison.partial.md").write_text(render_comparison_markdown(partial_payload), encoding="utf-8")
 
-    payload = {
-        "schema_version": PDF_COMPARE_SCHEMA_VERSION,
-        "created_at": now(),
-        "source": str(source),
-        "preflight": preflight,
-        "comparisons": comparisons,
-    }
+    payload = build_payload(args, source, preflight, comparisons, final=True)
     write_json(args.output / "pipeline-comparison.json", payload)
     (args.output / "pipeline-comparison.md").write_text(render_comparison_markdown(payload), encoding="utf-8")
     return 0 if any(item["status"] == "ok" for item in comparisons) else 3
+
+
+def build_payload(args: argparse.Namespace, source: Path, preflight: dict, comparisons: list[dict], *, final: bool) -> dict:
+    return {
+        "schema_version": PDF_COMPARE_SCHEMA_VERSION,
+        "created_at": now(),
+        "source": str(source),
+        "pipeline_timeout_seconds": args.pipeline_timeout,
+        "final": final,
+        "preflight": preflight,
+        "comparisons": comparisons,
+    }
+
+
+def run_pipeline_with_timeout(source: Path, output_root: Path, pipeline: str, *, overwrite: bool, pipeline_timeout: float) -> dict:
+    if pipeline_timeout <= 0:
+        return run_pipeline(source, output_root, pipeline, overwrite=overwrite)
+    result_queue: multiprocessing.Queue = multiprocessing.Queue(maxsize=1)
+    started = time.monotonic()
+    process = multiprocessing.Process(
+        target=_run_pipeline_worker,
+        args=(source, output_root, pipeline, overwrite, result_queue),
+    )
+    process.start()
+    process.join(pipeline_timeout)
+    if process.is_alive():
+        terminate_process_tree(process)
+        return {
+            "pipeline": pipeline,
+            "status": "timeout",
+            "message": f"pipeline exceeded timeout: {pipeline_timeout}s",
+            "output": str(output_root / safe_id(pipeline) / f"{source.stem}.md"),
+            "duration_seconds": round(time.monotonic() - started, 3),
+            "metrics": {},
+        }
+    try:
+        return result_queue.get_nowait()
+    except queue.Empty:
+        return {
+            "pipeline": pipeline,
+            "status": "failed",
+            "message": f"pipeline process exited with code {process.exitcode} and no result",
+            "output": str(output_root / safe_id(pipeline) / f"{source.stem}.md"),
+            "duration_seconds": round(time.monotonic() - started, 3),
+            "metrics": {},
+        }
+
+
+def _run_pipeline_worker(source: Path, output_root: Path, pipeline: str, overwrite: bool, result_queue: multiprocessing.Queue) -> None:
+    try:
+        result_queue.put(run_pipeline(source, output_root, pipeline, overwrite=overwrite))
+    except Exception as exc:  # noqa: BLE001
+        result_queue.put(
+            {
+                "pipeline": pipeline,
+                "status": "failed",
+                "message": str(exc),
+                "output": str(output_root / safe_id(pipeline) / f"{source.stem}.md"),
+                "duration_seconds": 0,
+                "metrics": {},
+            }
+        )
 
 
 def run_pipeline(source: Path, output_root: Path, pipeline: str, *, overwrite: bool) -> dict:
@@ -84,6 +147,8 @@ def render_comparison_markdown(payload: dict) -> str:
         "",
         f"- Created: {payload['created_at']}",
         f"- Source: `{payload['source']}`",
+        f"- Pipeline timeout seconds: {payload.get('pipeline_timeout_seconds', 0)}",
+        f"- Final: {payload.get('final', True)}",
         "",
         "## Preflight",
         "",

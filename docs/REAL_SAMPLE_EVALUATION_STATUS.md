@@ -104,11 +104,38 @@ Result:
 
 This separates broad sample-set stability benchmarking from slow high-quality PDF pipeline comparison. Use `--pdf-mode-for-benchmark fast` for 20-50 sample runs, then use `compare_pipelines.py` for selected representative PDFs.
 
+## Latest Four-Pipeline PDF Comparison
+
+Run directory: `benchmarks/compare-runs/real-four-pipelines-01`
+
+Command:
+
+```powershell
+python scripts\compare_pipelines.py `
+  --input "D:\downloads\03定位认知：如何找到适合自己的内容方向？.pdf" `
+  --output benchmarks\compare-runs\real-four-pipelines-01 `
+  --pipelines pymupdf4llm mineru umi docling `
+  --overwrite `
+  --pipeline-timeout 60
+```
+
+Result:
+
+| Pipeline | Status | Seconds | Score | Notes |
+| --- | --- | ---: | ---: | --- |
+| pymupdf4llm | ok | 6.411 | 74 | Fast baseline, longer OCR text, no headings. |
+| mineru | timeout | 70.056 |  | Timed out under the 60 second per-pipeline limit. |
+| umi | ok | 4.099 | 90 | Best score on this one-page scanned sample; shorter text and two headings. |
+| docling | failed | 7.189 |  | PDF/OCR path failed with a local permission/model-cache issue. |
+
+This confirms that document-format Docling success should not be generalized to PDF defaults. PDF defaults should remain preflight/pipeline specific, and representative PDFs should be compared with per-pipeline timeouts.
+
 ## Current Blockers For Final Decision
 
 - Docling 2.96.1 is installed and passed the current document-format threshold. Keep it as the default backend for DOCX/PPTX/XLSX/HTML/Markdown/CSV when the optional dependency is installed.
 - MinerU is available through a separate local venv path but not importable in the active Python environment; timeboxed PDF runs show MinerU-like paths can still leave heavy subprocesses if the parent process is externally aborted.
 - Umi-OCR can still return invalid JSON for some image batches, but image-book rebuilding now isolates failures per image and records them in the review report instead of failing the whole set.
+- Docling's PDF/OCR path may need a writable model/cache directory; the latest PDF comparison failed on a permission issue inside the global Python/site-packages path.
 - Installing Docling into the global Python 3.13 environment introduced or exposed dependency conflicts reported by `pip check` for CrewAI, AutoGen, LiteLLM, and related packages. For long-term stability, prefer a project-specific virtual environment for this converter.
 - GitHub push is currently blocked by an invalid `gh` token, but local commits are clean.
 

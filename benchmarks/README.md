@@ -40,10 +40,11 @@ Compare PDF pipelines:
 python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_pipelines.py `
   --input D:\books\sample.pdf `
   --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\compare-runs\sample `
-  --pipelines pymupdf4llm mineru umi docling
+  --pipelines pymupdf4llm mineru umi docling `
+  --pipeline-timeout 600
 ```
 
-The comparison report writes `pipeline-comparison.md` with runtime, heading count, text length, table hints, page-number noise hints, and manual scoring slots. The desktop UI exposes the same workflow through `PDF对比 / Compare`; `推荐重跑 / Rerun Rec` reprocesses the selected item with its recommended pipeline.
+The comparison report writes `pipeline-comparison.md` with runtime, heading count, text length, table hints, page-number noise hints, and manual scoring slots. `--pipeline-timeout` marks one slow pipeline as `timeout` and continues; partial JSON/Markdown reports are written after every pipeline. The desktop UI exposes the same workflow through `PDF对比 / Compare`; `推荐重跑 / Rerun Rec` reprocesses the selected item with its recommended pipeline.
 
 Stress HTTP agent calls:
 

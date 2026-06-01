@@ -65,9 +65,17 @@ def main() -> int:
             raise RuntimeError(f"Expected benchmark PDF mode in report: {run_payload}")
 
         compare_dir = root / "compare"
-        run_cmd("compare_pipelines.py", "--input", str(pdf), "--output", str(compare_dir), "--pipelines", "pymupdf4llm", "--overwrite")
-        if not (compare_dir / "pipeline-comparison.json").exists() or not (compare_dir / "pipeline-comparison.md").exists():
+        run_cmd("compare_pipelines.py", "--input", str(pdf), "--output", str(compare_dir), "--pipelines", "pymupdf4llm", "--overwrite", "--pipeline-timeout", "20")
+        if (
+            not (compare_dir / "pipeline-comparison.json").exists()
+            or not (compare_dir / "pipeline-comparison.md").exists()
+            or not (compare_dir / "pipeline-comparison.partial.json").exists()
+            or not (compare_dir / "pipeline-comparison.partial.md").exists()
+        ):
             raise RuntimeError("Pipeline comparison did not write expected reports.")
+        compare_payload = json.loads((compare_dir / "pipeline-comparison.json").read_text(encoding="utf-8"))
+        if compare_payload.get("pipeline_timeout_seconds") != 20.0:
+            raise RuntimeError(f"Expected pipeline timeout in comparison report: {compare_payload}")
 
         stress_manifest = root / "stress-samples.json"
         stress_manifest.write_text(
