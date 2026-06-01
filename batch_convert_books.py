@@ -1661,7 +1661,7 @@ def run_umi_pdf_convert(
                 image_path = tmpdir_path / f"page-{page_number + 1:04d}.png"
                 pixmap.save(str(image_path))
                 text = umi_ocr_image(image_path, ocr_engine)
-                page_title = f"## Page {page_number + 1}"
+                page_title = f"<!-- Page {page_number + 1} -->"
                 page_body = text.strip() if text.strip() else "[No text recognized]"
                 markdown_pages.append(f"{page_title}\n\n{page_body}")
     finally:
@@ -1678,7 +1678,7 @@ def run_umi_pdf_convert(
             postprocess_text_output(
                 output_path,
                 args,
-                source_kind="pdf",
+                source_kind="umi_pdf",
                 progress_callback=progress_callback,
                 progress_source=source,
                 progress_index=progress_index,
@@ -1747,6 +1747,8 @@ def postprocess_text_output(
             text = inject_markdown_footnotes(text, notes)
     else:
         text = clean_generic_markdown(text)
+        if source_kind == "umi_pdf":
+            text = clean_umi_ocr_markdown(text)
     output_path.write_text(text, encoding="utf-8")
 
 
@@ -2017,6 +2019,86 @@ def clean_generic_markdown(text: str) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]+\n", "\n", text)
     return text.strip() + "\n"
+
+
+def clean_umi_ocr_markdown(text: str) -> str:
+    """Keep page boundaries without treating every page as a document heading."""
+    lines = text.split("\n")
+    cleaned: list[str] = []
+    pending_page = False
+    promoted_on_page = False
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if re.match(r"^##\s+Page\s+\d+\s*$", stripped, re.I):
+            page_number = re.search(r"\d+", stripped)
+            cleaned.append(f"<!-- Page {page_number.group(0) if page_number else ''} -->")
+            pending_page = True
+            promoted_on_page = False
+            continue
+        if re.match(r"^<!--\s*Page\s+\d+\s*-->\s*$", stripped, re.I):
+            cleaned.append(stripped)
+            pending_page = True
+            promoted_on_page = False
+            continue
+        if pending_page and is_umi_ocr_noise_header(stripped):
+            cleaned.append(line)
+            continue
+        if (
+            pending_page
+            and not promoted_on_page
+            and should_promote_umi_ocr_heading(stripped, next_nonempty_line(lines, idx + 1))
+        ):
+            cleaned.append(f"## {stripped}")
+            pending_page = False
+            promoted_on_page = True
+            continue
+        if stripped:
+            pending_page = False
+        cleaned.append(line)
+    text = "\n".join(cleaned)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip() + "\n"
+
+
+def next_nonempty_line(lines: list[str], start: int) -> str:
+    for line in lines[start:]:
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return ""
+
+
+def should_promote_umi_ocr_heading(line: str, next_line: str) -> bool:
+    if not line or line.startswith(("#", "-", "*", ">", "|", "<!--")):
+        return False
+    if len(line) > 24:
+        return False
+    if re.match(r"^[\d\s().（）\-—–]+$", line):
+        return False
+    if re.match(r"^[A-Za-z]{1,8}$", line):
+        return False
+    if is_umi_ocr_noise_header(line):
+        return False
+    if line in {"目", "录", "MULU"}:
+        return False
+    if not next_line:
+        return True
+    if len(next_line) >= 18:
+        return True
+    if line in {"目录", "序", "编者的话", "出版者的话"}:
+        return True
+    return False
+
+
+def is_umi_ocr_noise_header(line: str) -> bool:
+    if not line:
+        return False
+    noisy_headers = {"高中医", "名老中医走路", "多老中医建露", "老中医", "·老中匠"}
+    if line in noisy_headers:
+        return True
+    if line.startswith(("·", "•")) and len(line) <= 12:
+        return True
+    return False
 
 
 def strip_leading_toc_block(text: str) -> str:
