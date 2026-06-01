@@ -1,6 +1,6 @@
 # Real Sample Evaluation Status
 
-Last updated: 2026-06-01 17:58
+Last updated: 2026-06-01 18:02
 
 This document tracks the evidence needed before changing default pipelines, especially the optional Docling backend.
 
@@ -182,6 +182,8 @@ Interpretation: for short scanned or visual PDFs where the user mainly wants usa
 
 Umi-OCR Markdown post-processing now keeps page boundaries as HTML comments instead of `## Page N` headings, and conservatively promotes likely OCR page titles such as `出版者的话` / `澹前颜后话医德`. On the same layered-PDF page-range sample, Umi-OCR improved from score 65 / review / 10 mostly page headings to score 90 / good / 3 content headings, while preserving page markers as comments. A short scanned PDF smoke check remained score 90.
 
+The desktop UI now exposes page-range PDF comparison through the `对比页码 / Pages` field next to the compare timeout. When populated with values such as `1-3,100,600-602`, `PDF对比 / Compare` passes `--page-ranges` to `compare_pipelines.py`; the value is saved in the UI config and restored on restart.
+
 ## Latest Agent HTTP Stress Verification
 
 Fast run directory: `benchmarks/runs/agent-http-fast`
@@ -274,7 +276,7 @@ Additional PDF fallback result:
 
 ## Next Required Runs
 
-The 50-sample fast benchmark, targeted poor/review PDF comparisons, selected-page comparison, and Umi-OCR heading cleanup have completed. Next, expose page-range PDF comparison in the UI and consider more OCR cleanup for repeated page headers/footers:
+The 50-sample fast benchmark, targeted poor/review PDF comparisons, selected-page comparison, Umi-OCR heading cleanup, and UI page-range compare flow have completed. Next, consider more OCR cleanup for repeated page headers/footers:
 
 ```powershell
 python scripts\compare_pipelines.py `

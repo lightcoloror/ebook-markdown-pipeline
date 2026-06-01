@@ -47,6 +47,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\book_converter_ui.py
 - PDF 工具有自动防卡死保护：无输出超过 `--pdf-tool-idle-timeout` 或页处理完成后收尾超过 `--pdf-tool-finalize-timeout` 会终止进程树、保留临时目录并自动回退到 PyMuPDF4LLM
 - 200 页以上 PDF 默认按 50 页分段跑 MinerU，降低长文档整本卡死的风险；可用 `--mineru-segment-min-pages` 和 `--mineru-segment-pages` 调整
 - UI 提供复查入口：打开复查清单、选中输出、选中报告和最近 PDF 工具日志
+- UI 的 `PDF对比 / Compare` 支持 `对比页码 / Pages`，可填 `1-3,100,600-602` 对超长 PDF 只抽页比较四管道质量
 
 ## 用法
 
@@ -215,7 +216,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_pipelines.py `
   --pipeline-timeout 600
 ```
 
-输出的 `pipeline-comparison.md` 会对比各管道的耗时、标题数量、正文长度、表格迹象、页码噪声和人工评分入口。`--pipeline-timeout` 会限制单条管道耗时，并在每条管道结束后写出 `pipeline-comparison.partial.json/md`，避免 MinerU、Marker、Docling PDF OCR 等慢管道拖死整次对比。桌面 UI 里选中 PDF 后也可以点 `PDF对比 / Compare` 生成同类报告；选中失败或待复查条目后，`推荐重跑 / Rerun Rec` 会按报告里的推荐管道重新执行该文件。
+输出的 `pipeline-comparison.md` 会对比各管道的耗时、标题数量、正文长度、表格迹象、页码噪声和人工评分入口。`--pipeline-timeout` 会限制单条管道耗时，并在每条管道结束后写出 `pipeline-comparison.partial.json/md`，避免 MinerU、Marker、Docling PDF OCR 等慢管道拖死整次对比。桌面 UI 里选中 PDF 后也可以点 `PDF对比 / Compare` 生成同类报告；如果填写 `对比页码 / Pages`，UI 会传入 `--page-ranges` 只比较指定页；选中失败或待复查条目后，`推荐重跑 / Rerun Rec` 会按报告里的推荐管道重新执行该文件。
 
 Agent/批量场景下可用 `--docling-timeout <秒>` 控制 Docling 文档后端的最长运行时间；`--no-docling-fallback` 可关闭 DOCX/HTML/Markdown/CSV 的自动轻量兜底。HTTP `/call` 的 `start_conversion` / `process_material` 也支持 `docling_timeout` 和 `docling_fallback_to_pandoc` 参数。
 

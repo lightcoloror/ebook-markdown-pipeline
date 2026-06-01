@@ -91,6 +91,7 @@ class BookConverterUI:
         self.pdf_idle_timeout_var = tk.StringVar(value="1800")
         self.pdf_finalize_timeout_var = tk.StringVar(value="480")
         self.compare_pipeline_timeout_var = tk.StringVar(value="600")
+        self.compare_page_ranges_var = tk.StringVar()
         self.status_var = tk.StringVar(value="就绪 / Ready")
         self.current_stage_var = tk.StringVar(value="")
         self.selected_input_files: list[Path] = []
@@ -189,6 +190,8 @@ class BookConverterUI:
         ttk.Entry(settings, textvariable=self.pdf_finalize_timeout_var, width=10).grid(row=3, column=3, sticky="w", padx=8)
         ttk.Label(settings, text="对比超时(s) / Compare").grid(row=3, column=4, sticky="w", pady=4)
         ttk.Entry(settings, textvariable=self.compare_pipeline_timeout_var, width=10).grid(row=3, column=5, sticky="w", padx=8)
+        ttk.Label(settings, text="对比页码 / Pages").grid(row=3, column=6, sticky="w", pady=4)
+        ttk.Entry(settings, textvariable=self.compare_page_ranges_var, width=18).grid(row=3, column=7, sticky="w", padx=8)
 
         actions = ttk.Frame(container)
         actions.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
@@ -1065,12 +1068,22 @@ class BookConverterUI:
         except ValueError:
             messagebox.showwarning("超时无效 / Invalid timeout", "PDF 对比超时必须是数字。/ Compare timeout must be numeric.")
             return
+        page_ranges = self.compare_page_ranges_var.get().strip()
+        if page_ranges:
+            page_ranges = page_ranges.replace("，", ",")
+            if not self.valid_page_ranges(page_ranges):
+                messagebox.showwarning(
+                    "页码范围无效 / Invalid pages",
+                    "页码范围示例：1-3,100,600-602。/ Example: 1-3,100,600-602.",
+                )
+                return
         output_text = self.output_var.get().strip() or str(source.parent)
         compare_dir = Path(output_text) / ".reports" / "pipeline-compare" / source.stem[:80]
         self.set_running_state(True)
         self.status_var.set("PDF 管道对比中 / Comparing PDF pipelines")
         self.current_stage_var.set(str(compare_dir))
-        self.write_log(f"开始 PDF 管道对比 / Start PDF pipeline compare: {source}")
+        page_note = f" pages={page_ranges}" if page_ranges else ""
+        self.write_log(f"开始 PDF 管道对比 / Start PDF pipeline compare: {source}{page_note}")
 
         def worker() -> None:
             try:
@@ -1090,6 +1103,8 @@ class BookConverterUI:
                     "--pipeline-timeout",
                     str(pipeline_timeout),
                 ]
+                if page_ranges:
+                    cmd.extend(["--page-ranges", page_ranges])
                 completed = subprocess.run(cmd, cwd=Path(__file__).resolve().parent, text=True, encoding="utf-8", errors="replace", capture_output=True)
                 if completed.returncode not in {0, 3}:
                     raise RuntimeError((completed.stderr or completed.stdout or "").strip() or f"compare_pipelines exited {completed.returncode}")
@@ -1111,6 +1126,20 @@ class BookConverterUI:
 
         self.worker = threading.Thread(target=worker, daemon=True)
         self.worker.start()
+
+    def valid_page_ranges(self, value: str) -> bool:
+        parts = [part.strip() for part in value.split(",") if part.strip()]
+        if not parts:
+            return False
+        for part in parts:
+            if "-" in part:
+                bounds = [item.strip() for item in part.split("-", 1)]
+                if len(bounds) != 2 or not all(item.isdigit() and int(item) > 0 for item in bounds):
+                    return False
+                continue
+            if not part.isdigit() or int(part) <= 0:
+                return False
+        return True
 
     def set_running_state(self, is_running: bool) -> None:
         state = "disabled" if is_running else "normal"
@@ -1216,6 +1245,7 @@ class BookConverterUI:
             "pdf_idle_timeout": self.pdf_idle_timeout_var,
             "pdf_finalize_timeout": self.pdf_finalize_timeout_var,
             "compare_pipeline_timeout": self.compare_pipeline_timeout_var,
+            "compare_page_ranges": self.compare_page_ranges_var,
         }.items():
             if key in data and data[key] is not None:
                 variable.set(str(data[key]))
@@ -1246,6 +1276,7 @@ class BookConverterUI:
             "pdf_idle_timeout": self.pdf_idle_timeout_var.get(),
             "pdf_finalize_timeout": self.pdf_finalize_timeout_var.get(),
             "compare_pipeline_timeout": self.compare_pipeline_timeout_var.get(),
+            "compare_page_ranges": self.compare_page_ranges_var.get(),
         }
         try:
             self.config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
