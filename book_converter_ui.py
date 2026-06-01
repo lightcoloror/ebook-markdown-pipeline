@@ -10,7 +10,7 @@ import threading
 import time
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -93,6 +93,7 @@ class BookConverterUI:
         self.pdf_finalize_timeout_var = tk.StringVar(value="480")
         self.compare_pipeline_timeout_var = tk.StringVar(value="600")
         self.compare_page_ranges_var = tk.StringVar()
+        self.review_only_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="就绪 / Ready")
         self.current_stage_var = tk.StringVar(value="")
         self.selected_input_files: list[Path] = []
@@ -107,6 +108,7 @@ class BookConverterUI:
         self.latest_artifacts: list[Path] = []
         self.config_path = Path.home() / ".ebook_markdown_pipeline_ui.json"
         self.sort_desc_by_column: dict[str, bool] = {}
+        self.detached_review_items: list[str] = []
 
         self.build_layout()
         self.load_ui_config()
@@ -255,7 +257,11 @@ class BookConverterUI:
         self.image_book_button = ttk.Button(buttons, text="截图成书 / Image Book", command=self.start_image_book_rebuild)
         self.image_book_button.pack(side="left", padx=(0, 8))
         ttk.Button(buttons, text="复查清单 / Checklist", command=self.open_review_checklist).pack(side="left")
+        ttk.Checkbutton(buttons, text="只看复查 / Review only", variable=self.review_only_var, command=self.apply_review_filter).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="上一条 / Prev", command=lambda: self.select_relative_review_item(-1)).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="下一条 / Next", command=lambda: self.select_relative_review_item(1)).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="选中输出 / Output", command=self.open_selected_output).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="原文件 / Source", command=self.open_selected_source).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="选中报告 / Report", command=self.open_selected_report).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="打开Artifact / Artifact", command=self.open_latest_artifact).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="PDF日志 / PDF log", command=self.open_latest_pdf_log).pack(side="left", padx=(8, 0))
@@ -264,6 +270,8 @@ class BookConverterUI:
         ttk.Button(buttons, text="重跑失败 / Retry Failed", command=self.retry_failed_items).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="推荐重跑 / Rerun Rec", command=self.rerun_selected_recommended).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="执行建议 / Do Action", command=self.execute_selected_suggestion).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="标记验收 / Accept", command=self.mark_selected_review_accepted).pack(side="left", padx=(8, 0))
+        ttk.Button(buttons, text="人工评分 / Score", command=self.score_selected_review_item).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="PDF对比 / Compare", command=self.start_pdf_pipeline_compare).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="清空日志 / Clear", command=self.clear_log).pack(side="left")
 
@@ -550,6 +558,12 @@ class BookConverterUI:
             messagebox.showinfo("环境检查 / Environment check", "当前选择所需环境检查通过。/ All required checks passed.")
 
     def refresh_tree(self, input_path: Path, output_path: Path, options, sources: list[Path]) -> None:
+        for item in list(self.detached_review_items):
+            try:
+                self.tree.delete(item)
+            except tk.TclError:
+                pass
+        self.detached_review_items = []
         for item in self.tree.get_children():
             self.tree.delete(item)
         plans = analyze_sources(sources, input_path, output_path, options)
@@ -952,6 +966,7 @@ class BookConverterUI:
             values[3] = quality
             values[4] = action
             self.tree.item(item_id, values=values, tags=(self.quality_tag_for_label(quality),))
+        self.apply_review_filter()
 
     def quality_tag_for_label(self, quality: str) -> str:
         lowered = quality.lower()
@@ -1047,6 +1062,146 @@ class BookConverterUI:
             self.open_selected_report()
             return
         self.open_selected_output()
+
+    def apply_review_filter(self) -> None:
+        for item_id in list(self.detached_review_items):
+            try:
+                self.tree.move(item_id, "", "end")
+            except tk.TclError:
+                pass
+        self.detached_review_items = []
+        if not self.review_only_var.get():
+            return
+        for item_id in list(self.tree.get_children("")):
+            values = self.tree.item(item_id, "values")
+            row = dict(zip(("source", "format", "pipeline", "quality", "action", "note", "output_format", "output"), values))
+            if not self.is_review_row(row):
+                self.tree.detach(item_id)
+                self.detached_review_items.append(item_id)
+
+    def is_review_row(self, row: dict[str, str]) -> bool:
+        quality = row.get("quality", "").lower()
+        action = row.get("action", "").lower()
+        if "accepted" in action or "已验收" in action:
+            return False
+        return quality.startswith(("review", "poor", "failed")) or "review" in action or "复查" in action
+
+    def select_relative_review_item(self, direction: int) -> None:
+        items = list(self.tree.get_children(""))
+        if not items:
+            messagebox.showinfo("没有复查项 / No review item", "当前没有可导航的行。/ No visible row to navigate.")
+            return
+        current = self.tree.selection()
+        if current and current[0] in items:
+            index = items.index(current[0])
+            next_index = max(0, min(len(items) - 1, index + direction))
+        else:
+            next_index = 0 if direction >= 0 else len(items) - 1
+        item_id = items[next_index]
+        self.tree.selection_set(item_id)
+        self.tree.focus(item_id)
+        self.tree.see(item_id)
+
+    def open_selected_source(self) -> None:
+        selected = self.selected_tree_values()
+        if not selected:
+            return
+        self.open_path(Path(selected.get("source", "")))
+
+    def mark_selected_review_accepted(self) -> None:
+        selected = self.selected_tree_values()
+        if not selected:
+            return
+        self.write_manual_review_record(selected, human_status="accepted")
+        self.update_selected_review_state("accepted", "已验收 / Accepted")
+        self.apply_review_filter()
+        self.write_log(f"已标记验收 / Accepted: {selected.get('source', '')}")
+
+    def score_selected_review_item(self) -> None:
+        selected = self.selected_tree_values()
+        if not selected:
+            return
+        value = simpledialog.askinteger(
+            "人工评分 / Manual score",
+            "请输入 0-100 的人工评分。/ Enter a manual score from 0 to 100.",
+            parent=self.root,
+            minvalue=0,
+            maxvalue=100,
+        )
+        if value is None:
+            return
+        status = "accepted" if value >= 85 else "review"
+        self.write_manual_review_record(selected, human_status=status, human_score=value)
+        action = f"人工评分 {value} / Manual {value}"
+        self.update_selected_review_state(status, action)
+        self.apply_review_filter()
+        self.write_log(f"已记录人工评分 / Manual score saved: {value} -> {selected.get('source', '')}")
+
+    def update_selected_review_state(self, human_status: str, action: str) -> None:
+        selection = self.tree.selection()
+        if not selection:
+            return
+        item_id = selection[0]
+        values = list(self.tree.item(item_id, "values"))
+        if len(values) >= 5:
+            if human_status == "accepted":
+                values[3] = "good manual"
+                tag = "quality_good"
+            else:
+                tag = self.quality_tag_for_label(str(values[3]))
+            values[4] = action
+            self.tree.item(item_id, values=values, tags=(tag,))
+
+    def write_manual_review_record(self, row: dict[str, str], *, human_status: str, human_score: int | None = None) -> None:
+        output_text = self.output_var.get().strip()
+        if not output_text:
+            messagebox.showwarning("缺少输出 / Output missing", "请先选择输出文件夹。/ Please choose an output folder first.")
+            return
+        report_root = Path(output_text) / ".reports"
+        report_root.mkdir(parents=True, exist_ok=True)
+        path = report_root / "manual-review.json"
+        records = []
+        if path.exists():
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                records = payload.get("records", []) if isinstance(payload, dict) else []
+            except Exception:
+                records = []
+        record = {
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "source": row.get("source", ""),
+            "output": row.get("output", ""),
+            "quality": row.get("quality", ""),
+            "action": row.get("action", ""),
+            "human_status": human_status,
+            "human_score": human_score,
+        }
+        records = [item for item in records if item.get("source") != record["source"]]
+        records.append(record)
+        path.write_text(json.dumps({"records": records}, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.write_manual_review_markdown(report_root / "manual-review.md", records)
+
+    def write_manual_review_markdown(self, path: Path, records: list[dict]) -> None:
+        lines = [
+            "# Manual Review",
+            "",
+            f"- Updated: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"- Records: {len(records)}",
+            "",
+            "| Status | Score | Source | Output |",
+            "| --- | ---: | --- | --- |",
+        ]
+        for item in sorted(records, key=lambda row: str(row.get("source", "")).lower()):
+            lines.append(
+                f"| {self.markdown_cell(str(item.get('human_status', '')))} | "
+                f"{item.get('human_score') if item.get('human_score') is not None else ''} | "
+                f"{self.markdown_cell(Path(str(item.get('source', ''))).name)} | "
+                f"{self.markdown_cell(str(item.get('output', '')))} |"
+            )
+        path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+    def markdown_cell(self, text: str) -> str:
+        return text.replace("|", "\\|").replace("\n", " ")[:300]
 
     def open_path(self, path: Path) -> None:
         if not path.exists():
