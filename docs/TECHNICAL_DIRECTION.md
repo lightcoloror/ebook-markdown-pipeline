@@ -124,6 +124,7 @@
 - `rebuild_image_book`：从乱序、重复、局部重叠截图重建 Markdown 草稿。
 - `health_check`：检查依赖、模型、GPU、OCR、外部命令。
 - `read_artifact`：读取报告、日志、Markdown、JSONL、SQLite 查询结果等 artifact。
+- `process_material`：agent 默认高层入口，自动预检并分流到转换、定位索引或截图成书重建。
 
 ## 接口优先级
 
@@ -155,7 +156,7 @@
 - `report`
 - `logs`
 
-当前最小实现为 `artifact-schema-v1`，已先接入 `build_location_index` 和 `rebuild_image_book`。新工具应优先复用同一 schema，旧工具在保持兼容的前提下逐步补齐。
+当前最小实现为 `artifact-schema-v1`，已接入 `start_conversion`、`build_location_index` 和 `rebuild_image_book`。新工具应优先复用同一 schema，旧工具在保持兼容的前提下逐步补齐。
 
 常见 artifact 类型：
 
@@ -184,19 +185,21 @@
 - 乱序截图成书重建。
 - MCP stdio server。
 - HTTP bridge。
+- `process_material` 高层 agent 路由入口。
+- `read_artifact` 和统一 artifact schema。
+- Dockerfile、docker compose 示例和固定 `/health` / `/tools` / `/call` HTTP 接口。
 - Tkinter UI，支持拖放、批量文件、定位索引和截图成书。
 
 ## 后续路线
 
 优先级从高到低：
 
-1. 扩展 `read_artifact`，覆盖更多 artifact 类型和安全读取策略。
-2. 扩展 `inspect_document`，逐步接入 Docling 的结构化预检。
-3. 将 Docling 接为通用默认后端。
-4. 将 MinerU 保留为复杂文档增强后端，并继续完善分段、超时、复查报告。
-5. 将 `rebuild_image_book` 的排序结果支持人工修正后重跑。
-6. 提供 Docker image 和固定 `/health` 检查。
-7. 为 OpenClaw、Hermes Agent、Codex 等 agent 提供最小调用示例。
+1. 扩展 `inspect_document`，逐步接入 Docling 的结构化预检。
+2. 将 Docling 接为通用默认后端。
+3. 将 MinerU 保留为复杂文档增强后端，并继续完善分段、超时、复查报告。
+4. 将 `rebuild_image_book` 的排序结果支持人工修正后重跑。
+5. 为 OpenClaw、Hermes Agent、Codex 等 agent 提供更完整的真实样例和失败恢复样例。
+6. 继续扩展 `read_artifact`，覆盖更多 artifact 类型和安全读取策略。
 
 ## 非目标
 

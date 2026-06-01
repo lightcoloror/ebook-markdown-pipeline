@@ -65,6 +65,8 @@ python D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py `
 - `CLI`：自动化脚本和人工排错的稳定兜底入口。
 - `Skill`：给支持 skill 的 agent 提供调用规范，避免 agent 自己重写转换逻辑。
 
+Agent 默认优先调用 `process_material`。它会先做轻量预检，再按输入和意图自动分流到转换、定位索引或截图成书重建；只有需要强制管道、排错或复查时，才直接调用更底层的工具。
+
 MCP 配置示例：
 
 ```json
@@ -82,14 +84,20 @@ MCP 配置示例：
 
 MCP 工具包括：
 
+- `process_material`：高层路由入口，自动识别输入并启动合适的异步任务。
 - `scan_books`：扫描输入并返回每本书的转换计划。
 - `health_check`：检查 Pandoc、Calibre、MinerU、Marker、Umi-OCR、PyMuPDF4LLM、CUDA 和模型缓存。
+- `inspect_document`：预检文件/目录类型、PDF 风险和推荐管道。
 - `start_conversion`：启动后台转换任务。
+- `start_location_index`：后台建立 PDF/图片页级或图级定位索引。
+- `query_location_index`：查询关键词出现在哪份 PDF 的哪一页或哪张图片。
+- `start_image_book_rebuild`：后台从乱序、重复、部分重叠截图重建 Markdown 草稿。
 - `get_job_status`：轮询任务状态、阶段事件和结果。
+- `read_artifact`：按 artifact 类型安全读取 Markdown、JSON、日志、报告等输出。
 - `read_report`：读取转换 report。
 - `read_pdf_tool_log`：读取 Marker/MinerU 日志尾部。
 
-详细说明见 [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md)。支持 skill 的 agent 可参考 [skills/ebook-markdown-pipeline/SKILL.md](skills/ebook-markdown-pipeline/SKILL.md)。
+稳定调用契约见 [docs/TOOL_CONTRACT.md](docs/TOOL_CONTRACT.md)，详细接入说明见 [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md)。支持 skill 的 agent 可参考 [skills/ebook-markdown-pipeline/SKILL.md](skills/ebook-markdown-pipeline/SKILL.md)。
 
 接入前可先跑 MCP smoke test：
 
@@ -111,6 +119,8 @@ python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_http.py --host 0
 ```
 
 容器内通过 `http://host.docker.internal:8765` 调用，接口复用同一套 MCP tool 名称和 JSON 参数。详见 [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md)。
+
+也可以使用仓库内的 `Dockerfile` 和 [docker-compose.example.yml](docker-compose.example.yml) 部署本地 HTTP 服务；容器路径和健康检查见 [docs/DOCKER_USAGE.md](docs/DOCKER_USAGE.md)。
 
 本机 Docker 集成烟测：
 

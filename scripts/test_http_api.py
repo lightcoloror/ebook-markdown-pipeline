@@ -27,7 +27,14 @@ def main() -> int:
 
     tools = request_json(f"{args.url.rstrip('/')}/tools", headers=headers)
     tool_names = {item["name"] for item in tools.get("tools", [])}
-    required = {"scan_books", "inspect_document", "read_artifact", "start_location_index", "start_image_book_rebuild"}
+    required = {
+        "scan_books",
+        "inspect_document",
+        "process_material",
+        "read_artifact",
+        "start_location_index",
+        "start_image_book_rebuild",
+    }
     missing_tools = required - tool_names
     if missing_tools:
         raise RuntimeError(f"Missing tools: {sorted(missing_tools)}")

@@ -24,6 +24,7 @@ from ebook_markdown_pipeline import (  # noqa: E402
     normalize_command_options,
     write_batch_summary,
 )
+from ebook_markdown_pipeline.artifact_schema import artifact  # noqa: E402
 from ebook_markdown_pipeline.document_locator import build_location_index, query_location_index  # noqa: E402
 from ebook_markdown_pipeline.document_inspector import inspect_document  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book  # noqa: E402
@@ -179,6 +180,27 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "sample_pages": {"type": "integer", "default": 8},
                 },
                 "required": ["input"],
+            },
+        },
+        {
+            "name": "process_material",
+            "description": "High-level router for agents. Inspects input and starts the right background job for conversion, location indexing, or image-book rebuilding.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"},
+                    "output": {"type": "string"},
+                    "intent": {"type": "string", "enum": ["auto", "convert", "locate", "rebuild"], "default": "auto"},
+                    "query": {"type": "string"},
+                    "recursive": {"type": "boolean", "default": True},
+                    "include_hidden": {"type": "boolean", "default": False},
+                    "output_format": {"type": "string", "enum": ["markdown", "html", "text"], "default": "markdown"},
+                    "pdf_pipeline_mode": {"type": "string", "enum": ["auto", "marker", "mineru", "pymupdf4llm", "umi"], "default": "auto"},
+                    "image_book_threshold": {"type": "integer", "default": 8},
+                    "sample_pages": {"type": "integer", "default": 8},
+                    "ocr": {"type": "string", "enum": ["auto", "always", "never"], "default": "auto"},
+                },
+                "required": ["input", "output"],
             },
         },
         {
@@ -342,6 +364,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return health_check(arguments)
     if name == "inspect_document":
         return inspect_document_tool(arguments)
+    if name == "process_material":
+        return process_material(arguments)
     if name == "start_conversion":
         return start_conversion(arguments)
     if name == "get_job_status":
@@ -419,6 +443,122 @@ def inspect_document_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
+    input_path = Path(arguments["input"])
+    output_path = Path(arguments["output"])
+    intent = str(arguments.get("intent") or "auto")
+    query = str(arguments.get("query") or "").strip()
+    recursive = bool(arguments.get("recursive", True))
+    include_hidden = bool(arguments.get("include_hidden", False))
+    image_book_threshold = int(arguments.get("image_book_threshold") or 8)
+    inspection = inspect_document(
+        input_path,
+        recursive=recursive,
+        include_hidden=include_hidden,
+        sample_pages=int(arguments.get("sample_pages") or 8),
+    )
+
+    route = choose_material_route(inspection, intent=intent, query=query, image_book_threshold=image_book_threshold)
+    delegated_arguments = dict(arguments)
+    delegated_arguments.pop("intent", None)
+    delegated_arguments.pop("query", None)
+    delegated_arguments.pop("image_book_threshold", None)
+
+    if route == "start_location_index":
+        delegated_arguments["ocr"] = str(arguments.get("ocr") or "auto")
+        delegated = start_location_index(delegated_arguments)
+        next_actions = []
+        if query:
+            next_actions.append(
+                {
+                    "after_job_status": "done",
+                    "tool": "query_location_index",
+                    "arguments": {
+                        "index": str(output_path / "document_locations.sqlite"),
+                        "query": query,
+                    },
+                }
+            )
+        else:
+            next_actions.append({"after_job_status": "done", "tool": "read_artifact", "artifact_type": "location_index_jsonl"})
+    elif route == "start_image_book_rebuild":
+        delegated_arguments["ocr"] = "auto" if str(arguments.get("ocr") or "auto") == "always" else str(arguments.get("ocr") or "auto")
+        delegated = start_image_book_rebuild(delegated_arguments)
+        next_actions = [
+            {"after_job_status": "done", "tool": "read_artifact", "artifact_type": "markdown"},
+            {"after_job_status": "done", "tool": "read_artifact", "artifact_type": "review_report"},
+        ]
+    elif route == "start_conversion":
+        conversion_arguments = dict(delegated_arguments)
+        conversion_arguments["pdf_pipeline_mode"] = choose_pdf_pipeline_mode(inspection, str(arguments.get("pdf_pipeline_mode") or "auto"))
+        delegated = start_conversion(conversion_arguments)
+        output_format = str(arguments.get("output_format") or "markdown")
+        next_actions = [
+            {"after_job_status": "done", "tool": "read_artifact", "artifact_type": output_format},
+            {"after_job_status": "done", "tool": "read_artifact", "artifact_type": "review_report"},
+        ]
+    else:
+        return {
+            "status": "unsupported",
+            "route": route,
+            "inspection": inspection,
+            "warnings": inspection.get("warnings", []) + [f"No route available for intent={intent}."],
+            "errors": [],
+            "next_actions": [],
+        }
+
+    return {
+        "status": "routed",
+        "route": route,
+        "inspection": inspection,
+        "delegated": delegated,
+        "job_id": delegated.get("job_id"),
+        "warnings": inspection.get("warnings", []),
+        "errors": [],
+        "next_actions": next_actions,
+    }
+
+
+def choose_material_route(inspection: dict[str, Any], *, intent: str, query: str, image_book_threshold: int) -> str:
+    if inspection.get("status") in {"missing", "unsupported"}:
+        return "unsupported"
+    if intent == "locate" or query:
+        return "start_location_index"
+    if intent == "rebuild":
+        return "start_image_book_rebuild"
+    if intent == "convert":
+        return "start_conversion"
+
+    kind = inspection.get("kind")
+    if kind == "directory":
+        counts = inspection.get("counts") or {}
+        images = int(counts.get("images") or 0)
+        documents = int(counts.get("documents") or 0)
+        if images and not documents and images >= image_book_threshold:
+            return "start_image_book_rebuild"
+        if images and not documents:
+            return "start_location_index"
+        if documents:
+            return "start_conversion"
+    if kind == "image":
+        return "start_location_index"
+    if kind in {"pdf", "pandoc", "calibre"}:
+        return "start_conversion"
+    return "unsupported"
+
+
+def choose_pdf_pipeline_mode(inspection: dict[str, Any], requested: str) -> str:
+    if requested and requested != "auto":
+        return requested
+    if inspection.get("kind") != "pdf":
+        return requested or "auto"
+    preflight = inspection.get("preflight") or {}
+    if preflight.get("scanned_likely"):
+        return "mineru"
+    recommended = str(preflight.get("recommended_pipeline") or "auto")
+    return recommended if recommended in {"marker", "mineru", "umi", "pymupdf4llm"} else "auto"
+
+
 def start_conversion(arguments: dict[str, Any]) -> dict[str, Any]:
     arguments = {"resume": True, **arguments}
     options = options_from_arguments(arguments)
@@ -430,6 +570,7 @@ def start_conversion(arguments: dict[str, Any]) -> dict[str, Any]:
     events: queue.Queue[dict[str, Any]] = queue.Queue()
     job = {
         "job_id": job_id,
+        "kind": "conversion",
         "status": "running",
         "started_at": timestamp(),
         "input": str(input_root),
@@ -438,6 +579,9 @@ def start_conversion(arguments: dict[str, Any]) -> dict[str, Any]:
         "completed": 0,
         "events": [],
         "results": [],
+        "artifacts": [],
+        "warnings": [],
+        "errors": [],
         "error": None,
     }
     with JOBS_LOCK:
@@ -467,7 +611,17 @@ def start_conversion(arguments: dict[str, Any]) -> dict[str, Any]:
                 )
             options.output = Path(options.output)
             write_batch_summary(results, options)
-            update_job(job_id, status="done", finished_at=timestamp(), results=[asdict(item) for item in results])
+            result_payloads = [asdict(item) for item in results]
+            update_job(
+                job_id,
+                status="done",
+                finished_at=timestamp(),
+                results=result_payloads,
+                artifacts=conversion_artifacts(results, options),
+                warnings=conversion_warnings(results),
+                errors=conversion_errors(results),
+                next_actions=conversion_next_actions(results, options),
+            )
         except Exception as exc:  # noqa: BLE001
             update_job(job_id, status="failed", finished_at=timestamp(), error=str(exc), traceback=traceback.format_exc())
         finally:
@@ -492,6 +646,86 @@ def start_conversion(arguments: dict[str, Any]) -> dict[str, Any]:
     return {"job_id": job_id, "status": "running", "total": len(sources)}
 
 
+def conversion_artifacts(results: list[Any], options: argparse.Namespace) -> list[dict[str, Any]]:
+    artifacts: list[dict[str, Any]] = []
+    output_format = str(getattr(options, "output_format", "markdown") or "markdown")
+    for result in results:
+        output = getattr(result, "output", None)
+        if output and Path(output).exists():
+            artifacts.append(
+                artifact(
+                    output_format if output_format in {"markdown", "html", "text"} else "document_output",
+                    output,
+                    label=f"Converted output: {Path(output).name}",
+                    media_type=output_media_type(Path(output)),
+                )
+            )
+        report = getattr(result, "report", None)
+        if report and Path(report).exists():
+            artifacts.append(artifact("conversion_report", report, label=f"Conversion report: {Path(report).name}", media_type="application/json"))
+
+    report_root = conversion_report_root(options)
+    for path, artifact_type, label, media_type in [
+        (report_root / "summary.md", "summary_report", "Conversion summary", "text/markdown"),
+        (report_root / "summary.json", "summary_json", "Conversion summary JSON", "application/json"),
+        (report_root / "review-checklist.md", "review_report", "Review checklist", "text/markdown"),
+        (report_root / "review-checklist.json", "review_json", "Review checklist JSON", "application/json"),
+    ]:
+        if path.exists():
+            artifacts.append(artifact(artifact_type, path, label=label, media_type=media_type))
+    return artifacts
+
+
+def conversion_report_root(options: argparse.Namespace) -> Path:
+    summary = getattr(options, "summary", None)
+    if summary:
+        return Path(summary).parent
+    report_dir = getattr(options, "report_dir", None)
+    if report_dir:
+        return Path(report_dir)
+    return Path(getattr(options, "output")) / ".reports"
+
+
+def output_media_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in {".md", ".markdown"}:
+        return "text/markdown"
+    if suffix in {".html", ".htm"}:
+        return "text/html"
+    if suffix == ".txt":
+        return "text/plain"
+    return "application/octet-stream"
+
+
+def conversion_warnings(results: list[Any]) -> list[str]:
+    warnings = []
+    for result in results:
+        if getattr(result, "status", "") == "skipped":
+            warnings.append(f"Skipped: {getattr(result, 'source', '')}")
+    return warnings
+
+
+def conversion_errors(results: list[Any]) -> list[str]:
+    errors = []
+    for result in results:
+        if getattr(result, "status", "") == "failed":
+            errors.append(f"{getattr(result, 'source', '')}: {getattr(result, 'message', '')}")
+    return errors
+
+
+def conversion_next_actions(results: list[Any], options: argparse.Namespace) -> list[dict[str, Any]]:
+    actions = []
+    report_root = conversion_report_root(options)
+    review = report_root / "review-checklist.md"
+    if review.exists():
+        actions.append({"tool": "read_artifact", "arguments": {"path": str(review), "artifact_type": "review_report"}})
+    for item in conversion_artifacts(results, options):
+        if item.get("type") in {"markdown", "html", "text", "summary_report"}:
+            actions.append({"tool": "read_artifact", "arguments": {"path": item["path"], "artifact_type": item["type"]}})
+            break
+    return actions
+
+
 def update_job(job_id: str, **updates: Any) -> None:
     with JOBS_LOCK:
         if job_id in JOBS:
@@ -512,6 +746,9 @@ def create_job(kind: str, *, input_path: Path, output_path: Path, total: int | N
         "events": [],
         "results": [],
         "artifacts": [],
+        "warnings": [],
+        "errors": [],
+        "next_actions": [],
         "error": None,
     }
     with JOBS_LOCK:
@@ -669,6 +906,9 @@ def start_location_index(arguments: dict[str, Any]) -> dict[str, Any]:
                 finished_at=timestamp(),
                 results=[result],
                 artifacts=result.get("artifacts", []),
+                warnings=result_warnings(result),
+                errors=result_errors(result),
+                next_actions=artifact_next_actions(result.get("artifacts", [])),
                 completed=result.get("source_count", 0),
                 total=result.get("source_count", 0),
             )
@@ -685,6 +925,32 @@ def query_location_index_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         str(arguments["query"]),
         limit=int(arguments.get("limit") or 20),
     )
+
+
+def result_warnings(result: dict[str, Any]) -> list[str]:
+    warnings: list[str] = []
+    status_counts = result.get("status_counts")
+    if isinstance(status_counts, dict) and int(status_counts.get("failed") or 0):
+        warnings.append(f"{status_counts.get('failed')} source(s) failed during processing.")
+    if int(result.get("source_count") or 0) == 0:
+        warnings.append("No supported source files were found.")
+    return warnings
+
+
+def result_errors(result: dict[str, Any]) -> list[str]:
+    if result.get("error"):
+        return [str(result.get("message") or result.get("error"))]
+    return []
+
+
+def artifact_next_actions(artifacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    actions = []
+    for item in artifacts:
+        artifact_type = item.get("type")
+        path = item.get("path")
+        if artifact_type in {"markdown", "location_index_jsonl", "review_report", "order_report", "summary_report"} and path:
+            actions.append({"tool": "read_artifact", "arguments": {"path": path, "artifact_type": artifact_type}})
+    return actions[:4]
 
 
 def rebuild_image_book_tool(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -734,6 +1000,9 @@ def start_image_book_rebuild(arguments: dict[str, Any]) -> dict[str, Any]:
                 finished_at=timestamp(),
                 results=[result],
                 artifacts=result.get("artifacts", []),
+                warnings=result_warnings(result),
+                errors=result_errors(result),
+                next_actions=artifact_next_actions(result.get("artifacts", [])),
                 completed=result.get("source_count", 0),
                 total=result.get("source_count", 0),
             )

@@ -46,6 +46,7 @@ def main() -> int:
                 "scan_books",
                 "health_check",
                 "inspect_document",
+                "process_material",
                 "start_conversion",
                 "get_job_status",
                 "read_report",
@@ -93,6 +94,8 @@ def main() -> int:
                 final = poll_job(proc, job_id)
                 if final["status"] != "done":
                     raise RuntimeError(f"Conversion job did not finish: {final}")
+                if not final.get("artifacts") or not final.get("next_actions"):
+                    raise RuntimeError(f"Conversion job did not expose artifacts/next_actions: {final}")
 
             location_dir = tmpdir / "locations"
             location = call_tool(
@@ -117,6 +120,38 @@ def main() -> int:
             inspected_image_dir = call_tool(proc, 32, "inspect_document", {"input": str(image_dir), "recursive": False})
             if inspected_image_dir["kind"] != "directory" or inspected_image_dir["counts"]["images"] != 1:
                 raise RuntimeError(f"Image directory inspection failed: {inspected_image_dir}")
+
+            routed_location = call_tool(
+                proc,
+                34,
+                "process_material",
+                {
+                    "input": str(image_dir),
+                    "output": str(tmpdir / "routed-location"),
+                    "recursive": False,
+                    "ocr": "never",
+                },
+            )
+            if routed_location["route"] != "start_location_index" or not routed_location.get("job_id"):
+                raise RuntimeError(f"process_material did not route small image folder to location index: {routed_location}")
+            routed_location_final = poll_job(proc, routed_location["job_id"])
+            if routed_location_final["status"] != "done":
+                raise RuntimeError(f"Routed location job failed: {routed_location_final}")
+
+            routed_query = call_tool(
+                proc,
+                35,
+                "process_material",
+                {
+                    "input": str(image_dir),
+                    "output": str(tmpdir / "routed-query"),
+                    "recursive": False,
+                    "ocr": "never",
+                    "query": "anything",
+                },
+            )
+            if routed_query["route"] != "start_location_index" or not routed_query.get("next_actions"):
+                raise RuntimeError(f"process_material query route missing next action: {routed_query}")
 
             pdf_path = tmpdir / "sample.pdf"
             pdf_doc = fitz.open()

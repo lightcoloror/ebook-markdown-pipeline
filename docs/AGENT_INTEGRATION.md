@@ -11,6 +11,8 @@ Do not duplicate conversion logic in agent-specific plugins. Keep conversion beh
 
 The long-term technical direction is documented in [TECHNICAL_DIRECTION.md](TECHNICAL_DIRECTION.md): this project should evolve into a general image/document material recognition tool for AI agents, with Docling as the future default document-understanding backend, MinerU as the complex-document backend, and Umi-OCR/PaddleOCR as local OCR fallback.
 
+The stable agent calling contract is documented in [TOOL_CONTRACT.md](TOOL_CONTRACT.md). Agents should prefer `process_material`, poll long jobs with `get_job_status`, and read outputs through `read_artifact`.
+
 ## Recommended Integration
 
 Use MCP for OpenClaw, Hermes Agent, Codex, Claude Code, or other agents that support tool schemas.
@@ -47,6 +49,8 @@ Use `--convert` if you also want to test a tiny real TXT conversion.
 
 For Docker-hosted agents, use the HTTP bridge unless the project directory and all converter dependencies are mounted inside the container.
 
+Docker packaging and volume conventions are documented in [DOCKER_USAGE.md](DOCKER_USAGE.md).
+
 Host-side startup:
 
 ```powershell
@@ -82,6 +86,12 @@ powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipelin
 The smoke test generates tiny `TXT / FB2 / RTF / EPUB / ODT / AZW3 / MOBI / AZW / PDF` fixtures, starts the HTTP bridge temporarily, converts them through the API, and verifies that the OpenClaw and Hermes containers can call the bridge through `host.docker.internal`.
 
 ## MCP Tools
+
+### `process_material`
+
+High-level router for unknown inputs. It calls lightweight inspection, chooses the next tool, starts a background job when needed, and returns `job_id`, `route`, `inspection`, `warnings`, `errors`, and `next_actions`.
+
+Use this as the default entry point for agents.
 
 ### `scan_books`
 

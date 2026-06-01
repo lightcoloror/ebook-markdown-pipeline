@@ -1,0 +1,21 @@
+services:
+  ebook-material-tools:
+    build:
+      context: .
+    image: ebook-material-tools:local
+    ports:
+      - "8765:8765"
+    environment:
+      EBOOK_CONVERTER_API_TOKEN: "replace-with-a-local-token"
+    volumes:
+      - ./data/input:/data/input
+      - ./data/output:/data/output
+      - ./data/cache:/data/cache
+    command:
+      - python
+      - -m
+      - ebook_markdown_pipeline.ebook_converter_http
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
