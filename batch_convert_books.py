@@ -3282,14 +3282,23 @@ def umi_ocr_image(image_path: Path, ocr_engine) -> str:
 
 def close_umi_paddle_engine(ocr_engine) -> None:
     process = getattr(ocr_engine, "ret", None)
+    # Do not call PPOCR_pipe.exit(): the bundled Umi-OCR API prints to
+    # stdout on shutdown, which corrupts MCP stdio JSON-RPC streams.
+    try:
+        import atexit
+
+        atexit.unregister(ocr_engine.exit)
+    except Exception:
+        pass
     try:
         if ocr_engine is not None:
-            ocr_engine.exit()
+            ocr_engine.ret = None
     except Exception:
         pass
     if process is None:
         return
     try:
+        process.terminate()
         process.wait(timeout=5)
     except Exception:
         try:

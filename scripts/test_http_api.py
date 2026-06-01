@@ -68,6 +68,15 @@ def main() -> int:
     )
     if inspected.get("error"):
         raise RuntimeError(inspected)
+    invalid = request_json(
+        f"{args.url.rstrip('/')}/call",
+        method="POST",
+        headers=headers,
+        payload={"name": "missing_tool_for_contract_test", "arguments": {}},
+        allow_http_error=True,
+    )
+    if invalid.get("code") != "invalid_request" or invalid.get("retryable") is not False:
+        raise RuntimeError(f"HTTP error contract failed: {invalid}")
     print(
         json.dumps(
             {
@@ -87,6 +96,7 @@ def request_json(
     method: str = "GET",
     headers: dict[str, str] | None = None,
     payload: dict[str, Any] | None = None,
+    allow_http_error: bool = False,
 ) -> dict[str, Any]:
     data = None
     request_headers = {"Accept": "application/json", **(headers or {})}
@@ -99,6 +109,8 @@ def request_json(
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
+        if allow_http_error:
+            return json.loads(body)
         raise RuntimeError(f"HTTP {exc.code}: {body}") from exc
 
 

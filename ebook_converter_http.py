@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -52,7 +53,7 @@ def build_handler(token: str):
 
         def do_GET(self) -> None:  # noqa: N802
             if not self.authorized():
-                self.write_json({"error": True, "message": "Unauthorized"}, status=401)
+                self.write_error("unauthorized", "Unauthorized", status=401, retryable=False)
                 return
             if self.path == "/health":
                 tools = tool_schemas()
@@ -74,24 +75,35 @@ def build_handler(token: str):
             if self.path == "/tools":
                 self.write_json({"tools": tool_schemas()})
                 return
-            self.write_json({"error": True, "message": f"Not found: {self.path}"}, status=404)
+            self.write_error("not_found", f"Not found: {self.path}", status=404, retryable=False)
 
         def do_POST(self) -> None:  # noqa: N802
             if not self.authorized():
-                self.write_json({"error": True, "message": "Unauthorized"}, status=401)
+                self.write_error("unauthorized", "Unauthorized", status=401, retryable=False)
                 return
             if self.path != "/call":
-                self.write_json({"error": True, "message": f"Not found: {self.path}"}, status=404)
+                self.write_error("not_found", f"Not found: {self.path}", status=404, retryable=False)
                 return
+            request_id = self.headers.get("X-Request-Id") or f"req-{uuid.uuid4().hex[:12]}"
             try:
                 body = self.read_json()
                 name = str(body.get("name") or "")
                 arguments = body.get("arguments") or {}
+                if not name:
+                    raise ValueError("name is required")
                 if not isinstance(arguments, dict):
                     raise ValueError("arguments must be an object")
-                self.write_json(call_tool(name, arguments))
+                result = call_tool(name, arguments)
+                envelope = {"request_id": request_id, "ok": True, "result": result}
+                if isinstance(result, dict):
+                    envelope.update(result)
+                self.write_json(envelope)
+            except json.JSONDecodeError as exc:
+                self.write_error("invalid_json", f"Invalid JSON body: {exc}", status=400, retryable=False, request_id=request_id)
+            except (KeyError, TypeError, ValueError) as exc:
+                self.write_error("invalid_request", str(exc), status=400, retryable=False, request_id=request_id)
             except Exception as exc:  # noqa: BLE001
-                self.write_json({"error": True, "message": str(exc)}, status=500)
+                self.write_error("tool_error", str(exc), status=500, retryable=True, request_id=request_id)
 
         def authorized(self) -> bool:
             if not token:
@@ -116,6 +128,29 @@ def build_handler(token: str):
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
             self.wfile.write(raw)
+
+        def write_error(
+            self,
+            code: str,
+            message: str,
+            *,
+            status: int,
+            retryable: bool,
+            request_id: str | None = None,
+        ) -> None:
+            self.write_json(
+                {
+                    "request_id": request_id,
+                    "ok": False,
+                    "error": True,
+                    "code": code,
+                    "message": message,
+                    "retryable": retryable,
+                    "transport": "http",
+                    "schema_version": SCHEMA_VERSION,
+                },
+                status=status,
+            )
 
         def log_message(self, format: str, *args: Any) -> None:
             print(f"{self.address_string()} - {format % args}", file=sys.stderr)

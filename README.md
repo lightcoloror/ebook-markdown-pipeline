@@ -98,6 +98,7 @@ MCP 工具包括：
 - `read_pdf_tool_log`：读取 Marker/MinerU 日志尾部。
 
 稳定调用契约见 [docs/TOOL_CONTRACT.md](docs/TOOL_CONTRACT.md)，详细接入说明见 [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md)。支持 skill 的 agent 可参考 [skills/ebook-markdown-pipeline/SKILL.md](skills/ebook-markdown-pipeline/SKILL.md)。
+HTTP、MCP stdio 和 CLI-style 的最小调用示例见 [examples/agent-calls](examples/agent-calls)。
 
 接入前可先跑 MCP smoke test：
 

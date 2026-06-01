@@ -170,6 +170,42 @@ If a tool returns `error=true`, agents should:
 4. For conversion quality issues, read `review_report`, `summary_report`, or per-file `conversion_report`.
 5. For SQLite artifacts, do not call `read_artifact`; call a query tool.
 
+HTTP `/call` errors use a stable envelope:
+
+```json
+{
+  "request_id": "req-...",
+  "ok": false,
+  "error": true,
+  "code": "invalid_request",
+  "message": "Unknown tool: missing_tool",
+  "retryable": false,
+  "transport": "http",
+  "schema_version": "artifact-schema-v1"
+}
+```
+
+Current error codes:
+
+- `unauthorized`: authentication failed; do not retry without changing credentials.
+- `not_found`: endpoint path is wrong; do not retry unchanged.
+- `invalid_json`: request body is not valid JSON; do not retry unchanged.
+- `invalid_request`: tool name or arguments are invalid; do not retry unchanged.
+- `tool_error`: unexpected tool/runtime failure; retry may be useful after checking logs or changing inputs.
+
+HTTP `/call` success responses include both an envelope and the raw tool fields for backward compatibility:
+
+```json
+{
+  "request_id": "req-...",
+  "ok": true,
+  "result": {
+    "status": "routed"
+  },
+  "status": "routed"
+}
+```
+
 ## Sync vs Async Rules
 
 Safe synchronous tools:
@@ -202,3 +238,7 @@ Preferred async tools:
 - Agents should prefer `artifacts` over guessing output paths.
 - Agents should prefer `next_actions` over inventing follow-up calls.
 - CLI, MCP, HTTP, and UI should reuse the same Python core functions.
+
+## Examples
+
+Minimal HTTP, MCP stdio, and CLI-style examples are in `examples/agent-calls/`.
