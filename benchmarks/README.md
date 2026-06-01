@@ -92,7 +92,8 @@ Docker container smoke:
 ```powershell
 powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipeline\scripts\run_docker_agent_smoke.ps1 `
   -Port 8770 `
-  -ReportDir D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\docker-agent-smoke-current
+  -ReportDir D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\docker-agent-smoke-current `
+  -ContainerIterations 2
 ```
 
-This starts the converter HTTP bridge, creates tiny fixtures for common formats, runs one local conversion job, then calls `/health` and `/call scan_books` from the `openclaw-openclaw-gateway-1` and `hermes-agent` Docker containers through `host.docker.internal`. The report is written as `docker-agent-smoke.json` and `docker-agent-smoke.md`.
+This starts the converter HTTP bridge, creates tiny fixtures for common formats, runs one local conversion job, then calls `/health`, `/call scan_books`, repeated `/call start_conversion`, `/call get_job_status`, and `/call read_artifact` from the `openclaw-openclaw-gateway-1` and `hermes-agent` Docker containers through `host.docker.internal`. The report is written as `docker-agent-smoke.json` and `docker-agent-smoke.md`.

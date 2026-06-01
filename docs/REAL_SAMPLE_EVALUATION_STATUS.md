@@ -271,7 +271,8 @@ Command shape:
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\run_docker_agent_smoke.ps1 `
   -Port 8770 `
-  -ReportDir benchmarks\runs\docker-agent-smoke-current
+  -ReportDir benchmarks\runs\docker-agent-smoke-current `
+  -ContainerIterations 2
 ```
 
 Result:
@@ -282,10 +283,14 @@ Result:
 | Local HTTP conversion | 10 / 10 ok |
 | OpenClaw container `/health` | exit 0 |
 | OpenClaw container `/call scan_books` | exit 0, 10 plans |
+| OpenClaw container repeated conversion jobs | 2 / 2 done |
+| OpenClaw container artifact reads | 2 / 2 ok |
 | Hermes container `/health` | exit 0 |
 | Hermes container `/call scan_books` | exit 0, 10 plans |
+| Hermes container repeated conversion jobs | 2 / 2 done |
+| Hermes container artifact reads | 2 / 2 ok |
 
-This verifies that the Dockerized OpenClaw gateway container and Hermes agent container can reach the converter through `host.docker.internal` and call the stable HTTP surface. It is intentionally a deterministic gateway/tool smoke rather than an LLM-planner evaluation: it proves the callable integration path that those agents should use, while avoiding model/auth flakiness from each agent's own LLM provider.
+This verifies that the Dockerized OpenClaw gateway container and Hermes agent container can reach the converter through `host.docker.internal`, repeatedly start async conversion jobs, poll job status, and read Markdown artifacts through the stable HTTP surface. It is intentionally a deterministic gateway/tool smoke rather than an LLM-planner evaluation: it proves the callable integration path that those agents should use, while avoiding model/auth flakiness from each agent's own LLM provider.
 
 ## Current Blockers For Final Decision
 

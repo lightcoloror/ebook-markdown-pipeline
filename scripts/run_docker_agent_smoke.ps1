@@ -2,6 +2,7 @@ param(
   [int]$Port = 8766,
   [string]$Token = "ebook-test-20260531",
   [string]$ReportDir = "",
+  [int]$ContainerIterations = 2,
   [switch]$KeepTestFiles
 )
 
@@ -47,6 +48,51 @@ function Invoke-Json {
 function Add-Fixture {
   param([string]$Name)
   $script:Formats += $Name
+}
+
+function Invoke-DockerTool {
+  param(
+    [string]$Container,
+    [string]$Name,
+    [object]$Arguments,
+    [string]$PayloadName
+  )
+  $safeContainer = $Container -replace "[^A-Za-z0-9_.-]", "-"
+  $safePayload = $PayloadName -replace "[^A-Za-z0-9_.-]", "-"
+  $payload = @{
+    name = $Name
+    arguments = $Arguments
+  } | ConvertTo-Json -Compress -Depth 12
+  $payloadFile = Join-Path $TestRoot "$safePayload-$safeContainer.json"
+  [System.IO.File]::WriteAllText($payloadFile, $payload, [System.Text.UTF8Encoding]::new($false))
+  docker cp $payloadFile "${Container}:/tmp/ebook-tool-payload.json" | Out-Null
+  $cmd = "curl -sS -H 'Authorization: Bearer $Token' -H 'Content-Type: application/json' --data-binary @/tmp/ebook-tool-payload.json http://host.docker.internal:$Port/call"
+  $text = docker exec $Container sh -lc $cmd 2>&1
+  $exitCode = $LASTEXITCODE
+  $json = $null
+  if ($exitCode -eq 0) {
+    try {
+      $json = ($text -join "`n") | ConvertFrom-Json
+    } catch {
+      $json = $null
+    }
+  }
+  return [pscustomobject]@{
+    exit = $exitCode
+    text = $text
+    json = $json
+  }
+}
+
+function Unwrap-ToolResult {
+  param([object]$Response)
+  if ($null -eq $Response) {
+    return $null
+  }
+  if ($null -ne $Response.result) {
+    return $Response.result
+  }
+  return $Response
 }
 
 Assert-UnderProject $TestRoot
@@ -198,6 +244,67 @@ try {
     $scanCmd = "curl -sS -H 'Authorization: Bearer $Token' -H 'Content-Type: application/json' --data-binary @/tmp/ebook-scan-payload.json http://host.docker.internal:$Port/call"
     $scanText = docker exec $container sh -lc $scanCmd 2>&1
     $scanExit = $LASTEXITCODE
+    $jobRuns = @()
+    for ($iter = 1; $iter -le $ContainerIterations; $iter++) {
+      $safeContainer = $container -replace "[^A-Za-z0-9_.-]", "-"
+      $containerOutput = Join-Path $OutputDir ("docker-$safeContainer-$iter")
+      New-Item -ItemType Directory -Force -Path $containerOutput | Out-Null
+      $startCall = Invoke-DockerTool -Container $container -Name "start_conversion" -PayloadName "start-$iter" -Arguments @{
+        input = $InputDir
+        output = $containerOutput
+        recursive = $true
+        resume = $false
+        overwrite = $true
+        pdf_pipeline_mode = "pymupdf4llm"
+      }
+      $startResult = Unwrap-ToolResult $startCall.json
+      $jobId = $null
+      if ($null -ne $startResult) {
+        $jobId = $startResult.job_id
+      }
+      $finalJob = $null
+      $pollExit = $null
+      if ($jobId) {
+        for ($poll = 0; $poll -lt 90; $poll++) {
+          $statusCall = Invoke-DockerTool -Container $container -Name "get_job_status" -PayloadName "status-$iter-$poll" -Arguments @{ job_id = $jobId }
+          $pollExit = $statusCall.exit
+          $statusResult = Unwrap-ToolResult $statusCall.json
+          if ($null -ne $statusResult -and $statusResult.status -ne "running") {
+            $finalJob = $statusResult
+            break
+          }
+          Start-Sleep -Seconds 1
+        }
+      }
+      $artifactRead = $null
+      $artifactPath = $null
+      if ($null -ne $finalJob -and $finalJob.results -and $finalJob.results.Count -gt 0) {
+        $artifactPath = $finalJob.results[0].output
+      }
+      if ($artifactPath) {
+        $artifactCall = Invoke-DockerTool -Container $container -Name "read_artifact" -PayloadName "artifact-$iter" -Arguments @{
+          path = $artifactPath
+          artifact_type = "markdown"
+          max_chars = 1000
+          max_lines = 40
+        }
+        $artifactRead = [pscustomobject]@{
+          exit = $artifactCall.exit
+          ok = ($artifactCall.exit -eq 0 -and $null -ne (Unwrap-ToolResult $artifactCall.json))
+          path = $artifactPath
+        }
+      }
+      $jobRuns += [pscustomobject]@{
+        iteration = $iter
+        start_exit = $startCall.exit
+        job_id = $jobId
+        poll_exit = $pollExit
+        final_status = if ($null -ne $finalJob) { $finalJob.status } else { "missing" }
+        completed = if ($null -ne $finalJob) { $finalJob.completed } else { $null }
+        total = if ($null -ne $finalJob) { $finalJob.total } else { $null }
+        artifact_read = $artifactRead
+      }
+    }
     $ErrorActionPreference = $previousErrorActionPreference
     $dockerResults += [pscustomobject]@{
       container = $container
@@ -205,6 +312,7 @@ try {
       health = $healthText
       scan_exit = $scanExit
       scan = $scanText
+      job_runs = $jobRuns
     }
   }
 
@@ -245,14 +353,21 @@ try {
 - Conversion status: $($final.status)
 - Completed: $($final.completed) / $($final.total)
 - Result statuses: $statusList
+- Container iterations: $ContainerIterations
 
-| Container | Health exit | Scan exit |
-| --- | ---: | ---: |
-$($containerRows -join "`n")
+| Container | Health exit | Scan exit | Job runs ok | Artifact reads ok |
+| --- | ---: | ---: | ---: | ---: |
+$(
+  ($dockerResults | ForEach-Object {
+    $okJobs = @($_.job_runs | Where-Object { $_.final_status -eq "done" }).Count
+    $okArtifacts = @($_.job_runs | Where-Object { $_.artifact_read -and $_.artifact_read.ok }).Count
+    "| $($_.container) | $($_.health_exit) | $($_.scan_exit) | $okJobs / $ContainerIterations | $okArtifacts / $ContainerIterations |"
+  }) -join "`n"
+)
 
 Evidence:
 
-- `docker-agent-smoke.json`: full machine-readable response, including `/health` and `/call` output from each Docker container.
+- `docker-agent-smoke.json`: full machine-readable response, including `/health`, `/call scan_books`, repeated `/call start_conversion`, `/call get_job_status`, and `/call read_artifact` output from each Docker container.
 - This smoke verifies host-to-container access through `host.docker.internal` for OpenClaw and Hermes. It does not prove that their LLM planners autonomously selected the tool; it proves the stable callable HTTP surface that those agents can use.
 "@
   $summary | Set-Content -LiteralPath $summaryPath -Encoding UTF8

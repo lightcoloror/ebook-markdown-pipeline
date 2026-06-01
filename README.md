@@ -243,10 +243,11 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\stress_agent_http.py `
 ```powershell
 powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipeline\scripts\run_docker_agent_smoke.ps1 `
   -Port 8770 `
-  -ReportDir D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\docker-agent-smoke-current
+  -ReportDir D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\docker-agent-smoke-current `
+  -ContainerIterations 2
 ```
 
-该 smoke 会生成 txt、fb2、rtf、epub、odt、azw3、mobi、azw、pdf 小样本，启动本项目 HTTP bridge，并从 `openclaw-openclaw-gateway-1` 和 `hermes-agent` 容器内通过 `host.docker.internal` 调用 `/health` 与 `/call scan_books`。报告写入 `docker-agent-smoke.json/md`。
+该 smoke 会生成 txt、fb2、rtf、epub、odt、azw3、mobi、azw、pdf 小样本，启动本项目 HTTP bridge，并从 `openclaw-openclaw-gateway-1` 和 `hermes-agent` 容器内通过 `host.docker.internal` 调用 `/health`、`/call scan_books`、多轮 `/call start_conversion`、`/call get_job_status` 和 `/call read_artifact`。报告写入 `docker-agent-smoke.json/md`。
 
 ## 截图成书重建
 
