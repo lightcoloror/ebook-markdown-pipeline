@@ -263,11 +263,20 @@ def summarize_results(results: list[dict]) -> dict:
     for item in results:
         counts[item["status"]] = counts.get(item["status"], 0) + 1
     quality_counts = {}
+    unscored_count = 0
     for item in results:
         level = (item.get("metrics") or {}).get("level")
         if level:
             quality_counts[level] = quality_counts.get(level, 0) + 1
-    return {"count": len(results), "status_counts": counts, "quality_counts": quality_counts, "docling_policy": recommend_docling_policy(results)}
+        else:
+            unscored_count += 1
+    return {
+        "count": len(results),
+        "status_counts": counts,
+        "quality_counts": quality_counts,
+        "unscored_count": unscored_count,
+        "docling_policy": recommend_docling_policy(results),
+    }
 
 
 def recommend_docling_policy(results: list[dict]) -> dict:
@@ -312,6 +321,7 @@ def render_benchmark_summary(payload: dict) -> str:
         f"- Samples: {payload['summary']['count']}",
         f"- Status: {payload['summary']['status_counts']}",
         f"- Quality: {payload['summary']['quality_counts']}",
+        f"- Unscored: {payload['summary'].get('unscored_count', 0)}",
         f"- Docling decision: {payload['summary']['docling_policy']['decision']}",
         f"- PDF benchmark mode: {payload.get('pdf_mode_for_benchmark', 'auto')}",
         "",

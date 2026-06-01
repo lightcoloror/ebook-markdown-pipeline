@@ -1,6 +1,6 @@
 # Real Sample Evaluation Status
 
-Last updated: 2026-06-01 17:12
+Last updated: 2026-06-01 17:31
 
 This document tracks the evidence needed before changing default pipelines, especially the optional Docling backend.
 
@@ -104,6 +104,36 @@ Result:
 | Docling decision | enable_docling_for_docling_formats |
 
 This separates broad sample-set stability benchmarking from slow high-quality PDF pipeline comparison. Use `--pdf-mode-for-benchmark fast` for 20-50 sample runs, then use `compare_pipelines.py` for selected representative PDFs.
+
+## Latest Full Real Benchmark Verification
+
+Run directory: `benchmarks/runs/full-real-current`
+
+Command:
+
+```powershell
+python scripts\run_benchmarks.py `
+  --manifest benchmarks\samples.local.json `
+  --output benchmarks\runs\full-real-current `
+  --overwrite `
+  --sample-timeout 120 `
+  --pdf-mode-for-benchmark fast
+```
+
+Result:
+
+| Metric | Result |
+| --- | --- |
+| Samples | 50 |
+| Status | 50 ok |
+| Quality | 35 good, 8 review, 4 poor, 3 unscored image sets |
+| Categories | 10 scanned_pdf, 10 complex_pdf, 10 pdf, 10 docling_doc, 7 ebook, 3 image_set |
+| PDF mode | fast -> `pymupdf4llm` |
+| Slowest sample | 93.905 seconds, complex layered PDF, quality poor |
+| Docling docs | 10 ok, 8 good, 2 review |
+| Docling decision | enable_docling_for_docling_formats |
+
+This is the strongest stability evidence so far: the full 50-sample manifest completed without failures under the current timeout/fallback protections. Remaining work is quality-focused rather than crash/stuck-focused: the 4 poor and 8 review outputs mostly lack Markdown headings, contain HTML residue, or show OCR line-break noise. These are candidates for targeted PDF pipeline comparison and structure-enhancement passes rather than broad stability fixes.
 
 ## Latest Four-Pipeline PDF Comparison
 
@@ -223,18 +253,7 @@ Additional PDF fallback result:
 
 ## Next Required Runs
 
-After confirming MinerU command paths, run:
-
-```powershell
-python scripts\run_benchmarks.py `
-  --manifest benchmarks\samples.local.json `
-  --output benchmarks\runs\full-real-01 `
-  --overwrite `
-  --sample-timeout 600 `
-  --pdf-mode-for-benchmark fast
-```
-
-Then choose 3-5 representative PDFs and run:
+The 50-sample fast benchmark has completed. Next, choose 3-5 representative poor/review PDFs and run:
 
 ```powershell
 python scripts\compare_pipelines.py `
