@@ -45,6 +45,16 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_mcp_stdio.py
 
 Use `--convert` if you also want to test a tiny real TXT conversion.
 
+## Batch Templates
+
+Repeatable agent batch templates live in `examples/agent-batch/`:
+
+- `batch_manifest.example.json`: a stable manifest shape for conversion, location indexing, and screenshot rebuild jobs.
+- `agent_batch_http.py`: deterministic HTTP runner that calls `process_material`, polls `get_job_status`, reads `next_actions` artifacts, and writes `agent-batch-results.json` plus `agent-batch-summary.md`.
+- `AGENT_PROMPT_TEMPLATE.md`: prompt block for OpenClaw, Hermes, Codex, or another LLM agent.
+
+Use these templates for ordinary multi-file production batches. Use `scripts/stress_agent_http.py` only for concurrency and failure-recovery testing.
+
 ## Docker Agent Integration
 
 For Docker-hosted agents, use the HTTP bridge unless the project directory and all converter dependencies are mounted inside the container.

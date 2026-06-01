@@ -1,0 +1,35 @@
+{
+  "defaults": {
+    "output": "D:\\agent-batch-output",
+    "recursive": true,
+    "include_hidden": false,
+    "output_format": "markdown",
+    "pdf_pipeline_mode": "auto",
+    "pdf_tool_idle_timeout": 900,
+    "pdf_tool_finalize_timeout": 300,
+    "docling_timeout": 45,
+    "docling_fallback_to_pandoc": true
+  },
+  "jobs": [
+    {
+      "id": "ebooks-folder",
+      "input": "D:\\books",
+      "intent": "convert"
+    },
+    {
+      "id": "find-keyword-in-pdfs",
+      "input": "D:\\documents",
+      "output": "D:\\agent-batch-output\\location-index",
+      "intent": "locate",
+      "query": "合同金额",
+      "ocr": "auto"
+    },
+    {
+      "id": "screenshots-to-markdown",
+      "input": "D:\\screenshots",
+      "output": "D:\\agent-batch-output\\screenshots",
+      "intent": "rebuild",
+      "ocr": "auto"
+    }
+  ]
+}
