@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from ebook_markdown_pipeline.ebook_converter_mcp import (  # noqa: E402
     call_tool,
     tool_schemas,
 )
+from ebook_markdown_pipeline.artifact_schema import SCHEMA_VERSION  # noqa: E402
 
 
 def main() -> int:
@@ -43,6 +45,8 @@ def main() -> int:
 
 
 def build_handler(token: str):
+    started_at = time.time()
+
     class Handler(BaseHTTPRequestHandler):
         server_version = f"{SERVER_NAME}/{SERVER_VERSION}"
 
@@ -51,7 +55,21 @@ def build_handler(token: str):
                 self.write_json({"error": True, "message": "Unauthorized"}, status=401)
                 return
             if self.path == "/health":
-                self.write_json({"ok": True, "server": SERVER_NAME, "version": SERVER_VERSION})
+                tools = tool_schemas()
+                self.write_json(
+                    {
+                        "ok": True,
+                        "server": SERVER_NAME,
+                        "version": SERVER_VERSION,
+                        "schema_version": SCHEMA_VERSION,
+                        "transport": "http",
+                        "tool_count": len(tools),
+                        "tools": [tool["name"] for tool in tools],
+                        "supports_async_jobs": True,
+                        "supports_artifacts": True,
+                        "uptime_seconds": round(time.time() - started_at, 3),
+                    }
+                )
                 return
             if self.path == "/tools":
                 self.write_json({"tools": tool_schemas()})

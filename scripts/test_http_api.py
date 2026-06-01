@@ -20,11 +20,17 @@ def main() -> int:
     health = request_json(f"{args.url.rstrip('/')}/health", headers=headers)
     if not health.get("ok"):
         raise RuntimeError(f"Health check failed: {health}")
+    if not health.get("supports_async_jobs") or not health.get("supports_artifacts"):
+        raise RuntimeError(f"Health response is missing capability flags: {health}")
+    if "read_artifact" not in set(health.get("tools", [])):
+        raise RuntimeError(f"Health response is missing tool names: {health}")
 
     tools = request_json(f"{args.url.rstrip('/')}/tools", headers=headers)
     tool_names = {item["name"] for item in tools.get("tools", [])}
-    if "scan_books" not in tool_names:
-        raise RuntimeError(f"scan_books is missing from tools: {tool_names}")
+    required = {"scan_books", "inspect_document", "read_artifact", "start_location_index", "start_image_book_rebuild"}
+    missing_tools = required - tool_names
+    if missing_tools:
+        raise RuntimeError(f"Missing tools: {sorted(missing_tools)}")
 
     scan = request_json(
         f"{args.url.rstrip('/')}/call",
@@ -41,7 +47,31 @@ def main() -> int:
     )
     if scan.get("error"):
         raise RuntimeError(scan)
-    print(json.dumps({"health": health, "scan_count": scan.get("count"), "tool_count": len(tool_names)}, ensure_ascii=False))
+    inspected = request_json(
+        f"{args.url.rstrip('/')}/call",
+        method="POST",
+        headers=headers,
+        payload={
+            "name": "inspect_document",
+            "arguments": {
+                "input": args.input,
+                "recursive": False,
+            },
+        },
+    )
+    if inspected.get("error"):
+        raise RuntimeError(inspected)
+    print(
+        json.dumps(
+            {
+                "health": health,
+                "scan_count": scan.get("count"),
+                "inspect_status": inspected.get("status"),
+                "tool_count": len(tool_names),
+            },
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 

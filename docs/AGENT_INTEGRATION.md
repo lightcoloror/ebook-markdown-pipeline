@@ -60,6 +60,8 @@ Container-side health check:
 curl -H "Authorization: Bearer replace-with-a-local-token" http://host.docker.internal:8765/health
 ```
 
+The health response includes `schema_version`, `tool_count`, `tools`, `supports_async_jobs`, and `supports_artifacts`. Agents should use it for capability discovery before making tool calls.
+
 Container-side tool call:
 
 ```bash
