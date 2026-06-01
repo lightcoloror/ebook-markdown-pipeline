@@ -1,6 +1,6 @@
 # Real Sample Evaluation Status
 
-Last updated: 2026-06-01 16:20
+Last updated: 2026-06-01 16:52
 
 This document tracks the evidence needed before changing default pipelines, especially the optional Docling backend.
 
@@ -131,6 +131,56 @@ Result:
 
 This confirms that document-format Docling success should not be generalized to PDF defaults. PDF defaults should remain preflight/pipeline specific, and representative PDFs should be compared with per-pipeline timeouts.
 
+## Latest Agent HTTP Stress Verification
+
+Fast run directory: `benchmarks/runs/agent-http-fast`
+
+Command shape:
+
+```powershell
+python scripts\stress_agent_http.py `
+  --url http://127.0.0.1:8770 `
+  --manifest benchmarks\agent-stress-fast.local.json `
+  --output benchmarks\runs\agent-http-fast\stress `
+  --iterations 4 `
+  --concurrency 2 `
+  --timeout 60 `
+  --run-timeout 160 `
+  --http-timeout 15 `
+  --retries 1 `
+  --pdf-pipeline-mode pymupdf4llm
+```
+
+Result:
+
+| Metric | Result |
+| --- | --- |
+| Iterations | 4 |
+| Concurrency | 2 |
+| Status | 4 ok |
+| Artifact reads | 4 / 4 |
+| Success rate | 1.0 |
+| Average duration | 3.919 seconds |
+| Max duration | 6.695 seconds |
+
+Mixed run directory: `benchmarks/runs/agent-http-mixed-timeboxed`
+
+The mixed run used the broader local agent manifest with 6 iterations, concurrency 2, 70 second job polling timeout, and 180 second wall-clock run timeout.
+
+| Metric | Result |
+| --- | --- |
+| Iterations | 6 |
+| Concurrency | 2 |
+| Status | 5 ok, 1 failed |
+| Artifact reads | 5 / 6 |
+| Success rate | 0.833 |
+| Artifact read rate | 0.833 |
+| Average duration | 14.866 seconds |
+| Max duration | 76.918 seconds |
+| Failure | One DOCX sample remained `running` past the 70 second polling timeout. |
+
+Agent stress tooling now writes `agent-stress-results.partial.json` and `agent-stress-summary.partial.md` after each completed iteration. This means a host-level interruption or a long-running conversion no longer loses all evidence.
+
 ## Current Blockers For Final Decision
 
 - Docling 2.96.1 is installed and passed the current document-format threshold. Keep it as the default backend for DOCX/PPTX/XLSX/HTML/Markdown/CSV when the optional dependency is installed.
@@ -139,6 +189,7 @@ This confirms that document-format Docling success should not be generalized to 
 - Docling's PDF/OCR path may need a writable model/cache directory; the latest PDF comparison failed on a permission issue inside the global Python/site-packages path.
 - Installing Docling into the global Python 3.13 environment introduced or exposed dependency conflicts reported by `pip check` for CrewAI, AutoGen, LiteLLM, and related packages. For long-term stability, prefer a project-specific virtual environment for this converter.
 - GitHub push is currently blocked by an invalid `gh` token, but local commits are clean.
+- Agent HTTP calls are now stable for fast real samples and produce useful partial/final evidence for mixed samples. The remaining agent-facing risk is backend task duration: slow Docling/MinerU jobs can still exceed the caller's polling timeout, so backend-level timeout and fallback should be the next stability focus.
 
 ## Next Required Runs
 

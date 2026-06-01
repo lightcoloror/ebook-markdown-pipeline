@@ -24,6 +24,13 @@ def main() -> int:
     parser.add_argument("--iterations", type=int, default=20)
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--timeout", type=float, default=300)
+    parser.add_argument(
+        "--run-timeout",
+        type=float,
+        default=0,
+        help="Optional wall-clock timeout for the whole stress run. Pending iterations are recorded as timeout.",
+    )
+    parser.add_argument("--http-timeout", type=float, default=30)
     parser.add_argument("--retries", type=int, default=2)
     parser.add_argument("--retry-delay", type=float, default=0.5)
     parser.add_argument("--ocr", choices=["auto", "never"], default="never")
@@ -38,29 +45,124 @@ def main() -> int:
     args.output.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as executor:
-        futures = [
-            executor.submit(run_iteration, args, random.choice(samples), index)
-            for index in range(1, args.iterations + 1)
-        ]
-        results = [future.result() for future in concurrent.futures.as_completed(futures)]
+    results = run_stress(args, samples, started)
 
-    payload = {
+    payload = build_payload(args, started, results, partial=False)
+    write_report(args.output, payload, partial=False)
+    print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
+    bad_statuses = {"failed", "timeout", "interrupted", "no_job", "unknown"}
+    counts = payload["summary"].get("counts", {})
+    return 0 if all(counts.get(status, 0) == 0 for status in bad_statuses) else 3
+
+
+def run_stress(args: argparse.Namespace, samples: list[dict[str, Any]], started: float) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    deadline = started + args.run_timeout if args.run_timeout and args.run_timeout > 0 else None
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency)
+    futures: dict[concurrent.futures.Future, dict[str, Any]] = {}
+    try:
+        for index in range(1, args.iterations + 1):
+            sample = random.choice(samples)
+            futures[executor.submit(run_iteration, args, sample, index)] = {
+                "iteration": index,
+                "sample_id": sample.get("id"),
+                "source": sample.get("path"),
+                "category": sample.get("category"),
+                "started_at": time.monotonic(),
+            }
+        pending = set(futures)
+        while pending:
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            wait_seconds = 1.0
+            if deadline is not None:
+                wait_seconds = max(0.1, min(wait_seconds, deadline - time.monotonic()))
+            done, pending = concurrent.futures.wait(pending, timeout=wait_seconds, return_when=concurrent.futures.FIRST_COMPLETED)
+            for future in done:
+                meta = futures[future]
+                try:
+                    results.append(future.result())
+                except Exception as exc:  # noqa: BLE001
+                    results.append(
+                        finish(
+                            {
+                                "iteration": meta["iteration"],
+                                "sample_id": meta.get("sample_id"),
+                                "source": meta.get("source"),
+                                "category": meta.get("category"),
+                            },
+                            float(meta["started_at"]),
+                            "failed",
+                            failure_reason=f"Iteration worker crashed: {exc}",
+                        )
+                    )
+                write_report(args.output, build_payload(args, started, results, partial=True), partial=True)
+        if pending:
+            for future in pending:
+                future.cancel()
+                meta = futures[future]
+                results.append(
+                    finish(
+                        {
+                            "iteration": meta["iteration"],
+                            "sample_id": meta.get("sample_id"),
+                            "source": meta.get("source"),
+                            "category": meta.get("category"),
+                        },
+                        float(meta["started_at"]),
+                        "timeout",
+                        failure_reason="Stress run wall-clock timeout reached before this iteration completed.",
+                    )
+                )
+            write_report(args.output, build_payload(args, started, results, partial=True), partial=True)
+    except KeyboardInterrupt:
+        for future, meta in futures.items():
+            if future.done():
+                continue
+            results.append(
+                finish(
+                    {
+                        "iteration": meta["iteration"],
+                        "sample_id": meta.get("sample_id"),
+                        "source": meta.get("source"),
+                        "category": meta.get("category"),
+                    },
+                    float(meta["started_at"]),
+                    "interrupted",
+                    failure_reason="Stress run interrupted by user.",
+                )
+            )
+        write_report(args.output, build_payload(args, started, results, partial=True), partial=True)
+        raise
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+    return sorted(results, key=lambda item: item["iteration"])
+
+
+def build_payload(args: argparse.Namespace, started: float, results: list[dict[str, Any]], partial: bool) -> dict[str, Any]:
+    return {
         "schema_version": AGENT_STRESS_SCHEMA_VERSION,
         "created_at": now(),
         "url": args.url,
         "manifest": str(args.manifest),
         "iterations": args.iterations,
+        "completed_iterations": len(results),
         "concurrency": args.concurrency,
+        "timeout_seconds": args.timeout,
+        "run_timeout_seconds": args.run_timeout,
+        "http_timeout_seconds": args.http_timeout,
         "retries": args.retries,
+        "partial": partial,
         "duration_seconds": round(time.monotonic() - started, 3),
         "summary": summarize(results),
         "results": sorted(results, key=lambda item: item["iteration"]),
     }
-    write_json(args.output / "agent-stress-results.json", payload)
-    (args.output / "agent-stress-summary.md").write_text(render_summary(payload), encoding="utf-8")
-    print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
-    return 0 if payload["summary"].get("counts", {}).get("failed", 0) == 0 else 3
+
+
+def write_report(output: Path, payload: dict[str, Any], partial: bool) -> None:
+    suffix = ".partial" if partial else ""
+    write_json(output / f"agent-stress-results{suffix}.json", payload)
+    (output / f"agent-stress-summary{suffix}.md").write_text(render_summary(payload), encoding="utf-8")
 
 
 def run_iteration(args: argparse.Namespace, sample: dict, iteration: int) -> dict[str, Any]:
@@ -119,7 +221,7 @@ def call_tool(args: argparse.Namespace, name: str, arguments: dict[str, Any]) ->
     last_error: Exception | None = None
     for attempt in range(args.retries + 1):
         try:
-            with urllib.request.urlopen(request, timeout=60) as response:
+            with urllib.request.urlopen(request, timeout=args.http_timeout) as response:
                 body = json.loads(response.read().decode("utf-8"))
             if body.get("ok") is False:
                 error = RuntimeError(body)
