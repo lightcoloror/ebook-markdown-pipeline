@@ -257,6 +257,7 @@ class BookConverterUI:
         self.image_book_button = ttk.Button(buttons, text="截图成书 / Image Book", command=self.start_image_book_rebuild)
         self.image_book_button.pack(side="left", padx=(0, 8))
         ttk.Button(buttons, text="复查清单 / Checklist", command=self.open_review_checklist).pack(side="left")
+        ttk.Button(buttons, text="人工记录 / Manual", command=self.open_manual_review).pack(side="left", padx=(8, 0))
         ttk.Checkbutton(buttons, text="只看复查 / Review only", variable=self.review_only_var, command=self.apply_review_filter).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="上一条 / Prev", command=lambda: self.select_relative_review_item(-1)).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="下一条 / Next", command=lambda: self.select_relative_review_item(1)).pack(side="left", padx=(8, 0))
@@ -582,6 +583,8 @@ class BookConverterUI:
                     plan.output,
                 ),
             )
+        self.apply_manual_review_records()
+        self.apply_review_filter()
 
     def start_convert(self) -> None:
         if self.worker and self.worker.is_alive():
@@ -871,6 +874,15 @@ class BookConverterUI:
             return
         self.open_path(Path(output_text) / ".reports" / "review-checklist.md")
 
+    def open_manual_review(self) -> None:
+        output_text = self.output_var.get().strip()
+        if not output_text:
+            messagebox.showwarning("缺少输出 / Output missing", "请先选择输出文件夹。/ Please choose an output folder first.")
+            return
+        manual_md = Path(output_text) / ".reports" / "manual-review.md"
+        manual_json = Path(output_text) / ".reports" / "manual-review.json"
+        self.open_path(manual_md if manual_md.exists() else manual_json)
+
     def open_selected_output(self) -> None:
         selected = self.selected_tree_values()
         if not selected:
@@ -966,7 +978,45 @@ class BookConverterUI:
             values[3] = quality
             values[4] = action
             self.tree.item(item_id, values=values, tags=(self.quality_tag_for_label(quality),))
+        self.apply_manual_review_records()
         self.apply_review_filter()
+
+    def load_manual_review_records(self) -> dict[str, dict]:
+        output_text = self.output_var.get().strip()
+        if not output_text:
+            return {}
+        path = Path(output_text) / ".reports" / "manual-review.json"
+        if not path.exists():
+            return {}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        records = payload.get("records", []) if isinstance(payload, dict) else []
+        return {str(item.get("source", "")): item for item in records if item.get("source")}
+
+    def apply_manual_review_records(self) -> None:
+        records = self.load_manual_review_records()
+        if not records:
+            return
+        columns = ("source", "format", "pipeline", "quality", "action", "note", "output_format", "output")
+        for item_id in self.tree.get_children(""):
+            values = list(self.tree.item(item_id, "values"))
+            row = dict(zip(columns, values))
+            record = records.get(str(row.get("source", "")))
+            if not record or len(values) < 5:
+                continue
+            status = str(record.get("human_status") or "")
+            score = record.get("human_score")
+            if status == "accepted":
+                values[3] = "good manual" if score in {None, ""} else f"good manual {score}"
+                values[4] = "已验收 / Accepted"
+                tag = "quality_good"
+            else:
+                values[3] = f"manual {score}" if score not in {None, ""} else "manual review"
+                values[4] = "人工复查 / Manual review"
+                tag = "quality_review"
+            self.tree.item(item_id, values=values, tags=(tag,))
 
     def quality_tag_for_label(self, quality: str) -> str:
         lowered = quality.lower()
