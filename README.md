@@ -249,6 +249,8 @@ powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipelin
 
 该 smoke 会生成 txt、fb2、rtf、epub、odt、azw3、mobi、azw、pdf 小样本，启动本项目 HTTP bridge，并从 `openclaw-openclaw-gateway-1` 和 `hermes-agent` 容器内通过 `host.docker.internal` 调用 `/health`、`/call scan_books`、多轮 `/call start_conversion`、`/call get_job_status` 和 `/call read_artifact`。报告写入 `docker-agent-smoke.json/md`。
 
+转换完成后，HTTP/MCP job 会在 `get_job_status` 中返回 `quality_summary`。Agent 应优先检查 `review_count` 和 `review_items`，再按 `next_actions` 读取 `summary_report`、`review_report` 和代表性 Markdown。桌面 UI 的文件列表也会在转换完成后显示 `质量 / Quality` 和 `建议 / Action` 两列，用于快速判断是否需要打开复查清单或做 PDF 多管道对比。
+
 ## 截图成书重建
 
 如果有一批乱序、重复、部分重叠的截图，可以先用截图重建管道生成可复查的 Markdown 草稿：

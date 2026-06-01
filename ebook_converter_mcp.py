@@ -535,6 +535,7 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
         delegated = start_conversion(conversion_arguments)
         output_format = str(arguments.get("output_format") or "markdown")
         next_actions = [
+            {"after_job_status": "done", "tool": "get_job_status", "purpose": "read quality_summary and concrete artifact paths"},
             {"after_job_status": "done", "tool": "read_artifact", "artifact_type": output_format},
             {"after_job_status": "done", "tool": "read_artifact", "artifact_type": "review_report"},
         ]
@@ -661,6 +662,7 @@ def start_conversion(arguments: dict[str, Any]) -> dict[str, Any]:
                 artifacts=conversion_artifacts(results, options),
                 warnings=conversion_warnings(results),
                 errors=conversion_errors(results),
+                quality_summary=conversion_quality_summary(results),
                 next_actions=conversion_next_actions(results, options),
             )
         except Exception as exc:  # noqa: BLE001
@@ -757,6 +759,9 @@ def conversion_errors(results: list[Any]) -> list[str]:
 def conversion_next_actions(results: list[Any], options: argparse.Namespace) -> list[dict[str, Any]]:
     actions = []
     report_root = conversion_report_root(options)
+    summary = report_root / "summary.md"
+    if summary.exists():
+        actions.append({"tool": "read_artifact", "arguments": {"path": str(summary), "artifact_type": "summary_report"}})
     review = report_root / "review-checklist.md"
     if review.exists():
         actions.append({"tool": "read_artifact", "arguments": {"path": str(review), "artifact_type": "review_report"}})
@@ -765,6 +770,59 @@ def conversion_next_actions(results: list[Any], options: argparse.Namespace) -> 
             actions.append({"tool": "read_artifact", "arguments": {"path": item["path"], "artifact_type": item["type"]}})
             break
     return actions
+
+
+def conversion_quality_summary(results: list[Any]) -> dict[str, Any]:
+    counts: dict[str, int] = {}
+    review_items = []
+    for result in results:
+        report = getattr(result, "report", None)
+        payload = {}
+        if report and Path(report).exists():
+            try:
+                payload = json.loads(Path(report).read_text(encoding="utf-8"))
+            except Exception:
+                payload = {}
+        quality = payload.get("quality") or {}
+        level = str(quality.get("level") or getattr(result, "status", "") or "unknown")
+        counts[level] = counts.get(level, 0) + 1
+        if level in {"review", "poor", "failed"} or getattr(result, "status", "") == "failed":
+            review_items.append(
+                {
+                    "source": getattr(result, "source", ""),
+                    "output": getattr(result, "output", ""),
+                    "report": report,
+                    "status": getattr(result, "status", ""),
+                    "pipeline": getattr(result, "pipeline", ""),
+                    "quality_level": quality.get("level"),
+                    "quality_score": quality.get("score"),
+                    "quality_reasons": quality.get("reasons") or [],
+                    "suggested_action": agent_suggested_quality_action(payload, result),
+                }
+            )
+    return {
+        "counts": counts,
+        "review_count": len(review_items),
+        "review_items": review_items[:20],
+    }
+
+
+def agent_suggested_quality_action(payload: dict[str, Any], result: Any) -> str:
+    quality = payload.get("quality") or {}
+    reasons = " ".join(quality.get("reasons") or [])
+    source = str(getattr(result, "source", "") or payload.get("source") or "")
+    pipeline = str(getattr(result, "pipeline", "") or payload.get("pipeline") or "")
+    if getattr(result, "status", "") == "failed":
+        return "copy_failure_reason_or_retry"
+    if source.lower().endswith(".pdf"):
+        if any(token in reasons for token in ["标题", "页码", "重复短行", "OCR"]):
+            return "run_compare_pipelines_or_rerun_recommended_pdf_backend"
+        if "pymupdf" in pipeline.lower():
+            return "review_output_then_compare_with_umi_or_mineru_if_structure_matters"
+        return "open_review_checklist"
+    if "标题" in reasons:
+        return "inspect_original_toc_or_rerun_with_toc_alignment"
+    return "read_report_and_review_output"
 
 
 def update_job(job_id: str, **updates: Any) -> None:

@@ -203,7 +203,7 @@ class BookConverterUI:
         preview_box.columnconfigure(0, weight=1)
         preview_box.rowconfigure(0, weight=1)
 
-        columns = ("source", "format", "pipeline", "note", "output_format", "output")
+        columns = ("source", "format", "pipeline", "quality", "action", "note", "output_format", "output")
         self.tree = ttk.Treeview(preview_box, columns=columns, show="headings", height=12)
         self.tree.grid(row=0, column=0, sticky="nsew")
 
@@ -211,6 +211,8 @@ class BookConverterUI:
             "source": "来源 / Source",
             "format": "格式 / Format",
             "pipeline": "管道 / Pipeline",
+            "quality": "质量 / Quality",
+            "action": "建议 / Action",
             "note": "说明 / Note",
             "output_format": "输出格式 / Output Format",
             "output": "输出 / Output",
@@ -219,6 +221,8 @@ class BookConverterUI:
             "source": 300,
             "format": 80,
             "pipeline": 120,
+            "quality": 100,
+            "action": 180,
             "note": 260,
             "output_format": 100,
             "output": 380,
@@ -502,6 +506,8 @@ class BookConverterUI:
                     str(source),
                     detected_format,
                     "location-index",
+                    "",
+                    "",
                     note,
                     "sqlite/jsonl",
                     str(output_path / "document_locations.sqlite"),
@@ -547,6 +553,8 @@ class BookConverterUI:
                     plan.source,
                     plan.detected_format,
                     plan.pipeline,
+                    "",
+                    "",
                     plan.note,
                     plan.output_format,
                     plan.output,
@@ -731,6 +739,7 @@ class BookConverterUI:
                     self.set_running_state(False)
                     self.worker = None
                     self.latest_artifacts = self.collect_conversion_artifacts(payload)
+                    self.update_quality_columns(payload)
                     self.write_log(f"完成 / Finished. 成功 / Success: {ok_count}/{len(payload)}")
                     self.write_log(f"汇总 / Summary: {Path(self.output_var.get().strip()) / '.reports' / 'summary.md'}")
                     self.write_log(f"复查清单 / Review checklist: {Path(self.output_var.get().strip()) / '.reports' / 'review-checklist.md'}")
@@ -918,8 +927,61 @@ class BookConverterUI:
             messagebox.showinfo("未选择 / No selection", "请先在检测文件列表中选择一个文件。/ Please select a file first.")
             return None
         values = self.tree.item(selection[0], "values")
-        columns = ("source", "format", "pipeline", "note", "output_format", "output")
+        columns = ("source", "format", "pipeline", "quality", "action", "note", "output_format", "output")
         return dict(zip(columns, values))
+
+    def update_quality_columns(self, results) -> None:
+        by_source = {str(getattr(result, "source", "")): result for result in results}
+        for item_id in self.tree.get_children():
+            values = list(self.tree.item(item_id, "values"))
+            if len(values) < 8:
+                continue
+            source = str(values[0])
+            result = by_source.get(source)
+            if result is None:
+                continue
+            quality, action = self.quality_and_action_for_result(result)
+            values[3] = quality
+            values[4] = action
+            self.tree.item(item_id, values=values)
+
+    def quality_and_action_for_result(self, result) -> tuple[str, str]:
+        status = str(getattr(result, "status", "") or "")
+        if status == "failed":
+            return "failed", "复制失败原因 / Copy fail"
+        report_path = getattr(result, "report", None)
+        if not report_path:
+            return status, ""
+        try:
+            payload = json.loads(Path(report_path).read_text(encoding="utf-8"))
+        except Exception:
+            return status, ""
+        quality = payload.get("quality") or {}
+        level = str(quality.get("level") or status or "")
+        score = quality.get("score")
+        label = f"{level} {score}" if score not in {None, ""} else level
+        action = self.suggest_action_from_report(payload)
+        return label.strip(), action
+
+    def suggest_action_from_report(self, payload: dict) -> str:
+        if payload.get("status") == "failed":
+            return "复制失败原因 / Copy fail"
+        quality = payload.get("quality") or {}
+        reasons = " ".join(quality.get("reasons") or [])
+        source = str(payload.get("source") or "")
+        pipeline = str(payload.get("pipeline") or "")
+        level = quality.get("level")
+        if level == "good":
+            return "可用 / OK"
+        if source.lower().endswith(".pdf"):
+            if "标题" in reasons or "页码" in reasons or "重复短行" in reasons:
+                return "PDF对比或推荐重跑 / Compare"
+            if "HTML" in reasons and "pymupdf" in pipeline.lower():
+                return "换 Umi/MinerU 对比 / Compare"
+            return "打开复查清单 / Review"
+        if "标题" in reasons:
+            return "检查原目录 / TOC review"
+        return "打开报告 / Report"
 
     def open_path(self, path: Path) -> None:
         if not path.exists():

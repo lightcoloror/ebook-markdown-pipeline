@@ -101,6 +101,7 @@ class MarkdownQuality:
     html_tag_lines: int
     replacement_chars: int
     short_line_ratio: float
+    repeated_noise_lines: int
     reasons: list[str]
 
 
@@ -2056,8 +2057,58 @@ def clean_umi_ocr_markdown(text: str) -> str:
             pending_page = False
         cleaned.append(line)
     text = "\n".join(cleaned)
+    text = remove_repeated_ocr_noise_lines(text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip() + "\n"
+
+
+def remove_repeated_ocr_noise_lines(text: str) -> str:
+    """Conservatively drop repeated short OCR headers/footers.
+
+    This targets scanned book artifacts such as a running title repeated on
+    many pages. It intentionally avoids Markdown headings and numbered section
+    titles so real structure is not silently removed.
+    """
+    lines = text.split("\n")
+    counts: dict[str, int] = {}
+    for line in lines:
+        stripped = normalize_repeated_noise_key(line)
+        if stripped:
+            counts[stripped] = counts.get(stripped, 0) + 1
+    noisy = {
+        key
+        for key, count in counts.items()
+        if count >= 4 and (len(key) <= 12 or count >= 6)
+    }
+    if not noisy:
+        return text
+    kept = []
+    for line in lines:
+        key = normalize_repeated_noise_key(line)
+        if key and key in noisy:
+            kept.append(f"<!-- removed repeated OCR header/footer: {line.strip()} -->")
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def normalize_repeated_noise_key(line: str) -> str:
+    stripped = re.sub(r"\s+", "", line.strip())
+    if not stripped:
+        return ""
+    if line.lstrip().startswith("#"):
+        return ""
+    if re.match(r"^<!--\s*Page\s+\d+\s*-->\s*$", line.strip(), re.I):
+        return ""
+    if re.match(r"^(第[一二三四五六七八九十百千万\d]+[章节篇部卷]|Chapter\d+|Part\w+)", stripped, re.I):
+        return ""
+    if re.match(r"^\d{1,4}$", stripped):
+        return ""
+    if len(stripped) > 24:
+        return ""
+    if re.search(r"[。！？!?；;：:，,、]$", stripped):
+        return ""
+    return stripped
 
 
 def next_nonempty_line(lines: list[str], start: int) -> str:
@@ -2709,6 +2760,12 @@ def analyze_markdown_quality(path: Path) -> MarkdownQuality | None:
     replacement_chars = text.count("\ufffd")
     short_lines = [line for line in nonempty if 0 < len(line) <= 8 and not re.match(r"^#{1,6}\s+", line)]
     short_line_ratio = round(len(short_lines) / max(len(nonempty), 1), 3)
+    repeated_noise_keys: dict[str, int] = {}
+    for line in nonempty:
+        key = normalize_repeated_noise_key(line)
+        if key:
+            repeated_noise_keys[key] = repeated_noise_keys.get(key, 0) + 1
+    repeated_noise_lines = sum(count for count in repeated_noise_keys.values() if count >= 4)
 
     score = 100
     reasons: list[str] = []
@@ -2736,6 +2793,9 @@ def analyze_markdown_quality(path: Path) -> MarkdownQuality | None:
     if short_line_ratio > 0.45 and len(nonempty) > 30:
         score -= 10
         reasons.append("短行比例偏高，可能存在 OCR 断行或目录/页眉页脚噪声")
+    if repeated_noise_lines >= 4:
+        score -= min(12, repeated_noise_lines // 2)
+        reasons.append("检测到重复短行，可能存在页眉/页脚噪声")
 
     score = max(0, min(100, score))
     if score >= 85:
@@ -2758,6 +2818,7 @@ def analyze_markdown_quality(path: Path) -> MarkdownQuality | None:
         html_tag_lines=len(html_tag_lines),
         replacement_chars=replacement_chars,
         short_line_ratio=short_line_ratio,
+        repeated_noise_lines=repeated_noise_lines,
         reasons=reasons,
     )
 

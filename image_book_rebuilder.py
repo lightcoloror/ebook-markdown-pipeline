@@ -651,6 +651,7 @@ def render_book_markdown(title: str | Path, pages: list[ScreenshotPage]) -> str:
 
 
 def text_to_markdown(text: str) -> str:
+    text = remove_repeated_screenshot_noise(text)
     output = []
     previous_blank = True
     for raw_line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
@@ -667,6 +668,39 @@ def text_to_markdown(text: str) -> str:
             output.append(line)
         previous_blank = False
     return "\n".join(output).strip()
+
+
+def remove_repeated_screenshot_noise(text: str) -> str:
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    counts: dict[str, int] = {}
+    for line in lines:
+        key = screenshot_noise_key(line)
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+    noisy = {key for key, count in counts.items() if count >= 3 and len(key) <= 18}
+    if not noisy:
+        return text
+    cleaned = []
+    for line in lines:
+        key = screenshot_noise_key(line)
+        if key in noisy:
+            cleaned.append(f"<!-- repeated screenshot header/footer: {line.strip()} -->")
+            continue
+        cleaned.append(line)
+    return "\n".join(cleaned)
+
+
+def screenshot_noise_key(line: str) -> str:
+    stripped = re.sub(r"\s+", "", line.strip())
+    if not stripped or len(stripped) > 24:
+        return ""
+    if re.match(r"^\d{1,4}$", stripped):
+        return ""
+    if re.match(r"^(第[一二三四五六七八九十百千万\d]+[章节篇部卷]|Chapter\d+|Part\w+)", stripped, re.I):
+        return ""
+    if re.search(r"[。！？!?；;：:，,、]$", stripped):
+        return ""
+    return stripped
 
 
 def infer_heading_level(line: str, *, previous_blank: bool) -> int | None:

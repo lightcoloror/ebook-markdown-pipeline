@@ -92,10 +92,36 @@ Stable job fields:
 - `events`
 - `results`
 - `artifacts`
+- `quality_summary`
 - `warnings`
 - `errors`
 - `next_actions`
 - `error`
+
+For conversion jobs, `quality_summary` is available after completion:
+
+```json
+{
+  "counts": {
+    "good": 3,
+    "review": 1
+  },
+  "review_count": 1,
+  "review_items": [
+    {
+      "source": "D:\\input\\book.pdf",
+      "output": "D:\\output\\book.md",
+      "report": "D:\\output\\.reports\\book.report.json",
+      "quality_level": "review",
+      "quality_score": 74,
+      "quality_reasons": ["没有 Markdown 标题，章节层级可能缺失"],
+      "suggested_action": "run_compare_pipelines_or_rerun_recommended_pdf_backend"
+    }
+  ]
+}
+```
+
+Agents should treat `quality_summary.review_count > 0` as a prompt to read the `summary_report` or `review_report` before presenting the output as final.
 
 ## Artifacts
 
@@ -240,6 +266,7 @@ Preferred async tools:
 - Agents should ignore unknown fields.
 - Agents should prefer `artifacts` over guessing output paths.
 - Agents should prefer `next_actions` over inventing follow-up calls.
+- After conversion jobs finish, agents should inspect `quality_summary` first, then follow `next_actions` to read `summary_report`, `review_report`, and a representative Markdown artifact.
 - CLI, MCP, HTTP, and UI should reuse the same Python core functions.
 
 ## Examples
