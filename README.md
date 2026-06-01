@@ -185,14 +185,18 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\discover_benchmark_sampl
 ```powershell
 python D:\used-by-codex\ebook_markdown_pipeline\scripts\run_benchmarks.py `
   --manifest D:\used-by-codex\ebook_markdown_pipeline\benchmarks\samples.local.json `
-  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\latest
+  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\latest `
+  --sample-timeout 600
 ```
 
 输出目录会包含：
 
 - `benchmark-results.json`：机器可读的完整结果，适合后续汇总或 agent 读取。
+- `benchmark-results.partial.json`：每个样本结束后增量写入；即使某次长评测被中断，也能保留已完成证据。
 - `benchmark-summary.md`：人工快速浏览的样本状态、质量和失败原因。
 - `docling-decision.md`：根据真实样本自动给出 Docling 是否默认启用的建议；在样本不足、依赖缺失或成功率偏低时会保持 Docling 为可选后端。
+
+`--sample-timeout` 可以避免单个坏文件、慢 OCR 或模型收尾卡住拖死整批评测；超时样本会记录为 `timeout` 并继续处理后续样本。
 
 对同一个 PDF 比较多条管道：
 

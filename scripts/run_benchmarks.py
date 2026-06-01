@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
+import queue
 import sys
 import time
 from dataclasses import asdict
@@ -31,6 +33,8 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--skip-heavy", action="store_true", help="Skip PDF OCR/model-heavy categories.")
+    parser.add_argument("--sample-timeout", type=float, default=0, help="Maximum seconds per sample. 0 disables per-sample timeout.")
+    parser.add_argument("--no-partial", action="store_true", help="Do not write benchmark-results.partial.json after each sample.")
     args = parser.parse_args()
 
     samples = load_samples(args.manifest)
@@ -40,22 +44,101 @@ def main() -> int:
 
     results = []
     for sample in samples:
-        result = run_sample(sample, args.output, overwrite=args.overwrite, skip_heavy=args.skip_heavy)
+        result = run_sample_with_timeout(
+            sample,
+            args.output,
+            overwrite=args.overwrite,
+            skip_heavy=args.skip_heavy,
+            sample_timeout=args.sample_timeout,
+        )
         results.append(result)
         print(json.dumps({"id": sample.get("id"), "status": result.get("status"), "duration_seconds": result.get("duration_seconds")}, ensure_ascii=False))
+        if not args.no_partial:
+            write_run_payload(args, results, final=False)
 
+    payload = write_run_payload(args, results, final=True)
+    (args.output / "benchmark-summary.md").write_text(render_benchmark_summary(payload), encoding="utf-8")
+    (args.output / "docling-decision.md").write_text(render_docling_decision(payload), encoding="utf-8")
+    return 0
+
+
+def write_run_payload(args: argparse.Namespace, results: list[dict], *, final: bool) -> dict:
     payload = {
         "schema_version": RUN_SCHEMA_VERSION,
         "created_at": now(),
         "manifest": str(args.manifest),
         "output": str(args.output),
+        "sample_timeout_seconds": args.sample_timeout,
+        "final": final,
         "summary": summarize_results(results),
         "results": results,
     }
-    write_json(args.output / "benchmark-results.json", payload)
-    (args.output / "benchmark-summary.md").write_text(render_benchmark_summary(payload), encoding="utf-8")
-    (args.output / "docling-decision.md").write_text(render_docling_decision(payload), encoding="utf-8")
-    return 0
+    write_json(args.output / ("benchmark-results.json" if final else "benchmark-results.partial.json"), payload)
+    return payload
+
+
+def run_sample_with_timeout(sample: dict, output_root: Path, *, overwrite: bool, skip_heavy: bool, sample_timeout: float) -> dict:
+    if sample_timeout <= 0:
+        return run_sample(sample, output_root, overwrite=overwrite, skip_heavy=skip_heavy)
+    result_queue: multiprocessing.Queue = multiprocessing.Queue(maxsize=1)
+    started = time.monotonic()
+    process = multiprocessing.Process(
+        target=_run_sample_worker,
+        args=(sample, output_root, overwrite, skip_heavy, result_queue),
+    )
+    process.start()
+    process.join(sample_timeout)
+    if process.is_alive():
+        process.terminate()
+        process.join(10)
+        source = Path(sample["path"])
+        sample_id = safe_id(str(sample.get("id") or source.stem))
+        return {
+            "id": sample_id,
+            "source": str(source),
+            "category": str(sample.get("category") or ""),
+            "recommended_pipeline": sample.get("recommended_pipeline"),
+            "status": "timeout",
+            "output": str(output_root / sample_id),
+            "failure_reason": f"sample exceeded timeout: {sample_timeout}s",
+            "duration_seconds": round(time.monotonic() - started, 3),
+        }
+    try:
+        payload = result_queue.get_nowait()
+    except queue.Empty:
+        source = Path(sample["path"])
+        sample_id = safe_id(str(sample.get("id") or source.stem))
+        return {
+            "id": sample_id,
+            "source": str(source),
+            "category": str(sample.get("category") or ""),
+            "recommended_pipeline": sample.get("recommended_pipeline"),
+            "status": "failed",
+            "output": str(output_root / sample_id),
+            "failure_reason": f"sample process exited with code {process.exitcode} and no result",
+            "duration_seconds": round(time.monotonic() - started, 3),
+        }
+    return payload
+
+
+def _run_sample_worker(sample: dict, output_root: Path, overwrite: bool, skip_heavy: bool, result_queue: multiprocessing.Queue) -> None:
+    try:
+        result_queue.put(run_sample(sample, output_root, overwrite=overwrite, skip_heavy=skip_heavy))
+    except Exception as exc:  # noqa: BLE001
+        source = Path(sample["path"])
+        sample_id = safe_id(str(sample.get("id") or source.stem))
+        result_queue.put(
+            {
+                "id": sample_id,
+                "source": str(source),
+                "category": str(sample.get("category") or ""),
+                "recommended_pipeline": sample.get("recommended_pipeline"),
+                "status": "failed",
+                "output": str(output_root / sample_id),
+                "failure_reason": str(exc),
+                "duration_seconds": 0,
+            }
+        )
 
 
 def run_sample(sample: dict, output_root: Path, *, overwrite: bool, skip_heavy: bool) -> dict:

@@ -38,8 +38,13 @@ def main() -> int:
             raise RuntimeError(f"Expected discovered TXT and PDF samples: {manifest_payload}")
 
         run_dir = root / "run"
-        run_cmd("run_benchmarks.py", "--manifest", str(manifest), "--output", str(run_dir), "--limit", "1", "--overwrite", "--skip-heavy")
-        if not (run_dir / "benchmark-results.json").exists() or not (run_dir / "benchmark-summary.md").exists() or not (run_dir / "docling-decision.md").exists():
+        run_cmd("run_benchmarks.py", "--manifest", str(manifest), "--output", str(run_dir), "--limit", "1", "--overwrite", "--skip-heavy", "--sample-timeout", "20")
+        if (
+            not (run_dir / "benchmark-results.json").exists()
+            or not (run_dir / "benchmark-results.partial.json").exists()
+            or not (run_dir / "benchmark-summary.md").exists()
+            or not (run_dir / "docling-decision.md").exists()
+        ):
             raise RuntimeError("Benchmark runner did not write expected reports.")
 
         compare_dir = root / "compare"

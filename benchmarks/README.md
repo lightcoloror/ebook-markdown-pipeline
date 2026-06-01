@@ -17,14 +17,18 @@ Run a benchmark:
 ```powershell
 python D:\used-by-codex\ebook_markdown_pipeline\scripts\run_benchmarks.py `
   --manifest D:\used-by-codex\ebook_markdown_pipeline\benchmarks\samples.local.json `
-  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\latest
+  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\latest `
+  --sample-timeout 600
 ```
 
 Each run writes:
 
 - `benchmark-results.json`: complete machine-readable records for agents and later aggregation.
+- `benchmark-results.partial.json`: incrementally updated after each sample, so interrupted long runs still preserve completed evidence.
 - `benchmark-summary.md`: human review table with status, quality, runtime, sample category, and failure reason.
 - `docling-decision.md`: evidence-based recommendation for whether Docling should become default for document-like formats. Missing dependencies or weak real-sample success keep Docling optional.
+
+Use `--sample-timeout` to mark one stuck sample as `timeout` and continue the rest of the run.
 
 Compare PDF pipelines:
 
