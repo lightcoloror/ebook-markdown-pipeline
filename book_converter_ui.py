@@ -247,40 +247,48 @@ class BookConverterUI:
 
         buttons = ttk.Frame(container)
         buttons.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+        for column in range(6):
+            buttons.columnconfigure(column, weight=0)
         self.scan_button = ttk.Button(buttons, text="扫描 / Scan", command=self.scan)
-        self.scan_button.pack(side="left")
         self.health_button = ttk.Button(buttons, text="检查环境 / Health", command=self.health_check)
-        self.health_button.pack(side="left", padx=(8, 0))
         self.start_button = ttk.Button(buttons, text="开始 / Start", command=self.start_convert)
-        self.start_button.pack(side="left", padx=8)
         self.location_button = ttk.Button(buttons, text="定位索引 / Location Index", command=self.start_location_index)
-        self.location_button.pack(side="left", padx=(0, 8))
         self.image_book_button = ttk.Button(buttons, text="截图成书 / Image Book", command=self.start_image_book_rebuild)
-        self.image_book_button.pack(side="left", padx=(0, 8))
-        ttk.Button(buttons, text="复查清单 / Checklist", command=self.open_review_checklist).pack(side="left")
-        ttk.Button(buttons, text="人工记录 / Manual", command=self.open_manual_review).pack(side="left", padx=(8, 0))
-        ttk.Checkbutton(buttons, text="只看复查 / Review only", variable=self.review_only_var, command=self.apply_review_filter).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="上一条 / Prev", command=lambda: self.select_relative_review_item(-1)).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="下一条 / Next", command=lambda: self.select_relative_review_item(1)).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="选中输出 / Output", command=self.open_selected_output).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="原文件 / Source", command=self.open_selected_source).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="选中报告 / Report", command=self.open_selected_report).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="打开Artifact / Artifact", command=self.open_latest_artifact).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="PDF日志 / PDF log", command=self.open_latest_pdf_log).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="复制失败 / Copy Fail", command=self.copy_selected_failure_reason).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="复制Agent调用 / Copy Agent", command=self.copy_agent_call).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="重跑失败 / Retry Failed", command=self.retry_failed_items).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="推荐重跑 / Rerun Rec", command=self.rerun_selected_recommended).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="执行建议 / Do Action", command=self.execute_selected_suggestion).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="标记验收 / Accept", command=self.mark_selected_review_accepted).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="人工评分 / Score", command=self.score_selected_review_item).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="PDF对比 / Compare", command=self.start_pdf_pipeline_compare).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="清空日志 / Clear", command=self.clear_log).pack(side="left")
+        toolbar_items = [
+            self.scan_button,
+            self.health_button,
+            self.start_button,
+            self.location_button,
+            self.image_book_button,
+            ttk.Button(buttons, text="PDF对比 / Compare", command=self.start_pdf_pipeline_compare),
+            ttk.Button(buttons, text="执行建议 / Do Action", command=self.execute_selected_suggestion),
+            ttk.Button(buttons, text="推荐重跑 / Rerun Rec", command=self.rerun_selected_recommended),
+            ttk.Button(buttons, text="重跑失败 / Retry Failed", command=self.retry_failed_items),
+            ttk.Button(buttons, text="复查清单 / Checklist", command=self.open_review_checklist),
+            ttk.Button(buttons, text="人工记录 / Manual", command=self.open_manual_review),
+            ttk.Button(buttons, text="标记验收 / Accept", command=self.mark_selected_review_accepted),
+            ttk.Button(buttons, text="人工评分 / Score", command=self.score_selected_review_item),
+            ttk.Checkbutton(buttons, text="只看复查 / Review only", variable=self.review_only_var, command=self.apply_review_filter),
+            ttk.Button(buttons, text="上一条 / Prev", command=lambda: self.select_relative_review_item(-1)),
+            ttk.Button(buttons, text="下一条 / Next", command=lambda: self.select_relative_review_item(1)),
+            ttk.Button(buttons, text="选中输出 / Output", command=self.open_selected_output),
+            ttk.Button(buttons, text="原文件 / Source", command=self.open_selected_source),
+            ttk.Button(buttons, text="选中报告 / Report", command=self.open_selected_report),
+            ttk.Button(buttons, text="打开Artifact / Artifact", command=self.open_latest_artifact),
+            ttk.Button(buttons, text="PDF日志 / PDF log", command=self.open_latest_pdf_log),
+            ttk.Button(buttons, text="复制失败 / Copy Fail", command=self.copy_selected_failure_reason),
+            ttk.Button(buttons, text="复制Agent调用 / Copy Agent", command=self.copy_agent_call),
+            ttk.Button(buttons, text="清空日志 / Clear", command=self.clear_log),
+        ]
+        toolbar_rows = self.grid_toolbar_items(buttons, toolbar_items, columns=6)
 
-        self.progress = ttk.Progressbar(buttons, mode="determinate", length=220)
-        self.progress.pack(side="left", padx=(18, 8))
-        ttk.Label(buttons, textvariable=self.status_var).pack(side="left")
-        ttk.Label(buttons, textvariable=self.current_stage_var).pack(side="left", padx=(10, 0))
+        status_row = ttk.Frame(buttons)
+        status_row.grid(row=toolbar_rows, column=0, columnspan=6, sticky="ew", pady=(6, 0))
+        status_row.columnconfigure(2, weight=1)
+        self.progress = ttk.Progressbar(status_row, mode="determinate", length=220)
+        self.progress.grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ttk.Label(status_row, textvariable=self.status_var).grid(row=0, column=1, sticky="w")
+        ttk.Label(status_row, textvariable=self.current_stage_var).grid(row=0, column=2, sticky="w", padx=(10, 0))
 
         log_box = ttk.LabelFrame(container, text="日志 / Log", padding=8)
         log_box.grid(row=4, column=0, sticky="nsew", pady=(10, 0))
@@ -293,6 +301,12 @@ class BookConverterUI:
         log_scroll = ttk.Scrollbar(log_box, orient="vertical", command=self.log.yview)
         log_scroll.grid(row=0, column=1, sticky="ns")
         self.log.configure(yscrollcommand=log_scroll.set)
+
+    def grid_toolbar_items(self, parent: ttk.Frame, widgets: list[tk.Widget], *, columns: int) -> int:
+        for index, widget in enumerate(widgets):
+            row, column = divmod(index, columns)
+            widget.grid(row=row, column=column, sticky="w", padx=(0, 8), pady=(0, 4))
+        return (len(widgets) + columns - 1) // columns
 
     def pick_input_files(self) -> None:
         all_supported = SUPPORTED_FORMATS | IMAGE_EXTENSIONS
