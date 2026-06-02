@@ -149,6 +149,7 @@ class BookConverterUI:
         self.history_combo.bind("<<ComboboxSelected>>", lambda _event: self.open_selected_history())
         ttk.Button(paths, text="打开历史 / Open", command=self.open_selected_history).grid(row=3, column=2, padx=4, pady=(4, 0))
         ttk.Button(paths, text="只看问题 / Problems", command=self.open_selected_history_problems).grid(row=3, column=3, padx=4, pady=(4, 0))
+        ttk.Button(paths, text="发现历史 / Discover", command=self.discover_history_batches).grid(row=3, column=4, padx=4, pady=(4, 0))
 
         settings = ttk.LabelFrame(container, text="选项 / Options", padding=10)
         settings.grid(row=1, column=0, sticky="ew", pady=(10, 0))
@@ -679,6 +680,114 @@ class BookConverterUI:
                 return record
         messagebox.showwarning("历史不存在 / History missing", "该历史批次记录已不存在。/ This history record is no longer available.")
         return None
+
+    def discover_history_batches(self) -> None:
+        roots = self.history_discovery_roots()
+        records = []
+        seen: set[str] = set()
+        for root in roots:
+            for summary_path in self.find_summary_files(root):
+                output_path = summary_path.parent.parent
+                key = str(output_path)
+                if key in seen:
+                    continue
+                seen.add(key)
+                record = self.history_record_from_summary(summary_path)
+                if record:
+                    records.append(record)
+        if not records:
+            messagebox.showinfo("没有发现历史 / No history found", "未在当前输入/输出/下载目录发现历史批次。/ No history batch found.")
+            return
+        self.merge_history_records(records)
+        self.update_history_combo()
+        self.save_ui_config()
+        self.write_log(f"发现历史批次 {len(records)} 个。/ Discovered {len(records)} history batch(es).")
+        messagebox.showinfo("发现历史 / History discovered", f"发现 {len(records)} 个历史批次。/ Discovered {len(records)} history batch(es).")
+
+    def auto_discover_history_batches(self) -> None:
+        records = []
+        existing_outputs = {str(record.get("output") or "") for record in self.history_records}
+        for root in self.history_discovery_roots():
+            direct = root / ".reports" / "summary.json"
+            if not direct.exists():
+                continue
+            output = str(direct.parent.parent)
+            if output in existing_outputs:
+                continue
+            record = self.history_record_from_summary(direct)
+            if record:
+                records.append(record)
+        if not records:
+            return
+        self.merge_history_records(records)
+        self.update_history_combo()
+
+    def history_discovery_roots(self) -> list[Path]:
+        candidates: list[Path] = []
+        for value in (self.output_var.get().strip(), self.input_var.get().strip()):
+            if value:
+                path = Path(value)
+                candidates.append(path if path.is_dir() else path.parent)
+        for value in (Path.home() / "Downloads", Path("D:/downloads"), Path("D:/BaiduSyncdisk/电子书")):
+            candidates.append(value)
+        unique: list[Path] = []
+        seen: set[str] = set()
+        for path in candidates:
+            key = str(path)
+            if key in seen or not path.exists():
+                continue
+            seen.add(key)
+            unique.append(path)
+        return unique
+
+    def find_summary_files(self, root: Path) -> list[Path]:
+        direct = root / ".reports" / "summary.json"
+        if direct.exists():
+            return [direct]
+        found: list[Path] = []
+        try:
+            for reports_dir in root.glob("**/.reports"):
+                summary = reports_dir / "summary.json"
+                if summary.exists():
+                    found.append(summary)
+        except Exception:
+            return found
+        return found[:50]
+
+    def history_record_from_summary(self, summary_path: Path) -> dict | None:
+        try:
+            entries = json.loads(summary_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        if not isinstance(entries, list):
+            return None
+        problem_count = sum(1 for entry in entries if isinstance(entry, dict) and self.history_entry_is_problem(entry))
+        try:
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(summary_path.stat().st_mtime))
+        except Exception:
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        output_path = summary_path.parent.parent
+        return {
+            "output": str(output_path),
+            "summary": str(summary_path),
+            "review_checklist": str(summary_path.parent / "review-checklist.json"),
+            "last_used": timestamp,
+            "item_count": len(entries),
+            "problem_count": problem_count,
+            "source": "discovered",
+        }
+
+    def merge_history_records(self, records: list[dict]) -> None:
+        merged: dict[str, dict] = {}
+        for record in self.history_records:
+            output = str(record.get("output") or "")
+            if output:
+                merged[output] = record
+        for record in records:
+            output = str(record.get("output") or "")
+            if output:
+                merged[output] = record
+        self.history_records = sorted(merged.values(), key=lambda item: str(item.get("last_used") or ""), reverse=True)[:30]
 
     def populate_history_rows(self, entries: list[dict], *, source_label: str) -> None:
         for item in list(self.detached_review_items):
@@ -1870,6 +1979,7 @@ class BookConverterUI:
         if isinstance(records, list):
             self.history_records = [item for item in records if isinstance(item, dict) and item.get("output")]
             self.update_history_combo()
+        self.auto_discover_history_batches()
 
     def save_ui_config(self) -> None:
         data = {
