@@ -11,6 +11,7 @@ import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
+from types import SimpleNamespace
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -78,6 +79,7 @@ class BookConverterUI:
 
         self.input_var = tk.StringVar()
         self.output_var = tk.StringVar()
+        self.history_var = tk.StringVar()
         self.output_format_var = tk.StringVar(value="markdown")
         self.pdf_mode_var = tk.StringVar(value="auto")
         self.recursive_var = tk.BooleanVar(value=True)
@@ -110,6 +112,7 @@ class BookConverterUI:
         self.sort_desc_by_column: dict[str, bool] = {}
         self.detached_review_items: list[str] = []
         self.output_manually_selected = False
+        self.history_records: list[dict] = []
 
         self.build_layout()
         self.load_ui_config()
@@ -139,6 +142,13 @@ class BookConverterUI:
         ttk.Label(paths, text="输出文件夹 / Output").grid(row=1, column=0, sticky="w", pady=4)
         ttk.Entry(paths, textvariable=self.output_var).grid(row=1, column=1, sticky="ew", padx=8)
         ttk.Button(paths, text="浏览 / Browse", command=self.pick_output_folder).grid(row=1, column=2, padx=4)
+
+        ttk.Label(paths, text="历史批次 / History").grid(row=3, column=0, sticky="w", pady=4)
+        self.history_combo = ttk.Combobox(paths, textvariable=self.history_var, state="readonly")
+        self.history_combo.grid(row=3, column=1, sticky="ew", padx=8, pady=(4, 0))
+        self.history_combo.bind("<<ComboboxSelected>>", lambda _event: self.open_selected_history())
+        ttk.Button(paths, text="打开历史 / Open", command=self.open_selected_history).grid(row=3, column=2, padx=4, pady=(4, 0))
+        ttk.Button(paths, text="只看问题 / Problems", command=self.open_selected_history_problems).grid(row=3, column=3, padx=4, pady=(4, 0))
 
         settings = ttk.LabelFrame(container, text="选项 / Options", padding=10)
         settings.grid(row=1, column=0, sticky="ew", pady=(10, 0))
@@ -260,6 +270,8 @@ class BookConverterUI:
             self.start_button,
             self.location_button,
             self.image_book_button,
+            ttk.Button(buttons, text="加载历史 / History", command=self.load_history_batch),
+            ttk.Button(buttons, text="只载问题 / Problems", command=self.load_history_problems),
             ttk.Button(buttons, text="PDF对比 / Compare", command=self.start_pdf_pipeline_compare),
             ttk.Button(buttons, text="执行建议 / Do Action", command=self.execute_selected_suggestion),
             ttk.Button(buttons, text="推荐重跑 / Rerun Rec", command=self.rerun_selected_recommended),
@@ -597,6 +609,226 @@ class BookConverterUI:
         else:
             messagebox.showinfo("环境检查 / Environment check", "当前选择所需环境检查通过。/ All required checks passed.")
 
+    def load_history_batch(self) -> None:
+        output_text = self.output_var.get().strip()
+        if not output_text:
+            messagebox.showwarning("缺少输出 / Output missing", "请先选择输出文件夹。/ Please choose an output folder first.")
+            return
+        summary_path = Path(output_text) / ".reports" / "summary.json"
+        if not summary_path.exists():
+            messagebox.showwarning("没有历史 / No history", f"未找到历史批次：{summary_path}")
+            return
+        try:
+            entries = json.loads(summary_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("历史读取失败 / History load failed", str(exc))
+            return
+        if not isinstance(entries, list):
+            messagebox.showerror("历史格式错误 / Invalid history", "summary.json 应该是数组。/ summary.json should be an array.")
+            return
+        self.populate_history_rows(entries, source_label="summary")
+
+    def load_history_problems(self) -> None:
+        output_text = self.output_var.get().strip()
+        if not output_text:
+            messagebox.showwarning("缺少输出 / Output missing", "请先选择输出文件夹。/ Please choose an output folder first.")
+            return
+        checklist_path = Path(output_text) / ".reports" / "review-checklist.json"
+        if not checklist_path.exists():
+            messagebox.showwarning("没有问题清单 / No problems", f"未找到复查清单：{checklist_path}")
+            return
+        try:
+            entries = json.loads(checklist_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("问题清单读取失败 / Checklist load failed", str(exc))
+            return
+        if not isinstance(entries, list):
+            messagebox.showerror("问题清单格式错误 / Invalid checklist", "review-checklist.json 应该是数组。/ review-checklist.json should be an array.")
+            return
+        self.populate_history_rows(entries, source_label="review-checklist")
+
+    def open_selected_history(self) -> None:
+        record = self.selected_history_record()
+        if not record:
+            return
+        output = str(record.get("output") or "")
+        if not output:
+            return
+        self.output_var.set(output)
+        self.output_manually_selected = True
+        self.load_history_batch()
+
+    def open_selected_history_problems(self) -> None:
+        record = self.selected_history_record()
+        if not record:
+            return
+        output = str(record.get("output") or "")
+        if not output:
+            return
+        self.output_var.set(output)
+        self.output_manually_selected = True
+        self.load_history_problems()
+
+    def selected_history_record(self) -> dict | None:
+        selected = self.history_var.get().strip()
+        if not selected:
+            messagebox.showinfo("未选择历史 / No history selected", "请先选择一个历史批次。/ Please select a history batch first.")
+            return None
+        for record in self.history_records:
+            if self.history_display_label(record) == selected:
+                return record
+        messagebox.showwarning("历史不存在 / History missing", "该历史批次记录已不存在。/ This history record is no longer available.")
+        return None
+
+    def populate_history_rows(self, entries: list[dict], *, source_label: str) -> None:
+        for item in list(self.detached_review_items):
+            try:
+                self.tree.delete(item)
+            except tk.TclError:
+                pass
+        self.detached_review_items = []
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        self.latest_results = [self.history_entry_to_result(entry) for entry in entries]
+        self.latest_artifacts = self.collect_history_artifacts(entries)
+        for entry in entries:
+            row = self.history_row_values(entry)
+            quality_label = str(row[3])
+            self.tree.insert("", "end", values=row, tags=(self.quality_tag_for_label(quality_label),))
+        self.apply_manual_review_records()
+        self.apply_review_filter()
+        problem_count = sum(1 for entry in entries if self.history_entry_is_problem(entry))
+        self.status_var.set(f"已加载历史 / History: {len(entries)}")
+        self.current_stage_var.set(f"问题项 / Problems: {problem_count}")
+        self.write_log(
+            f"已从 {source_label} 加载历史 {len(entries)} 条，问题项 {problem_count} 条。/ "
+            f"Loaded {len(entries)} history item(s) from {source_label}; {problem_count} problem item(s)."
+        )
+        output_text = self.output_var.get().strip()
+        if output_text:
+            self.remember_history_batch(Path(output_text), item_count=len(entries), problem_count=problem_count, source_label=source_label)
+
+    def remember_history_batch(self, output_path: Path, *, item_count: int, problem_count: int, source_label: str) -> None:
+        summary_path = output_path / ".reports" / "summary.json"
+        checklist_path = output_path / ".reports" / "review-checklist.json"
+        record = {
+            "output": str(output_path),
+            "summary": str(summary_path),
+            "review_checklist": str(checklist_path),
+            "last_used": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "item_count": item_count,
+            "problem_count": problem_count,
+            "source": source_label,
+        }
+        existing = [item for item in self.history_records if str(item.get("output") or "") != str(output_path)]
+        self.history_records = [record, *existing][:30]
+        self.update_history_combo()
+        self.history_var.set(self.history_display_label(record))
+        self.save_ui_config()
+
+    def update_history_combo(self) -> None:
+        if not hasattr(self, "history_combo"):
+            return
+        labels = [self.history_display_label(record) for record in self.history_records]
+        self.history_combo.configure(values=labels)
+        if labels and not self.history_var.get().strip():
+            self.history_var.set(labels[0])
+
+    def history_display_label(self, record: dict) -> str:
+        timestamp = str(record.get("last_used") or "")
+        output = str(record.get("output") or "")
+        item_count = record.get("item_count", "")
+        problem_count = record.get("problem_count", "")
+        return f"{timestamp} | {item_count}项/{problem_count}问题 | {output}"
+
+    def history_row_values(self, entry: dict) -> tuple[str, str, str, str, str, str, str, str]:
+        source = str(entry.get("source") or "")
+        quality = entry.get("quality") or {}
+        level = entry.get("quality_level") or quality.get("level") or entry.get("status") or ""
+        score = entry.get("quality_score") if entry.get("quality_score") not in {None, ""} else quality.get("score")
+        quality_label = f"{level} {score}" if score not in {None, ""} else str(level)
+        detected_format = str(entry.get("detected_format") or self.detect_format_from_path(source))
+        pipeline = str(entry.get("pipeline") or "")
+        action = str(entry.get("suggested_action") or self.suggest_action_from_report(entry))
+        note = self.history_note(entry)
+        output_format = self.detect_output_format_from_path(str(entry.get("output") or ""))
+        output = str(entry.get("output") or "")
+        return (source, detected_format, pipeline, quality_label.strip(), action, note, output_format, output)
+
+    def history_note(self, entry: dict) -> str:
+        reasons = entry.get("quality_reasons") or (entry.get("quality") or {}).get("reasons") or []
+        pdf_reasons = entry.get("pdf_reasons") or ((entry.get("pdf_preflight") or {}).get("reasons") if entry.get("pdf_preflight") else []) or []
+        parts = [*reasons[:2], *pdf_reasons[:2]]
+        if entry.get("message"):
+            parts.insert(0, str(entry.get("message")))
+        return "; ".join(str(item) for item in parts if item)
+
+    def history_entry_to_result(self, entry: dict):
+        return SimpleNamespace(
+            source=str(entry.get("source") or ""),
+            output=str(entry.get("output") or ""),
+            status=str(entry.get("status") or ""),
+            pipeline=str(entry.get("pipeline") or ""),
+            message=str(entry.get("message") or ""),
+            detected_format=str(entry.get("detected_format") or self.detect_format_from_path(str(entry.get("source") or ""))),
+            duration_seconds=float(entry.get("duration_seconds") or 0.0),
+            started_at=str(entry.get("started_at") or ""),
+            finished_at=str(entry.get("finished_at") or ""),
+            report=str(entry.get("report") or ""),
+        )
+
+    def collect_history_artifacts(self, entries: list[dict]) -> list[Path]:
+        artifacts: list[Path] = []
+        output_text = self.output_var.get().strip()
+        if output_text:
+            report_root = Path(output_text) / ".reports"
+            artifacts.extend([report_root / "summary.md", report_root / "review-checklist.md", report_root / "manual-review.md"])
+        for entry in entries:
+            for key in ("output", "report"):
+                value = entry.get(key)
+                if value:
+                    artifacts.append(Path(str(value)))
+        seen: set[str] = set()
+        unique: list[Path] = []
+        for path in artifacts:
+            key = str(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(path)
+        return unique
+
+    def history_entry_is_problem(self, entry: dict) -> bool:
+        level = str(entry.get("quality_level") or (entry.get("quality") or {}).get("level") or "").lower()
+        return level in {"poor", "review"} or str(entry.get("status") or "").lower() == "failed"
+
+    def result_is_problem(self, result) -> bool:
+        if str(getattr(result, "status", "") or "").lower() == "failed":
+            return True
+        report = getattr(result, "report", None)
+        if not report:
+            return False
+        try:
+            payload = json.loads(Path(report).read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        return self.history_entry_is_problem(payload)
+
+    def detect_format_from_path(self, value: str) -> str:
+        suffix = Path(value).suffix.lower().lstrip(".")
+        return suffix.upper() if suffix else ""
+
+    def detect_output_format_from_path(self, value: str) -> str:
+        suffix = Path(value).suffix.lower()
+        if suffix in {".md", ".markdown"}:
+            return "markdown"
+        if suffix == ".html":
+            return "html"
+        if suffix == ".txt":
+            return "text"
+        return ""
+
     def refresh_tree(self, input_path: Path, output_path: Path, options, sources: list[Path]) -> None:
         for item in list(self.detached_review_items):
             try:
@@ -804,6 +1036,10 @@ class BookConverterUI:
                     self.worker = None
                     self.latest_artifacts = self.collect_conversion_artifacts(payload)
                     self.update_quality_columns(payload)
+                    output_text = self.output_var.get().strip()
+                    if output_text:
+                        problem_count = sum(1 for result in payload if self.result_is_problem(result))
+                        self.remember_history_batch(Path(output_text), item_count=len(payload), problem_count=problem_count, source_label="conversion")
                     self.write_log(f"完成 / Finished. 成功 / Success: {ok_count}/{len(payload)}")
                     self.write_log(f"汇总 / Summary: {Path(self.output_var.get().strip()) / '.reports' / 'summary.md'}")
                     self.write_log(f"复查清单 / Review checklist: {Path(self.output_var.get().strip()) / '.reports' / 'review-checklist.md'}")
@@ -1630,6 +1866,10 @@ class BookConverterUI:
         }.items():
             if key in data:
                 variable.set(bool(data[key]))
+        records = data.get("history_records")
+        if isinstance(records, list):
+            self.history_records = [item for item in records if isinstance(item, dict) and item.get("output")]
+            self.update_history_combo()
 
     def save_ui_config(self) -> None:
         data = {
@@ -1650,6 +1890,7 @@ class BookConverterUI:
             "pdf_finalize_timeout": self.pdf_finalize_timeout_var.get(),
             "compare_pipeline_timeout": self.compare_pipeline_timeout_var.get(),
             "compare_page_ranges": self.compare_page_ranges_var.get(),
+            "history_records": self.history_records,
         }
         try:
             self.config_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")

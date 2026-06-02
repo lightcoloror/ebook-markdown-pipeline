@@ -15,6 +15,7 @@ benchmarks/runs/
 benchmarks/*.local.json
 benchmarks/compare-runs/
 .tmp-bench/
+.tmp-*/
 
 # Local environment files
 .venv/
