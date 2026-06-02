@@ -31,6 +31,7 @@ except ModuleNotFoundError:  # Allows running this file directly by absolute pat
 
 PANDOC_DIRECT_FORMATS = {".epub", ".fb2", ".odt", ".txt"}
 CALIBRE_INTERMEDIATE_FORMATS = {".azw", ".azw3", ".mobi", ".rtf"}
+CALIBRE_FALLBACK_FORMATS = {".epub", ".fb2", ".odt"}
 EBOOK_DIRECT_FORMATS = PANDOC_DIRECT_FORMATS
 EBOOK_NEEDS_CALIBRE_FORMATS = CALIBRE_INTERMEDIATE_FORMATS
 PDF_FORMATS = {".pdf"}
@@ -228,6 +229,11 @@ def parse_args() -> argparse.Namespace:
         help="Calibre conversion command, default: ebook-convert",
     )
     parser.add_argument(
+        "--no-calibre-fallback",
+        action="store_true",
+        help="Disable Calibre EPUB preprocessing fallback for weak Pandoc ebook output.",
+    )
+    parser.add_argument(
         "--pandoc-command",
         default="pandoc",
         help="Pandoc command, default: pandoc",
@@ -325,6 +331,7 @@ def default_options(**overrides) -> SimpleNamespace:
         "mineru_hf_endpoint": "https://hf-mirror.com",
         "mineru_keep_artifacts": True,
         "calibre_command": suggested_command_value("ebook-convert"),
+        "calibre_fallback_to_epub": True,
         "pandoc_command": suggested_command_value("pandoc"),
         "overwrite": False,
         "dry_run": False,
@@ -362,6 +369,8 @@ def run_batch(args: argparse.Namespace) -> int:
         args.pdf_fallback_to_pymupdf4llm = False
     if getattr(args, "no_docling_fallback", False):
         args.docling_fallback_to_pandoc = False
+    if getattr(args, "no_calibre_fallback", False):
+        args.calibre_fallback_to_epub = False
     normalize_command_options(args)
     sources = collect_sources(
         args.input,
@@ -823,8 +832,10 @@ def convert_one(
     args._pdf_tool_diagnostics = []
     args._pdf_fallback_diagnostics = []
     args._docling_diagnostics = []
+    args._calibre_fallback_diagnostics = []
     args._last_pdf_pipeline = None
     args._last_docling_pipeline = None
+    args._last_ebook_pipeline = None
 
     if output_path.exists() and not args.overwrite:
         return ConversionResult(
@@ -885,6 +896,8 @@ def final_pipeline_name(source: Path, kind: str, args: argparse.Namespace) -> st
         return getattr(args, "_last_pdf_pipeline", None) or pipeline_name(source, args)
     if kind == "docling":
         return getattr(args, "_last_docling_pipeline", None) or pipeline_name(source, args)
+    if kind in {"pandoc", "calibre"}:
+        return getattr(args, "_last_ebook_pipeline", None) or pipeline_name(source, args)
     return pipeline_name(source, args)
 
 
@@ -904,6 +917,37 @@ def pipeline_name(source: Path, args: argparse.Namespace | None = None) -> str:
 
 
 def run_pandoc_direct_convert(
+    source: Path,
+    output_path: Path,
+    args: argparse.Namespace,
+    progress_callback=None,
+    progress_index: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    direct_failed: Exception | None = None
+    try:
+        run_pandoc_direct_convert_once(source, output_path, args, progress_callback, progress_index, progress_total)
+        args._last_ebook_pipeline = "pandoc"
+    except Exception as exc:  # noqa: BLE001
+        direct_failed = exc
+
+    if should_try_calibre_fallback(source, output_path, args, direct_failed):
+        if try_calibre_fallback_after_pandoc(
+            source,
+            output_path,
+            args,
+            direct_failed,
+            progress_callback,
+            progress_index,
+            progress_total,
+        ):
+            return
+
+    if direct_failed:
+        raise direct_failed
+
+
+def run_pandoc_direct_convert_once(
     source: Path,
     output_path: Path,
     args: argparse.Namespace,
@@ -985,6 +1029,98 @@ def decode_text_bytes(data: bytes) -> tuple[str, str]:
     return "utf-8-replace", data.decode("utf-8", errors="replace")
 
 
+def should_try_calibre_fallback(
+    source: Path,
+    output_path: Path,
+    args: argparse.Namespace,
+    direct_failed: Exception | None,
+) -> bool:
+    if not getattr(args, "calibre_fallback_to_epub", True):
+        return False
+    if source.suffix.lower() not in CALIBRE_FALLBACK_FORMATS:
+        return False
+    if args.output_format != "markdown":
+        return direct_failed is not None
+    if not resolve_command_path(getattr(args, "calibre_command", "ebook-convert")):
+        return False
+    if direct_failed is not None:
+        return True
+    quality = analyze_markdown_quality(output_path)
+    if not quality:
+        return False
+    return quality.level == "poor" or any("没有 Markdown 标题" in reason for reason in quality.reasons)
+
+
+def try_calibre_fallback_after_pandoc(
+    source: Path,
+    output_path: Path,
+    args: argparse.Namespace,
+    direct_failed: Exception | None,
+    progress_callback=None,
+    progress_index: int | None = None,
+    progress_total: int | None = None,
+) -> bool:
+    direct_quality = analyze_markdown_quality(output_path) if output_path.exists() else None
+    diagnostic: dict[str, object] = {
+        "source": str(source),
+        "output": str(output_path),
+        "started_at": timestamp_now(),
+        "from_pipeline": "pandoc",
+        "to_pipeline": "calibre+epub+pandoc",
+        "trigger": "pandoc_failed" if direct_failed else "weak_pandoc_quality",
+        "status": "running",
+    }
+    if direct_failed:
+        diagnostic["direct_error"] = str(direct_failed)
+        diagnostic["direct_error_type"] = type(direct_failed).__name__
+    if direct_quality:
+        diagnostic["direct_quality"] = asdict(direct_quality)
+    getattr(args, "_calibre_fallback_diagnostics", []).append(diagnostic)
+
+    started = time.monotonic()
+    emit_stage(progress_callback, source, progress_index, progress_total, "calibre", "Pandoc 结果较弱，尝试 Calibre 预处理")
+    with tempfile.TemporaryDirectory(prefix="calibre-fallback-") as tmpdir:
+        tmpdir_path = Path(tmpdir)
+        fallback_output = tmpdir_path / output_path.name
+        direct_backup = tmpdir_path / f"direct-{output_path.name}"
+        if output_path.exists():
+            shutil.copyfile(output_path, direct_backup)
+        try:
+            run_calibre_intermediate_convert(source, fallback_output, args, progress_callback, progress_index, progress_total)
+            fallback_quality = analyze_markdown_quality(fallback_output)
+            if fallback_quality:
+                diagnostic["fallback_quality"] = asdict(fallback_quality)
+            use_fallback = direct_failed is not None or quality_score(fallback_quality) > quality_score(direct_quality)
+            if use_fallback:
+                shutil.copyfile(fallback_output, output_path)
+                args._last_ebook_pipeline = "calibre+epub+pandoc(fallback from pandoc)"
+                diagnostic["status"] = "ok"
+                diagnostic["decision"] = "used_fallback"
+                return True
+            if direct_backup.exists():
+                shutil.copyfile(direct_backup, output_path)
+            args._last_ebook_pipeline = "pandoc"
+            diagnostic["status"] = "skipped"
+            diagnostic["decision"] = "kept_direct_output"
+            return False
+        except Exception as exc:  # noqa: BLE001
+            if direct_backup.exists():
+                shutil.copyfile(direct_backup, output_path)
+            diagnostic["status"] = "failed"
+            diagnostic["fallback_error"] = str(exc)
+            diagnostic["fallback_error_type"] = type(exc).__name__
+            if direct_failed is not None:
+                raise RuntimeError(f"Pandoc failed and Calibre fallback also failed: {exc}") from exc
+            return False
+        finally:
+            diagnostic["duration_seconds"] = round(time.monotonic() - started, 3)
+            diagnostic["finished_at"] = timestamp_now()
+
+
+def quality_score(quality: MarkdownQuality | None) -> int:
+    return int(quality.score) if quality else -1
+
+
 def run_calibre_intermediate_convert(
     source: Path,
     output_path: Path,
@@ -993,6 +1129,7 @@ def run_calibre_intermediate_convert(
     progress_index: int | None = None,
     progress_total: int | None = None,
 ) -> None:
+    args._last_ebook_pipeline = "calibre+pandoc"
     with tempfile.TemporaryDirectory(prefix="ebook-pipeline-") as tmpdir:
         temp_epub = Path(tmpdir) / f"{source.stem}.epub"
         calibre_env = calibre_environment()
@@ -2557,6 +2694,9 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
     docling_diagnostics = getattr(args, "_docling_diagnostics", [])
     if docling_diagnostics:
         payload["docling_diagnostics"] = docling_diagnostics
+    calibre_fallback_diagnostics = getattr(args, "_calibre_fallback_diagnostics", [])
+    if calibre_fallback_diagnostics:
+        payload["calibre_fallback_diagnostics"] = calibre_fallback_diagnostics
     report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     result.report = str(report_path)
 
