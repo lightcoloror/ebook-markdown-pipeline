@@ -109,6 +109,7 @@ class BookConverterUI:
         self.config_path = Path.home() / ".ebook_markdown_pipeline_ui.json"
         self.sort_desc_by_column: dict[str, bool] = {}
         self.detached_review_items: list[str] = []
+        self.output_manually_selected = False
 
         self.build_layout()
         self.load_ui_config()
@@ -312,12 +313,18 @@ class BookConverterUI:
         if path:
             self.selected_input_files = []
             self.input_var.set(path)
-            self.output_var.set(path)
+            self.set_default_output(path)
 
     def pick_output_folder(self) -> None:
-        path = filedialog.askdirectory(title="选择输出文件夹 / Choose output folder")
+        initial_dir = self.output_var.get().strip() or self.default_output_initial_dir()
+        dialog_options = {"title": "选择输出文件夹 / Choose output folder"}
+        if initial_dir and Path(initial_dir).exists():
+            dialog_options["initialdir"] = initial_dir
+        path = filedialog.askdirectory(**dialog_options)
         if path:
             self.output_var.set(path)
+            self.output_manually_selected = True
+            self.write_log(f"输出文件夹已设为 / Output folder set to: {path}")
 
     def setup_drag_and_drop(self) -> None:
         if DND_FILES is None or not hasattr(self.root, "drop_target_register"):
@@ -344,12 +351,12 @@ class BookConverterUI:
         elif len(folders) == 1:
             self.selected_input_files = []
             self.input_var.set(str(folders[0]))
-            self.output_var.set(str(folders[0]))
+            self.set_default_output(str(folders[0]))
             self.write_log(f"已拖入文件夹 / Dropped folder: {folders[0]}")
         elif folders:
             self.selected_input_files = []
             self.input_var.set(str(folders[0]))
-            self.output_var.set(str(folders[0]))
+            self.set_default_output(str(folders[0]))
             self.write_log(f"拖入多个文件夹，使用第一个。/ Dropped multiple folders; using first: {folders[0]}")
         else:
             messagebox.showwarning("不支持的拖放 / Unsupported drop", "没有拖入支持的电子书/PDF文件。/ No supported ebook/PDF files were dropped.")
@@ -454,10 +461,28 @@ class BookConverterUI:
         if not sources:
             return
         if len(sources) == 1:
-            self.output_var.set(str(sources[0].parent))
+            self.set_default_output(str(sources[0].parent))
             return
         common_root = Path(os.path.commonpath([str(path.parent) for path in sources]))
-        self.output_var.set(str(common_root))
+        self.set_default_output(str(common_root))
+
+    def set_default_output(self, path: str | Path) -> None:
+        if self.output_manually_selected and self.output_var.get().strip():
+            return
+        self.output_var.set(str(path))
+
+    def default_output_initial_dir(self) -> str:
+        if self.selected_input_files:
+            return str(self.selected_input_files[0].parent)
+        input_text = self.input_var.get().strip()
+        if not input_text:
+            return ""
+        input_path = Path(input_text)
+        if input_path.is_dir():
+            return str(input_path)
+        if input_path.parent:
+            return str(input_path.parent)
+        return ""
 
     def scan(self) -> None:
         options = self.build_options()
@@ -473,7 +498,7 @@ class BookConverterUI:
             if self.selected_input_files:
                 self.apply_default_output_from_sources(sources)
             elif input_root:
-                self.output_var.set(str(input_root if input_root.is_dir() else input_root.parent))
+                self.set_default_output(str(input_root if input_root.is_dir() else input_root.parent))
         if not self.output_var.get().strip():
             messagebox.showerror("缺少输出 / Output missing", "请选择输出文件夹。/ Please choose an output folder.")
             return
@@ -507,7 +532,7 @@ class BookConverterUI:
             messagebox.showerror("没有图片/PDF / No images or PDFs", "未找到可建定位索引的 PDF 或图片。/ No PDF or image files were found.")
             return
         if not self.output_var.get().strip():
-            self.output_var.set(str(input_root if input_root.is_dir() else input_root.parent))
+            self.set_default_output(str(input_root if input_root.is_dir() else input_root.parent))
         output_path = Path(self.output_var.get().strip())
 
         for item in self.tree.get_children():
@@ -680,7 +705,7 @@ class BookConverterUI:
             messagebox.showerror("没有图片/PDF / No images or PDFs", "请选择或拖入 PDF/图片文件。/ Please choose or drop PDF/image files.")
             return
         if not self.output_var.get().strip():
-            self.output_var.set(str(input_root if input_root.is_dir() else input_root.parent))
+            self.set_default_output(str(input_root if input_root.is_dir() else input_root.parent))
         output_path = Path(self.output_var.get().strip())
 
         self.scan_location_inputs()
@@ -716,7 +741,7 @@ class BookConverterUI:
             messagebox.showerror("没有图片 / No images", "请选择或拖入图片文件。/ Please choose or drop image files.")
             return
         if not self.output_var.get().strip():
-            self.output_var.set(str(input_root if input_root.is_dir() else input_root.parent))
+            self.set_default_output(str(input_root if input_root.is_dir() else input_root.parent))
         output_path = Path(self.output_var.get().strip())
 
         self.write_log(f"开始截图成书 {len(sources)} 张图片... / Rebuilding image book from {len(sources)} image(s)...")
@@ -1581,6 +1606,8 @@ class BookConverterUI:
         }.items():
             if key in data and data[key] is not None:
                 variable.set(str(data[key]))
+        if self.output_var.get().strip():
+            self.output_manually_selected = True
         for key, variable in {
             "recursive": self.recursive_var,
             "include_hidden": self.include_hidden_var,
