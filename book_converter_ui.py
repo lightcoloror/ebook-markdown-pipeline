@@ -150,6 +150,8 @@ class BookConverterUI:
         ttk.Button(paths, text="打开历史 / Open", command=self.open_selected_history).grid(row=3, column=2, padx=4, pady=(4, 0))
         ttk.Button(paths, text="只看问题 / Problems", command=self.open_selected_history_problems).grid(row=3, column=3, padx=4, pady=(4, 0))
         ttk.Button(paths, text="发现历史 / Discover", command=self.discover_history_batches).grid(row=3, column=4, padx=4, pady=(4, 0))
+        self.history_detail_var = tk.StringVar()
+        ttk.Label(paths, textvariable=self.history_detail_var).grid(row=4, column=1, columnspan=4, sticky="ew", padx=8, pady=(2, 0))
 
         settings = ttk.LabelFrame(container, text="选项 / Options", padding=10)
         settings.grid(row=1, column=0, sticky="ew", pady=(10, 0))
@@ -245,7 +247,7 @@ class BookConverterUI:
         }
         for key in columns:
             self.tree.heading(key, text=labels[key], command=lambda col=key: self.sort_tree_by_column(col))
-            self.tree.column(key, width=widths[key], anchor="w")
+            self.tree.column(key, width=widths[key], minwidth=70, anchor="w", stretch=True)
         self.tree.tag_configure("quality_good", background="#edf7ed")
         self.tree.tag_configure("quality_review", background="#fff7db")
         self.tree.tag_configure("quality_poor", background="#ffe8e3")
@@ -254,7 +256,9 @@ class BookConverterUI:
 
         scrollbar = ttk.Scrollbar(preview_box, orient="vertical", command=self.tree.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
-        self.tree.configure(yscrollcommand=scrollbar.set)
+        xscrollbar = ttk.Scrollbar(preview_box, orient="horizontal", command=self.tree.xview)
+        xscrollbar.grid(row=1, column=0, sticky="ew")
+        self.tree.configure(yscrollcommand=scrollbar.set, xscrollcommand=xscrollbar.set)
 
         buttons = ttk.Frame(container)
         buttons.grid(row=3, column=0, sticky="ew", pady=(10, 0))
@@ -677,6 +681,7 @@ class BookConverterUI:
             return None
         for record in self.history_records:
             if self.history_display_label(record) == selected:
+                self.update_history_detail(record)
                 return record
         messagebox.showwarning("历史不存在 / History missing", "该历史批次记录已不存在。/ This history record is no longer available.")
         return None
@@ -843,13 +848,22 @@ class BookConverterUI:
         self.history_combo.configure(values=labels)
         if labels and not self.history_var.get().strip():
             self.history_var.set(labels[0])
+            self.update_history_detail(self.history_records[0])
 
     def history_display_label(self, record: dict) -> str:
         timestamp = str(record.get("last_used") or "")
         output = str(record.get("output") or "")
         item_count = record.get("item_count", "")
         problem_count = record.get("problem_count", "")
-        return f"{timestamp} | {item_count}项/{problem_count}问题 | {output}"
+        folder = Path(output).name or output
+        return f"{timestamp} | {item_count}项/{problem_count}问题 | {folder}"
+
+    def update_history_detail(self, record: dict) -> None:
+        if not hasattr(self, "history_detail_var"):
+            return
+        output = str(record.get("output") or "")
+        summary = str(record.get("summary") or "")
+        self.history_detail_var.set(f"输出: {output}    summary: {summary}")
 
     def history_row_values(self, entry: dict) -> tuple[str, str, str, str, str, str, str, str]:
         source = str(entry.get("source") or "")
