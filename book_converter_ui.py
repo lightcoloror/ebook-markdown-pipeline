@@ -1775,12 +1775,30 @@ class BookConverterUI:
             if candidate in pipeline:
                 self.pdf_mode_var.set(candidate)
                 break
+        original_output = Path(self.output_var.get().strip()) if self.output_var.get().strip() else source.parent
+        rerun_output = self.safe_rerun_output_dir(original_output, source, self.pdf_mode_var.get())
         self.selected_input_files = [source]
         self.input_var.set(str(source))
-        self.overwrite_var.set(True)
+        self.output_var.set(str(rerun_output))
+        self.output_manually_selected = True
+        self.overwrite_var.set(False)
         self.resume_var.set(False)
-        self.write_log(f"按推荐管道重跑 / Rerun with recommended pipeline: {self.pdf_mode_var.get()} -> {source}")
+        self.write_log(
+            "安全推荐重跑 / Safe recommended rerun: "
+            f"{self.pdf_mode_var.get()} -> {source}; output={rerun_output}"
+        )
+        self.write_log("原主输出不会被覆盖；重跑结果会作为独立历史批次保存。/ Main output will not be overwritten.")
+        self.current_stage_var.set(f"版本化输出 / Versioned output: {rerun_output}")
         self.start_convert()
+
+    def safe_rerun_output_dir(self, output_root: Path, source: Path, pipeline: str) -> Path:
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        safe_stem = re.sub(r"[^\w\u4e00-\u9fff.-]+", "-", source.stem, flags=re.UNICODE).strip("-._")
+        if not safe_stem:
+            safe_stem = "rerun"
+        safe_stem = safe_stem[:80]
+        safe_pipeline = re.sub(r"[^A-Za-z0-9_.-]+", "-", pipeline or "auto").strip("-") or "auto"
+        return output_root / ".reports" / "reruns" / f"{timestamp}-{safe_pipeline}-{safe_stem}"
 
     def start_pdf_pipeline_compare(self) -> None:
         if self.worker and self.worker.is_alive():
