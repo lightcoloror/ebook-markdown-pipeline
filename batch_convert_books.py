@@ -1589,16 +1589,34 @@ def run_pymupdf4llm_pdf_convert(
     use_ocr = should_use_ocr_for_pdf(source)
     ocr_detail = "启用 OCR" if use_ocr else "直接使用文字层"
     emit_stage(progress_callback, source, progress_index, progress_total, "pymupdf", f"PyMuPDF4LLM 解析 PDF - {ocr_detail}")
-    import pymupdf4llm
+    try:
+        import pymupdf4llm
 
-    with contextlib.redirect_stdout(sys.stderr):
-        markdown = pymupdf4llm.to_markdown(
-            str(source),
-            use_ocr=use_ocr,
-            force_text=True,
-            show_progress=False,
-            ocr_language="eng",
+        with contextlib.redirect_stdout(sys.stderr):
+            markdown = pymupdf4llm.to_markdown(
+                str(source),
+                use_ocr=use_ocr,
+                force_text=True,
+                show_progress=False,
+                ocr_language="eng",
+            )
+    except Exception as exc:  # noqa: BLE001
+        emit_stage(progress_callback, source, progress_index, progress_total, "pymupdf", "PyMuPDF4LLM 失败，改用 PyMuPDF 文本层兜底")
+        getattr(args, "_pdf_fallback_diagnostics", []).append(
+            {
+                "source": str(source),
+                "output": str(output_path),
+                "started_at": timestamp_now(),
+                "from_pipeline": "pymupdf4llm",
+                "to_pipeline": "pymupdf-text",
+                "reason": str(exc),
+                "reason_type": type(exc).__name__,
+                "status": "ok",
+                "finished_at": timestamp_now(),
+            }
         )
+        args._last_pdf_pipeline = "pymupdf-text(fallback from pymupdf4llm)"
+        markdown = extract_pdf_text_layer_markdown(source)
     with tempfile.TemporaryDirectory(prefix="pymupdf4llm-output-") as tmpdir:
         temp_md = Path(tmpdir) / f"{source.stem}.md"
         temp_md.write_text(markdown, encoding="utf-8")
@@ -1618,6 +1636,25 @@ def run_pymupdf4llm_pdf_convert(
             return
 
         convert_markdown_file(temp_md, output_path, args, progress_callback, source, progress_index, progress_total)
+
+
+def extract_pdf_text_layer_markdown(source: Path) -> str:
+    import pymupdf
+
+    parts = [f"# {source.stem}", ""]
+    with pymupdf.open(str(source)) as document:
+        for page_index, page in enumerate(document, start=1):
+            text = page.get_text("text").strip()
+            if not text:
+                continue
+            parts.append(f"## Page {page_index}")
+            parts.append("")
+            parts.append(text)
+            parts.append("")
+    markdown = "\n".join(parts).rstrip() + "\n"
+    if markdown.strip() == f"# {source.stem}":
+        raise RuntimeError("PyMuPDF text-layer fallback produced no text.")
+    return markdown
 
 
 def run_umi_pdf_convert(

@@ -9,7 +9,24 @@ from pathlib import Path
 from typing import Any
 
 
-READABLE_TYPES = {"markdown", "html", "text", "summary_report", "review_report", "location_index_jsonl", "order_report"}
+READABLE_TYPES = {
+    "markdown",
+    "html",
+    "text",
+    "conversion_report",
+    "summary_report",
+    "summary_json",
+    "review_report",
+    "review_json",
+    "matches_json",
+    "location_index_jsonl",
+    "pages_jsonl",
+    "order_report",
+    "tool_log",
+}
+ALLOWED_INTENTS = {"auto", "convert", "locate", "rebuild"}
+ALLOWED_OUTPUT_FORMATS = {"markdown", "html", "text"}
+ALLOWED_OCR = {"auto", "always", "never"}
 
 
 def main() -> int:
@@ -23,10 +40,18 @@ def main() -> int:
     parser.add_argument("--http-timeout", type=float, default=60)
     parser.add_argument("--artifact-max-chars", type=int, default=4000)
     parser.add_argument("--artifact-max-lines", type=int, default=120)
+    parser.add_argument("--dry-run", action="store_true", help="validate and render the batch plan without calling HTTP tools")
+    parser.add_argument("--validate-only", action="store_true", help="alias for --dry-run")
     args = parser.parse_args()
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8-sig"))
     args.output.mkdir(parents=True, exist_ok=True)
+
+    validation = validate_manifest(manifest)
+    if args.dry_run or args.validate_only or validation["errors"]:
+        plan_payload = write_plan(args.output, args.manifest, manifest, validation)
+        print(json.dumps(plan_payload["summary"], ensure_ascii=False, indent=2))
+        return 2 if validation["errors"] else 0
 
     started = time.monotonic()
     results = []
@@ -37,6 +62,73 @@ def main() -> int:
     payload = write_reports(args.output, args.manifest, started, results, partial=False)
     print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
     return 0 if payload["summary"]["failed"] == 0 else 3
+
+
+def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    errors: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    defaults = manifest.get("defaults", {})
+    jobs = manifest.get("jobs", [])
+
+    if not isinstance(defaults, dict):
+        errors.append({"scope": "defaults", "message": "defaults must be an object"})
+        defaults = {}
+    if not isinstance(jobs, list) or not jobs:
+        errors.append({"scope": "jobs", "message": "jobs must be a non-empty array"})
+        jobs = []
+
+    seen_ids: set[str] = set()
+    normalized_jobs = []
+    for index, job in enumerate(jobs, start=1):
+        if not isinstance(job, dict):
+            errors.append({"scope": f"jobs[{index}]", "message": "job must be an object"})
+            continue
+        job_id = str(job.get("id") or f"job-{index}")
+        if job_id in seen_ids:
+            errors.append({"scope": job_id, "message": "duplicate job id"})
+        seen_ids.add(job_id)
+
+        merged = {**defaults, **job}
+        input_path = merged.get("input")
+        output_path = merged.get("output")
+        intent = merged.get("intent", "auto")
+        output_format = merged.get("output_format", "markdown")
+        ocr = merged.get("ocr", "auto")
+
+        if not input_path:
+            errors.append({"scope": job_id, "message": "input is required"})
+        elif not Path(str(input_path)).exists():
+            warnings.append({"scope": job_id, "message": f"input path does not exist on this machine: {input_path}"})
+        if not output_path:
+            errors.append({"scope": job_id, "message": "output is required, either in defaults or the job"})
+        elif not Path(str(output_path)).parent.exists():
+            warnings.append({"scope": job_id, "message": f"output parent does not exist yet: {Path(str(output_path)).parent}"})
+        if intent not in ALLOWED_INTENTS:
+            errors.append({"scope": job_id, "message": f"intent must be one of {sorted(ALLOWED_INTENTS)}"})
+        if output_format not in ALLOWED_OUTPUT_FORMATS:
+            errors.append({"scope": job_id, "message": f"output_format must be one of {sorted(ALLOWED_OUTPUT_FORMATS)}"})
+        if ocr not in ALLOWED_OCR:
+            errors.append({"scope": job_id, "message": f"ocr must be one of {sorted(ALLOWED_OCR)}"})
+        if intent == "locate" and not merged.get("query"):
+            warnings.append({"scope": job_id, "message": "locate intent usually needs query"})
+
+        normalized_jobs.append(
+            {
+                "id": job_id,
+                "input": input_path,
+                "output": output_path,
+                "intent": intent,
+                "output_format": output_format,
+                "ocr": ocr,
+                "query": merged.get("query"),
+            }
+        )
+
+    return {
+        "errors": errors,
+        "warnings": warnings,
+        "normalized_jobs": normalized_jobs,
+    }
 
 
 def run_manifest_job(args: argparse.Namespace, defaults: dict[str, Any], job: dict[str, Any], index: int) -> dict[str, Any]:
@@ -160,6 +252,25 @@ def write_reports(output: Path, manifest: Path, started: float, results: list[di
     return payload
 
 
+def write_plan(output: Path, manifest: Path, raw_manifest: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
+    payload = {
+        "schema_version": "agent-batch-plan-v1",
+        "manifest": str(manifest),
+        "created_at": timestamp(),
+        "summary": {
+            "jobs": len(validation["normalized_jobs"]),
+            "errors": len(validation["errors"]),
+            "warnings": len(validation["warnings"]),
+            "valid": not validation["errors"],
+        },
+        "validation": validation,
+        "defaults": raw_manifest.get("defaults", {}),
+    }
+    (output / "agent-batch-plan.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    (output / "agent-batch-plan.md").write_text(render_plan_markdown(payload), encoding="utf-8")
+    return payload
+
+
 def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
     counts: dict[str, int] = {}
     review_count = 0
@@ -199,6 +310,45 @@ def render_markdown(payload: dict[str, Any]) -> str:
         lines.append(
             f"| {cell(item.get('status'))} | {cell(item.get('id'))} | {cell(item.get('input'))} | "
             f"{cell(item.get('output'))} | {quality.get('review_count', '')} | {cell(str(failure)[:220])} |"
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_plan_markdown(payload: dict[str, Any]) -> str:
+    lines = [
+        "# Agent Batch Plan",
+        "",
+        f"- Created: {payload['created_at']}",
+        f"- Manifest: `{payload['manifest']}`",
+        f"- Valid: {payload['summary']['valid']}",
+        f"- Jobs: {payload['summary']['jobs']}",
+        f"- Errors: {payload['summary']['errors']}",
+        f"- Warnings: {payload['summary']['warnings']}",
+        "",
+    ]
+    if payload["validation"]["errors"]:
+        lines.extend(["## Errors", ""])
+        for item in payload["validation"]["errors"]:
+            lines.append(f"- `{cell(item.get('scope'))}`: {cell(item.get('message'))}")
+        lines.append("")
+    if payload["validation"]["warnings"]:
+        lines.extend(["## Warnings", ""])
+        for item in payload["validation"]["warnings"]:
+            lines.append(f"- `{cell(item.get('scope'))}`: {cell(item.get('message'))}")
+        lines.append("")
+
+    lines.extend(
+        [
+            "## Jobs",
+            "",
+            "| ID | Intent | Input | Output | Query |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+    )
+    for job in payload["validation"]["normalized_jobs"]:
+        lines.append(
+            f"| {cell(job.get('id'))} | {cell(job.get('intent'))} | {cell(job.get('input'))} | "
+            f"{cell(job.get('output'))} | {cell(job.get('query'))} |"
         )
     return "\n".join(lines).rstrip() + "\n"
 

@@ -22,6 +22,22 @@ Host-local scripts can call `http://127.0.0.1:8765`.
 
 ## Run Batch
 
+Validate the manifest before long-running work:
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\agent_batch_http.py `
+  --manifest D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\batch_manifest.example.json `
+  --output D:\agent-batch-output\run-001 `
+  --dry-run
+```
+
+This writes:
+
+- `agent-batch-plan.json`
+- `agent-batch-plan.md`
+
+Run the real batch after the plan is valid:
+
 ```powershell
 python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\agent_batch_http.py `
   --url http://127.0.0.1:8765 `
@@ -40,6 +56,7 @@ Outputs:
 ## Agent Rules
 
 - Prefer this batch runner when the agent needs repeatable multi-file processing.
+- Run `--dry-run` first when the manifest was generated or edited by an agent.
 - Use `stress_agent_http.py` for concurrency/stability testing, not ordinary user batches.
 - Keep `pdf_pipeline_mode=auto` unless the user explicitly requests a backend.
 - Always inspect `quality_summary.review_count` before claiming the batch is complete.

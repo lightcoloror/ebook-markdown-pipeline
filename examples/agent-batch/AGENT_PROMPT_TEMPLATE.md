@@ -10,7 +10,13 @@ Use this project as the only document/image recognition tool. Do not parse PDF, 
 
 ## Required Flow
 
-For every manifest job:
+Before running long jobs:
+
+1. Run the batch runner with `--dry-run` or validate the same manifest shape yourself.
+2. If `agent-batch-plan.md` reports errors, fix the manifest and stop. Do not start conversion.
+3. If it reports warnings, surface them to the user when they affect path visibility, missing inputs, or missing output parents.
+
+For every real manifest job:
 
 1. Call `process_material` with merged defaults and job arguments.
 2. If a `job_id` is returned, poll `get_job_status` until `status` is not `running`.

@@ -220,7 +220,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_pipelines.py `
 
 Agent/批量场景下可用 `--docling-timeout <秒>` 控制 Docling 文档后端的最长运行时间；`--no-docling-fallback` 可关闭 DOCX/HTML/Markdown/CSV 的自动轻量兜底。HTTP `/call` 的 `start_conversion` / `process_material` 也支持 `docling_timeout` 和 `docling_fallback_to_pandoc` 参数。
 
-PDF 后端降级会写入 `pdf_fallback_diagnostics`：包括原管道、降级管道、失败/超时原因、耗时和 fallback 状态。Agent 或 UI 看到 `pymupdf4llm(fallback from ...)` 时，应提示用户这是稳定性兜底结果，结构质量可能低于 MinerU/Docling/Marker 的高质量输出。
+PDF 后端降级会写入 `pdf_fallback_diagnostics`：包括原管道、降级管道、失败/超时原因、耗时和 fallback 状态。Agent 或 UI 看到 `pymupdf4llm(fallback from ...)` 时，应提示用户这是稳定性兜底结果，结构质量可能低于 MinerU/Docling/Marker 的高质量输出。如果本机 `pymupdf4llm` 与 PyMuPDF 版本不兼容，快速 PDF 管道会继续降级为 `pymupdf-text(fallback from pymupdf4llm)`，只抽取 PDF 文本层，适合不中断批处理和定位，但章节结构质量通常较弱。
 
 Umi-OCR 输出会保留页边界，但页边界使用 `<!-- Page N -->` 注释而不是 Markdown 标题，避免把每一页误当成章节；同时会保守提升部分 OCR 识别出的页内标题，减少“全是 Page 标题”的层级噪声。
 
@@ -253,7 +253,7 @@ powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipelin
 
 UI 复查工作台还支持 `只看复查 / Review only`、`上一条 / Prev`、`下一条 / Next`、`原文件 / Source`、`标记验收 / Accept`、`人工评分 / Score` 和 `人工记录 / Manual`。人工验收结果会写入输出目录的 `.reports/manual-review.json` 和 `.reports/manual-review.md`，重新扫描或转换完成后会自动回填到表格，用于后续校准质量评分规则。
 
-Agent 批处理模板在 `examples/agent-batch/`：`batch_manifest.example.json` 定义批处理任务，`agent_batch_http.py` 负责通过 HTTP `/call` 执行 `process_material -> get_job_status -> read_artifact`，并输出 `agent-batch-results.json` 和 `agent-batch-summary.md`。OpenClaw/Hermes/Codex 可直接复用 `AGENT_PROMPT_TEMPLATE.md` 中的固定调用规则。
+Agent 批处理模板在 `examples/agent-batch/`：`batch_manifest.example.json` 定义批处理任务，`agent_batch_http.py --dry-run` 可先校验 manifest 并输出 `agent-batch-plan.md`，正式运行时通过 HTTP `/call` 执行 `process_material -> get_job_status -> read_artifact`，并输出 `agent-batch-results.json` 和 `agent-batch-summary.md`。OpenClaw/Hermes/Codex 可直接复用 `AGENT_PROMPT_TEMPLATE.md` 中的固定调用规则。
 
 ## 截图成书重建
 
