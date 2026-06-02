@@ -9,6 +9,8 @@ This project is designed for stable AI-agent invocation through a layered interf
 
 Do not duplicate conversion logic in agent-specific plugins. Keep conversion behavior in `batch_convert_books.py` and expose it through stable wrappers.
 
+Tool-first integration lessons are documented in [TOOL_FIRST_LESSONS.md](TOOL_FIRST_LESSONS.md). Future agents should prefer existing tools and project core functions, then add only orchestration, glue, logging, fallback, quality review, and UI/API wrappers.
+
 The long-term technical direction is documented in [TECHNICAL_DIRECTION.md](TECHNICAL_DIRECTION.md): this project should evolve into a general image/document material recognition tool for AI agents, with Docling as the future default document-understanding backend, MinerU as the complex-document backend, and Umi-OCR/PaddleOCR as local OCR fallback.
 
 The stable agent calling contract is documented in [TOOL_CONTRACT.md](TOOL_CONTRACT.md). Agents should prefer `process_material`, poll long jobs with `get_job_status`, and read outputs through `read_artifact`.
