@@ -163,6 +163,11 @@ def parse_args() -> argparse.Namespace:
         help="Target output format, default: markdown",
     )
     parser.add_argument(
+        "--output-name-suffix",
+        default="",
+        help="Append a safe suffix to generated output filenames before the extension, for versioned reruns.",
+    )
+    parser.add_argument(
         "--pdf-pipeline-mode",
         choices=PDF_PIPELINE_MODES,
         default="auto",
@@ -317,6 +322,7 @@ def default_options(**overrides) -> SimpleNamespace:
         "recursive": False,
         "include_hidden": False,
         "output_format": "markdown",
+        "output_name_suffix": "",
         "markdown_format": "gfm",
         "marker_command": suggested_command_value("marker_single"),
         "marker_extra_args": [],
@@ -599,17 +605,43 @@ def build_output_path(
         relative = Path(source.name)
     suffix = output_suffix(args.output_format)
     output_path = output_root / Path(relative).with_suffix(suffix)
-    return shorten_output_path_if_needed(output_path, source)
+    output_path = shorten_output_path_if_needed(output_path, source)
+    name_suffix = safe_output_name_suffix(getattr(args, "output_name_suffix", ""))
+    if name_suffix:
+        output_path = output_path.with_name(f"{output_path.stem}{name_suffix}{output_path.suffix}")
+        output_path = shorten_output_path_if_needed(output_path, source, protected_stem_suffix=name_suffix)
+    return output_path
 
 
-def shorten_output_path_if_needed(output_path: Path, source: Path, max_path_chars: int = 220) -> Path:
+def safe_output_name_suffix(value: str) -> str:
+    value = str(value or "").strip()
+    if not value:
+        return ""
+    if not value.startswith(("-", "_", ".")):
+        value = f"-{value}"
+    value = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", value)
+    value = re.sub(r"\s+", "-", value)
+    return value[:60].rstrip(" ._-")
+
+
+def shorten_output_path_if_needed(
+    output_path: Path,
+    source: Path,
+    max_path_chars: int = 220,
+    protected_stem_suffix: str = "",
+) -> Path:
     if len(str(output_path)) <= max_path_chars and len(output_path.name) <= 150:
         return output_path
 
     digest = hashlib.sha1(str(source).encode("utf-8", errors="replace")).hexdigest()[:10]
     safe_stem = sanitize_output_stem(output_path.stem)
-    max_stem_len = max(30, 140 - len(output_path.suffix))
+    protected_stem_suffix = protected_stem_suffix.strip()
+    if protected_stem_suffix and safe_stem.endswith(protected_stem_suffix):
+        safe_stem = safe_stem[: -len(protected_stem_suffix)].rstrip(" ._-")
+    max_stem_len = max(30, 140 - len(output_path.suffix) - len(protected_stem_suffix))
     shortened_stem = safe_stem[:max_stem_len].rstrip(" ._-")
+    if protected_stem_suffix:
+        shortened_stem = f"{shortened_stem}{protected_stem_suffix}"
     return output_path.with_name(f"{shortened_stem}-{digest}{output_path.suffix}")
 
 
