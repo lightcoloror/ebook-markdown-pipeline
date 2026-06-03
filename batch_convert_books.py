@@ -2354,7 +2354,9 @@ def strip_leading_toc_block(text: str) -> str:
         break
 
     if keep_from > 0:
-        return "\n".join(lines[keep_from:])
+        candidate = "\n".join(lines[keep_from:])
+        if is_safe_markdown_trim(text, candidate):
+            return candidate
     return text
 
 
@@ -2472,6 +2474,23 @@ def is_plain_paragraph_line(line: str) -> bool:
     return True
 
 
+def is_safe_markdown_trim(original: str, candidate: str) -> bool:
+    original_len = len(original.strip())
+    candidate_len = len(candidate.strip())
+    if original_len < 5000:
+        return True
+    if candidate_len < 1000:
+        return False
+    if candidate_len < original_len * 0.2:
+        return False
+
+    original_lines = [line for line in original.splitlines() if line.strip()]
+    candidate_lines = [line for line in candidate.splitlines() if line.strip()]
+    if len(original_lines) >= 200 and len(candidate_lines) < 25:
+        return False
+    return True
+
+
 def strip_leading_front_matter(text: str) -> str:
     lines = text.split("\n")
     if not lines:
@@ -2543,7 +2562,9 @@ def strip_leading_front_matter(text: str) -> str:
     prefix_lines = [line for line in lines[:chosen_idx] if line.strip()]
     prefix_hits = count_marker_hits(prefix_lines)
     if prefix_hits >= 3 or len(prefix_lines) <= 5:
-        return "\n".join(lines[chosen_idx:])
+        candidate = "\n".join(lines[chosen_idx:])
+        if is_safe_markdown_trim(text, candidate):
+            return candidate
 
     return text
 
@@ -2947,7 +2968,7 @@ def analyze_markdown_quality(path: Path) -> MarkdownQuality | None:
     score = 100
     reasons: list[str] = []
     if len(text) < 500:
-        score -= 20
+        score -= 45
         reasons.append("输出文本很短，可能没有完整转换")
     if not headings and len(text) >= 1000:
         score -= 25
