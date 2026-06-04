@@ -285,6 +285,7 @@ class BookConverterUI:
             ttk.Button(buttons, text="推荐重跑 / Rerun Rec", command=self.rerun_selected_recommended),
             ttk.Button(buttons, text="重跑失败 / Retry Failed", command=self.retry_failed_items),
             ttk.Button(buttons, text="复查清单 / Checklist", command=self.open_review_checklist),
+            ttk.Button(buttons, text="决策摘要 / Decisions", command=self.open_review_decisions),
             ttk.Button(buttons, text="人工记录 / Manual", command=self.open_manual_review),
             ttk.Button(buttons, text="标记验收 / Accept", command=self.mark_selected_review_accepted),
             ttk.Button(buttons, text="人工评分 / Score", command=self.score_selected_review_item),
@@ -1331,6 +1332,15 @@ class BookConverterUI:
             messagebox.showwarning("缺少输出 / Output missing", "请先选择输出文件夹。/ Please choose an output folder first.")
             return
         self.open_path(Path(output_text) / ".reports" / "review-checklist.md")
+
+    def open_review_decisions(self) -> None:
+        output_text = self.output_var.get().strip()
+        if not output_text:
+            messagebox.showwarning("缺少输出 / Output missing", "请先选择输出文件夹。/ Please choose an output folder first.")
+            return
+        decisions_md = Path(output_text) / ".reports" / "review-decisions.md"
+        decisions_json = Path(output_text) / ".reports" / "review-decisions.json"
+        self.open_path(decisions_md if decisions_md.exists() else decisions_json)
 
     def open_manual_review(self) -> None:
         output_text = self.output_var.get().strip()
