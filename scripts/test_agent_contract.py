@@ -271,6 +271,45 @@ def assert_conversion_report_pdf_outline(tmpdir: Path) -> None:
     actions = summary["review_items"][0].get("next_actions") or []
     if not any(item.get("action") == "inspect_pdf_outline" for item in actions):
         raise AssertionError(f"Expected outline inspection next action: {summary}")
+    good_but_unaligned_report = tmpdir / "good-unmatched.report.json"
+    good_but_unaligned_report.write_text(
+        json.dumps(
+            {
+                "source": str(pdf_path),
+                "output": str(tmpdir / "good-unmatched.md"),
+                "status": "ok",
+                "pipeline": "pymupdf4llm",
+                "quality": {"level": "good", "score": 90, "reasons": []},
+                "pdf_outline": {"count": 2, "items": [{"title": "Chapter 1"}, {"title": "Chapter 2"}]},
+                "pdf_outline_alignment": {
+                    "status": "low_alignment",
+                    "outline_count": 2,
+                    "markdown_heading_count": 2,
+                    "matched_count": 0,
+                    "match_ratio": 0.0,
+                    "missing": ["Chapter 1", "Chapter 2"],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    good_but_unaligned = ConversionResult(
+        source=str(pdf_path),
+        output=str(tmpdir / "good-unmatched.md"),
+        status="ok",
+        pipeline="pymupdf4llm",
+        message="",
+        detected_format="PDF",
+        duration_seconds=0,
+        report=str(good_but_unaligned_report),
+    )
+    unaligned_summary = conversion_quality_summary([good_but_unaligned])
+    if unaligned_summary.get("review_count") != 1:
+        raise AssertionError(f"Expected low outline alignment to enter quality_summary review queue: {unaligned_summary}")
+    unaligned_item = unaligned_summary["review_items"][0]
+    if "pdf_outline_alignment" not in unaligned_item or not any(action.get("action") == "inspect_pdf_outline" for action in unaligned_item.get("next_actions") or []):
+        raise AssertionError(f"Expected outline alignment next actions: {unaligned_summary}")
 
     aligned_output = tmpdir / "report-outlined-aligned.md"
     aligned_output.write_text("# Chapter 1\n\nOpening text", encoding="utf-8")

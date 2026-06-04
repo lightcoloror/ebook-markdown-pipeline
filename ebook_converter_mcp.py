@@ -895,9 +895,17 @@ def conversion_quality_summary(results: list[Any]) -> dict[str, Any]:
             except Exception:
                 payload = {}
         quality = payload.get("quality") or {}
+        outline_alignment = payload.get("pdf_outline_alignment") or {}
+        outline_status = str(outline_alignment.get("status") or "")
         level = str(quality.get("level") or getattr(result, "status", "") or "unknown")
         counts[level] = counts.get(level, 0) + 1
-        if level in {"review", "poor", "failed"} or getattr(result, "status", "") == "failed":
+        alignment_needs_review = outline_status in {"low_alignment", "no_markdown_headings"}
+        if level in {"review", "poor", "failed"} or getattr(result, "status", "") == "failed" or alignment_needs_review:
+            quality_reasons = list(quality.get("reasons") or [])
+            if alignment_needs_review:
+                quality_reasons.append(
+                    f"PDF outline alignment requires review: {outline_status}, ratio={outline_alignment.get('match_ratio')}"
+                )
             review_items.append(
                 {
                     "source": getattr(result, "source", ""),
@@ -907,7 +915,8 @@ def conversion_quality_summary(results: list[Any]) -> dict[str, Any]:
                     "pipeline": getattr(result, "pipeline", ""),
                     "quality_level": quality.get("level"),
                     "quality_score": quality.get("score"),
-                    "quality_reasons": quality.get("reasons") or [],
+                    "quality_reasons": quality_reasons,
+                    "pdf_outline_alignment": outline_alignment,
                     "suggested_action": agent_suggested_quality_action(payload, result),
                     "next_actions": suggest_review_next_actions(payload or asdict(result)),
                 }

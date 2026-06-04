@@ -3143,9 +3143,12 @@ def suggest_review_action(item: dict) -> str:
     pipeline = str(item.get("pipeline") or "")
     quality = item.get("quality") or {}
     preflight = item.get("pdf_preflight") or {}
+    outline_alignment = item.get("pdf_outline_alignment") or {}
     reasons = "；".join(quality.get("reasons") or [])
     if status == "failed":
         return "先打开 report 查看 message；若是 PDF 工具失败，按顺序尝试 --pdf-pipeline-mode pymupdf4llm、mineru、umi"
+    if outline_alignment.get("status") in {"low_alignment", "no_markdown_headings"}:
+        return "PDF 原书书签与 Markdown 标题未对齐：先检查书签对齐结果，再用 mineru/docling 重跑对比"
     if preflight.get("scanned_likely") and "mineru" not in pipeline.lower():
         return "疑似扫描 PDF：优先用 --pdf-pipeline-mode mineru 重跑；如果只需文字或页级定位，用 umi 或定位索引"
     if preflight.get("complex_layout_likely") and "mineru" not in pipeline.lower():
@@ -3173,6 +3176,7 @@ def suggest_review_next_actions(item: dict) -> list[dict[str, str]]:
     reasons = "；".join(quality.get("reasons") or [])
     preflight = item.get("pdf_preflight") or {}
     outline = item.get("pdf_outline") or {}
+    outline_alignment = item.get("pdf_outline_alignment") or {}
     source_suffix = Path(source).suffix.lower()
 
     actions: list[dict[str, str]] = []
@@ -3185,8 +3189,20 @@ def suggest_review_next_actions(item: dict) -> list[dict[str, str]]:
         actions.append({"action": "rerun", "pipeline": fallback, "why": "recover a failed conversion with a lightweight fallback"})
         return actions
     if source_suffix == ".pdf":
-        if int(outline.get("count") or 0) > 0 and quality.get("level") in {"review", "poor"}:
-            actions.append({"action": "inspect_pdf_outline", "why": "compare generated Markdown headings with built-in PDF bookmarks"})
+        outline_status = str(outline_alignment.get("status") or "")
+        if int(outline.get("count") or 0) > 0 and (
+            quality.get("level") in {"review", "poor"} or outline_status in {"low_alignment", "partial_alignment", "no_markdown_headings"}
+        ):
+            ratio = outline_alignment.get("match_ratio")
+            actions.append(
+                {
+                    "action": "inspect_pdf_outline",
+                    "why": f"compare generated Markdown headings with built-in PDF bookmarks; alignment={outline_status or 'unknown'} ratio={ratio}",
+                }
+            )
+        if outline_status in {"low_alignment", "no_markdown_headings"}:
+            actions.append({"action": "compare_pdf_pipelines", "pipelines": "mineru,docling,pymupdf4llm", "why": "bookmark titles did not align with generated Markdown headings"})
+            actions.append({"action": "rerun", "pipeline": "mineru", "why": "try structure-aware extraction guided by built-in PDF bookmarks"})
         if preflight.get("scanned_likely"):
             actions.append({"action": "rerun", "pipeline": "umi", "why": "long or scanned PDF may need OCR-first extraction"})
             actions.append({"action": "export_location_review_pack", "why": "verify representative OCR pages/images before accepting output"})
