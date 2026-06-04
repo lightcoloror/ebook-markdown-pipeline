@@ -36,6 +36,22 @@ def export_environment_report(input_path: Path | None, output_dir: Path, *, recu
     return payload
 
 
+def compare_environment_lock(lock_path: Path, output_dir: Path | None = None) -> dict[str, Any]:
+    baseline = json.loads(lock_path.read_text(encoding="utf-8"))
+    current_report = build_environment_report(None, recursive=False, include_hidden=False)
+    current = build_environment_lock(current_report)
+    payload = build_lock_comparison(baseline, current, baseline_path=lock_path)
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        json_path = output_dir / "environment-lock-compare.json"
+        md_path = output_dir / "environment-lock-compare.md"
+        json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        md_path.write_text(render_lock_comparison_markdown(payload, json_path), encoding="utf-8")
+        payload["json_report"] = str(json_path)
+        payload["markdown_report"] = str(md_path)
+    return payload
+
+
 def build_environment_report(input_path: Path | None, *, recursive: bool, include_hidden: bool) -> dict[str, Any]:
     options = normalize_command_options(default_options(recursive=recursive, include_hidden=include_hidden))
     sources = []
@@ -165,6 +181,146 @@ def render_environment_report_markdown(payload: dict[str, Any], json_path: Path)
         )
     if payload.get("input_error"):
         lines.extend(["", "## Input Error", "", str(payload["input_error"])])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def build_lock_comparison(baseline: dict[str, Any], current: dict[str, Any], *, baseline_path: Path) -> dict[str, Any]:
+    differences: list[dict[str, Any]] = []
+    differences.extend(compare_named_records("python_package", baseline.get("python_packages") or [], current.get("python_packages") or [], keys=("version", "status", "import_status")))
+    differences.extend(compare_named_records("command", baseline.get("commands") or [], current.get("commands") or [], keys=("path", "version", "status")))
+    differences.extend(compare_mapping("torch", baseline.get("torch") or {}, current.get("torch") or {}, keys=("version", "cuda_available", "cuda_version", "device_count", "device_name", "status")))
+    differences.extend(compare_named_records("capability", baseline.get("capabilities") or [], current.get("capabilities") or [], keys=("status", "detail", "action")))
+    severity = comparison_severity(differences)
+    return {
+        "schema_version": "environment-lock-compare-v1",
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "baseline_path": str(baseline_path),
+        "baseline_generated_at": baseline.get("generated_at"),
+        "current_generated_at": current.get("generated_at"),
+        "severity": severity,
+        "difference_count": len(differences),
+        "differences": differences,
+    }
+
+
+def compare_named_records(kind: str, baseline: list[dict[str, Any]], current: list[dict[str, Any]], *, keys: tuple[str, ...]) -> list[dict[str, Any]]:
+    by_name_base = {str(item.get("name") or ""): item for item in baseline if item.get("name")}
+    by_name_current = {str(item.get("name") or ""): item for item in current if item.get("name")}
+    differences: list[dict[str, Any]] = []
+    for name in sorted(set(by_name_base) | set(by_name_current)):
+        before = by_name_base.get(name)
+        after = by_name_current.get(name)
+        if before is None:
+            differences.append({"kind": kind, "name": name, "field": "record", "before": None, "after": summarize_record(after), "severity": "warning"})
+            continue
+        if after is None:
+            differences.append({"kind": kind, "name": name, "field": "record", "before": summarize_record(before), "after": None, "severity": "error"})
+            continue
+        for key in keys:
+            before_value = before.get(key)
+            after_value = after.get(key)
+            if normalize_compare_value(before_value) == normalize_compare_value(after_value):
+                continue
+            differences.append(
+                {
+                    "kind": kind,
+                    "name": name,
+                    "field": key,
+                    "before": before_value,
+                    "after": after_value,
+                    "severity": field_difference_severity(key, before_value, after_value),
+                }
+            )
+    return differences
+
+
+def compare_mapping(kind: str, baseline: dict[str, Any], current: dict[str, Any], *, keys: tuple[str, ...]) -> list[dict[str, Any]]:
+    differences = []
+    for key in keys:
+        before_value = baseline.get(key)
+        after_value = current.get(key)
+        if normalize_compare_value(before_value) == normalize_compare_value(after_value):
+            continue
+        differences.append(
+            {
+                "kind": kind,
+                "name": kind,
+                "field": key,
+                "before": before_value,
+                "after": after_value,
+                "severity": field_difference_severity(key, before_value, after_value),
+            }
+        )
+    return differences
+
+
+def normalize_compare_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value or "").strip()
+
+
+def summarize_record(record: dict[str, Any] | None) -> dict[str, Any]:
+    if not record:
+        return {}
+    return {key: record.get(key) for key in ("name", "version", "status", "import_status", "path") if key in record}
+
+
+def field_difference_severity(field: str, before: Any, after: Any) -> str:
+    before_text = normalize_compare_value(before).lower()
+    after_text = normalize_compare_value(after).lower()
+    if field in {"status", "import_status"}:
+        if "ok" in before_text and "ok" not in after_text:
+            return "error"
+        if "ok" not in before_text and "ok" in after_text:
+            return "info"
+        return "warning"
+    if field in {"cuda_available", "device_count"}:
+        if before_text in {"true", "1"} and after_text in {"false", "0", ""}:
+            return "error"
+        return "warning"
+    if field in {"version", "cuda_version", "device_name", "path"}:
+        return "warning"
+    return "info"
+
+
+def comparison_severity(differences: list[dict[str, Any]]) -> str:
+    severities = {item.get("severity") for item in differences}
+    if "error" in severities:
+        return "error"
+    if "warning" in severities:
+        return "warning"
+    if "info" in severities:
+        return "info"
+    return "ok"
+
+
+def render_lock_comparison_markdown(payload: dict[str, Any], json_path: Path) -> str:
+    lines = [
+        "# Environment Lock Comparison",
+        "",
+        f"- Generated: {payload.get('generated_at')}",
+        f"- Baseline: `{payload.get('baseline_path')}`",
+        f"- Baseline generated: {payload.get('baseline_generated_at') or 'unknown'}",
+        f"- Severity: {payload.get('severity')}",
+        f"- Differences: {payload.get('difference_count')}",
+        f"- JSON: `{json_path}`",
+        "",
+        "| Severity | Kind | Name | Field | Before | After |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    differences = payload.get("differences") or []
+    if not differences:
+        lines.append("| ok | - | - | - | No differences | - |")
+    for item in differences:
+        lines.append(
+            f"| {escape_md(str(item.get('severity') or ''))} | "
+            f"{escape_md(str(item.get('kind') or ''))} | "
+            f"{escape_md(str(item.get('name') or ''))} | "
+            f"{escape_md(str(item.get('field') or ''))} | "
+            f"{escape_md(shorten(str(item.get('before') or ''), 120))} | "
+            f"{escape_md(shorten(str(item.get('after') or ''), 120))} |"
+        )
     return "\n".join(lines).rstrip() + "\n"
 
 

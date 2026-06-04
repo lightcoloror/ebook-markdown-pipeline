@@ -29,7 +29,7 @@ from ebook_markdown_pipeline.artifact_schema import artifact  # noqa: E402
 from ebook_markdown_pipeline.batch_convert_books import suggest_review_next_actions  # noqa: E402
 from ebook_markdown_pipeline.document_locator import build_location_index, export_location_review_pack, query_location_index  # noqa: E402
 from ebook_markdown_pipeline.document_inspector import inspect_document  # noqa: E402
-from ebook_markdown_pipeline.environment_report import export_environment_report  # noqa: E402
+from ebook_markdown_pipeline.environment_report import compare_environment_lock, export_environment_report  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book, rebuild_image_book_from_order  # noqa: E402
 
 
@@ -54,6 +54,8 @@ JSON_ARTIFACT_TYPES = {
     "structure_json",
     "environment_json",
     "environment_lock",
+    "environment_lock_compare",
+    "environment_lock_compare_json",
 }
 READABLE_ARTIFACT_TYPES = {
     "markdown",
@@ -74,6 +76,8 @@ READABLE_ARTIFACT_TYPES = {
     "environment_report",
     "environment_json",
     "environment_lock",
+    "environment_lock_compare",
+    "environment_lock_compare_json",
     "requirements_lock",
     "tool_log",
 }
@@ -216,6 +220,18 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "include_hidden": {"type": "boolean", "default": False},
                 },
                 "required": ["output"],
+            },
+        },
+        {
+            "name": "compare_environment_lock",
+            "description": "Compare the current environment against a previously exported environment-lock.json.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "lock": {"type": "string"},
+                    "output": {"type": "string"},
+                },
+                "required": ["lock"],
             },
         },
         {
@@ -451,6 +467,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return health_check(arguments)
     if name == "export_environment_report":
         return export_environment_report_tool(arguments)
+    if name == "compare_environment_lock":
+        return compare_environment_lock_tool(arguments)
     if name == "inspect_document":
         return inspect_document_tool(arguments)
     if name == "process_material":
@@ -587,6 +605,42 @@ def export_environment_report_tool(arguments: dict[str, Any]) -> dict[str, Any]:
                 media_type="text/plain",
             ),
         ],
+    }
+
+
+def compare_environment_lock_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    output_value = arguments.get("output")
+    payload = compare_environment_lock(
+        Path(arguments["lock"]),
+        Path(output_value) if output_value else None,
+    )
+    artifacts = []
+    if payload.get("markdown_report"):
+        artifacts.append(
+            artifact(
+                "environment_lock_compare",
+                str(payload["markdown_report"]),
+                label="Environment lock comparison",
+                media_type="text/markdown",
+            )
+        )
+    if payload.get("json_report"):
+        artifacts.append(
+            artifact(
+                "environment_lock_compare_json",
+                str(payload["json_report"]),
+                label="Environment lock comparison JSON",
+                media_type="application/json",
+            )
+        )
+    return {
+        "status": "ok",
+        "severity": payload.get("severity"),
+        "difference_count": payload.get("difference_count"),
+        "differences": payload.get("differences", []),
+        "markdown_report": payload.get("markdown_report", ""),
+        "json_report": payload.get("json_report", ""),
+        "artifacts": artifacts,
     }
 
 
@@ -1093,6 +1147,8 @@ def infer_artifact_type(path: Path) -> str:
             return "summary_json"
         if "environment-report" in name:
             return "environment_json"
+        if "environment-lock-compare" in name:
+            return "environment_lock_compare_json"
         if "environment-lock" in name:
             return "environment_lock"
         if "report" in name:

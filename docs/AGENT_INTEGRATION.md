@@ -146,6 +146,18 @@ python scripts\export_environment_report.py --input D:\materials --output D:\mat
 
 This writes `environment-report.md/json` with runtime metadata, raw checks, and the same capability matrix returned by `health_check`.
 
+To compare a future run against a saved environment lock, call `compare_environment_lock`:
+
+```json
+{
+  "name": "compare_environment_lock",
+  "arguments": {
+    "lock": "D:\\materials\\.reports\\environment\\environment-lock.json",
+    "output": "D:\\materials\\.reports\\environment-compare"
+  }
+}
+```
+
 ### `inspect_document`
 
 Lightweight preflight inspection for a file or folder. It does not run heavy document models.

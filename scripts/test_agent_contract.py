@@ -30,6 +30,7 @@ REQUIRED_TOOLS = {
     "scan_books",
     "health_check",
     "export_environment_report",
+    "compare_environment_lock",
     "start_conversion",
     "start_location_index",
     "query_location_index",
@@ -222,6 +223,17 @@ def assert_environment_report_tool(input_dir: Path, output_dir: Path) -> None:
         raise AssertionError(f"Expected parsed environment lock artifact: {lock}")
     if "PyMuPDF" not in requirements_lock.read_text(encoding="utf-8"):
         raise AssertionError(f"Expected requirements lock snapshot to include package pins: {requirements_lock}")
+    compare_dir = output_dir / "compare"
+    comparison = call_tool("compare_environment_lock", {"lock": str(lock_report), "output": str(compare_dir)})
+    if comparison.get("status") != "ok" or comparison.get("severity") not in {"ok", "info"}:
+        raise AssertionError(f"Expected stable environment lock comparison: {comparison}")
+    compare_json = Path(comparison.get("json_report") or "")
+    compare_md = Path(comparison.get("markdown_report") or "")
+    if not compare_json.exists() or not compare_md.exists():
+        raise AssertionError(f"Expected persisted environment comparison artifacts: {comparison}")
+    parsed_compare = call_tool("read_artifact", {"path": str(compare_json), "artifact_type": "environment_lock_compare_json"})
+    if (parsed_compare.get("json") or {}).get("schema_version") != "environment-lock-compare-v1":
+        raise AssertionError(f"Expected parsed environment comparison JSON: {parsed_compare}")
 
 
 def assert_pdf_outline_inspection(tmpdir: Path) -> None:

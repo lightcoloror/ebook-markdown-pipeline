@@ -162,6 +162,8 @@ Agents should use `capabilities` before choosing heavy PDF/OCR routes. For examp
 
 For persistent handoff, use `export_environment_report`. It writes `environment-report.md`, `environment-report.json`, `environment-lock.json`, and `requirements.lock.txt`, returns their paths, and exposes them as readable artifacts. Use this before large unattended batches or when another agent needs to understand or compare the machine state without shell access.
 
+Use `compare_environment_lock` with a prior `environment-lock.json` to detect drift in Python package versions/importability, external command paths/versions, Torch/CUDA, and capability status. When `output` is provided it writes `environment-lock-compare.md/json` artifacts.
+
 ## Structure Strategy
 
 `inspect_document` returns a lightweight `structure_strategy` and `next_actions` for documents, PDFs, images, and folders:
@@ -224,6 +226,8 @@ Common artifact types:
 - `environment_report`
 - `environment_json`
 - `environment_lock`
+- `environment_lock_compare`
+- `environment_lock_compare_json`
 - `requirements_lock`
 - `tool_log`
 
@@ -250,6 +254,7 @@ Use specialist tools when the desired action is already known:
 - `scan_books`: conversion planning only.
 - `health_check`: environment and dependency check.
 - `export_environment_report`: write Markdown/JSON environment diagnostics artifacts for handoff and debugging.
+- `compare_environment_lock`: compare current environment against an exported `environment-lock.json`.
 - `build_location_index`: synchronous short location indexing.
 - `start_location_index`: async location indexing.
 - `query_location_index`: query a generated SQLite location index.
