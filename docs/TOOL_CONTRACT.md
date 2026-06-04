@@ -160,7 +160,7 @@ Review checklist JSON entries also include machine-readable `next_actions`. Thes
 
 Agents should use `capabilities` before choosing heavy PDF/OCR routes. For example, if `pdf_structure_recovery` is missing, prefer `pdf_fast_text`, `local_ocr`, or a user-visible health fix instead of blindly launching MinerU.
 
-For persistent handoff, use `export_environment_report`. It writes `environment-report.md` and `environment-report.json`, returns both paths, and exposes them as `environment_report` / `environment_json` artifacts. Use this before large unattended batches or when another agent needs to understand the machine state without shell access.
+For persistent handoff, use `export_environment_report`. It writes `environment-report.md`, `environment-report.json`, `environment-lock.json`, and `requirements.lock.txt`, returns their paths, and exposes them as readable artifacts. Use this before large unattended batches or when another agent needs to understand or compare the machine state without shell access.
 
 ## Structure Strategy
 
@@ -223,6 +223,8 @@ Common artifact types:
 - `structure_json`
 - `environment_report`
 - `environment_json`
+- `environment_lock`
+- `requirements_lock`
 - `tool_log`
 
 ## Reading Artifacts

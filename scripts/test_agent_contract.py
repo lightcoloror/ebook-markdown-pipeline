@@ -201,10 +201,12 @@ def assert_environment_report_tool(input_dir: Path, output_dir: Path) -> None:
         raise AssertionError(f"export_environment_report failed: {result}")
     markdown_report = Path(result.get("markdown_report") or "")
     json_report = Path(result.get("json_report") or "")
-    if not markdown_report.exists() or not json_report.exists():
-        raise AssertionError(f"export_environment_report must write both reports: {result}")
+    lock_report = Path(result.get("lock_report") or "")
+    requirements_lock = Path(result.get("requirements_lock") or "")
+    if not markdown_report.exists() or not json_report.exists() or not lock_report.exists() or not requirements_lock.exists():
+        raise AssertionError(f"export_environment_report must write reports and lock snapshots: {result}")
     artifact_types = {item.get("type") for item in result.get("artifacts", [])}
-    if not {"environment_report", "environment_json"}.issubset(artifact_types):
+    if not {"environment_report", "environment_json", "environment_lock", "requirements_lock"}.issubset(artifact_types):
         raise AssertionError(f"Environment report must expose artifacts: {result}")
     readable = call_tool("read_artifact", {"path": str(json_report), "artifact_type": "environment_json"})
     payload = readable.get("json") or {}
@@ -215,6 +217,11 @@ def assert_environment_report_tool(input_dir: Path, output_dir: Path) -> None:
     command_names = {item.get("name") for item in snapshot.get("commands") or []}
     if "PyMuPDF" not in package_names or "pandoc" not in command_names or "torch" not in snapshot:
         raise AssertionError(f"Environment report must include package, command, and torch version snapshots: {payload}")
+    lock = call_tool("read_artifact", {"path": str(lock_report), "artifact_type": "environment_lock"})
+    if (lock.get("json") or {}).get("schema_version") != "environment-lock-v1":
+        raise AssertionError(f"Expected parsed environment lock artifact: {lock}")
+    if "PyMuPDF" not in requirements_lock.read_text(encoding="utf-8"):
+        raise AssertionError(f"Expected requirements lock snapshot to include package pins: {requirements_lock}")
 
 
 def assert_pdf_outline_inspection(tmpdir: Path) -> None:

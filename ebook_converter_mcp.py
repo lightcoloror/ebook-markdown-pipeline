@@ -53,6 +53,7 @@ JSON_ARTIFACT_TYPES = {
     "clusters_json",
     "structure_json",
     "environment_json",
+    "environment_lock",
 }
 READABLE_ARTIFACT_TYPES = {
     "markdown",
@@ -72,6 +73,8 @@ READABLE_ARTIFACT_TYPES = {
     "structure_json",
     "environment_report",
     "environment_json",
+    "environment_lock",
+    "requirements_lock",
     "tool_log",
 }
 
@@ -545,11 +548,15 @@ def export_environment_report_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     )
     markdown_report = str(payload["markdown_report"])
     json_report = str(payload["json_report"])
+    lock_report = str(payload["lock_report"])
+    requirements_lock = str(payload["requirements_lock"])
     return {
         "status": "ok",
         "output": str(output_dir),
         "markdown_report": markdown_report,
         "json_report": json_report,
+        "lock_report": lock_report,
+        "requirements_lock": requirements_lock,
         "capabilities": payload.get("capabilities", []),
         "ready_capabilities": payload.get("ready_capabilities", []),
         "degraded_capabilities": payload.get("degraded_capabilities", []),
@@ -566,6 +573,18 @@ def export_environment_report_tool(arguments: dict[str, Any]) -> dict[str, Any]:
                 json_report,
                 label="Environment report JSON",
                 media_type="application/json",
+            ),
+            artifact(
+                "environment_lock",
+                lock_report,
+                label="Environment lock JSON",
+                media_type="application/json",
+            ),
+            artifact(
+                "requirements_lock",
+                requirements_lock,
+                label="Requirements lock snapshot",
+                media_type="text/plain",
             ),
         ],
     }
@@ -1074,6 +1093,8 @@ def infer_artifact_type(path: Path) -> str:
             return "summary_json"
         if "environment-report" in name:
             return "environment_json"
+        if "environment-lock" in name:
+            return "environment_lock"
         if "report" in name:
             return "conversion_report"
         if "cluster" in name:
