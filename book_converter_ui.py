@@ -1260,15 +1260,29 @@ class BookConverterUI:
                     self.current_stage_var.set("任务异常中断 / Interrupted")
                     self.worker = None
                     self.write_log(f"错误 / Error: {payload}")
-                    messagebox.showerror("转换错误 / Conversion error", payload)
+                    self.notify_task_failed("任务失败 / Task failed", str(payload))
         except queue.Empty:
             pass
         finally:
             self.root.after(150, self.poll_queue)
 
     def notify_task_finished(self, title: str, message: str) -> None:
+        self.show_task_notification(title, message, kind="info")
+
+    def notify_task_failed(self, title: str, message: str) -> None:
+        self.show_task_notification(title, message, kind="error")
+
+    def show_task_notification(self, title: str, message: str, *, kind: str) -> None:
         try:
-            messagebox.showinfo(title, message, parent=self.root)
+            self.root.bell()
+            self.root.lift()
+            self.root.focus_force()
+            self.root.attributes("-topmost", True)
+            self.root.after(500, lambda: self.root.attributes("-topmost", False))
+            if kind == "error":
+                messagebox.showerror(title, message, parent=self.root)
+            else:
+                messagebox.showinfo(title, message, parent=self.root)
         except Exception:
             self.write_log(f"{title}: {message}")
 
