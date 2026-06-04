@@ -17,7 +17,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR.parent))
 
 from ebook_markdown_pipeline.artifact_schema import SCHEMA_VERSION
-from ebook_markdown_pipeline.batch_convert_books import ConversionResult, default_options, write_conversion_report
+from ebook_markdown_pipeline.batch_convert_books import ConversionResult, default_options, write_batch_summary, write_conversion_report
 from ebook_markdown_pipeline.ebook_converter_http import build_handler
 from ebook_markdown_pipeline.ebook_converter_mcp import call_tool, conversion_quality_summary, tool_schemas
 
@@ -111,6 +111,7 @@ def main() -> int:
             raise AssertionError(f"inspect_document must expose structure strategy and next actions: {inspection}")
         assert_pdf_outline_inspection(tmpdir)
         assert_conversion_report_pdf_outline(tmpdir)
+        assert_review_decisions_report(tmpdir)
 
         assert_quality_summary_next_actions(tmpdir)
 
@@ -240,6 +241,57 @@ def assert_conversion_report_pdf_outline(tmpdir: Path) -> None:
     actions = summary["review_items"][0].get("next_actions") or []
     if not any(item.get("action") == "inspect_pdf_outline" for item in actions):
         raise AssertionError(f"Expected outline inspection next action: {summary}")
+
+
+def assert_review_decisions_report(tmpdir: Path) -> None:
+    output_dir = tmpdir / "decision-out"
+    output_dir.mkdir()
+    good_md = output_dir / "good.md"
+    poor_md = output_dir / "poor.md"
+    good_md.write_text("# Good\n\nEnough body text for a simple accepted output.\n" * 30, encoding="utf-8")
+    poor_md.write_text("tiny", encoding="utf-8")
+    good = ConversionResult(
+        source=str(tmpdir / "good.txt"),
+        output=str(good_md),
+        status="ok",
+        pipeline="pandoc",
+        message="",
+        detected_format="TXT",
+        duration_seconds=0,
+    )
+    poor = ConversionResult(
+        source=str(tmpdir / "poor.pdf"),
+        output=str(poor_md),
+        status="ok",
+        pipeline="pymupdf4llm",
+        message="",
+        detected_format="PDF",
+        duration_seconds=0,
+    )
+    failed = ConversionResult(
+        source=str(tmpdir / "failed.pdf"),
+        output="",
+        status="failed",
+        pipeline="mineru",
+        message="simulated failure",
+        detected_format="PDF",
+        duration_seconds=0,
+    )
+    options = default_options(output=output_dir)
+    for result in (good, poor, failed):
+        output_path = Path(result.output) if result.output else output_dir / f"{Path(result.source).stem}.md"
+        write_conversion_report(result, options, output_path)
+    write_batch_summary([good, poor, failed], options)
+    decisions_path = output_dir / ".reports" / "review-decisions.json"
+    decisions_md = output_dir / ".reports" / "review-decisions.md"
+    if not decisions_path.exists() or not decisions_md.exists():
+        raise AssertionError("Expected review decision reports to be generated.")
+    decisions = json.loads(decisions_path.read_text(encoding="utf-8"))
+    decision_counts = decisions.get("counts") or {}
+    if decision_counts.get("accept") != 1 or decision_counts.get("failed_retry") != 1:
+        raise AssertionError(f"Unexpected review decisions: {decisions}")
+    if not any(item.get("decision") == "rerun_or_manual_review" for item in decisions.get("items") or []):
+        raise AssertionError(f"Expected poor output to require rerun/manual review: {decisions}")
 
 
 def assert_http_contract(input_path: Path, output_path: Path) -> None:

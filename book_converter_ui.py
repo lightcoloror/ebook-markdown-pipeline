@@ -1405,7 +1405,7 @@ class BookConverterUI:
         output_text = self.output_var.get().strip()
         if output_text:
             report_root = Path(output_text) / ".reports"
-            artifacts.extend([report_root / "summary.md", report_root / "review-checklist.md"])
+            artifacts.extend([report_root / "summary.md", report_root / "review-checklist.md", report_root / "review-decisions.md"])
         return artifacts
 
     def artifact_paths_from_payload(self, payload: dict) -> list[Path]:

@@ -726,6 +726,8 @@ def conversion_artifacts(results: list[Any], options: argparse.Namespace) -> lis
         (report_root / "summary.json", "summary_json", "Conversion summary JSON", "application/json"),
         (report_root / "review-checklist.md", "review_report", "Review checklist", "text/markdown"),
         (report_root / "review-checklist.json", "review_json", "Review checklist JSON", "application/json"),
+        (report_root / "review-decisions.md", "review_decisions", "Review decisions", "text/markdown"),
+        (report_root / "review-decisions.json", "review_decisions_json", "Review decisions JSON", "application/json"),
     ]:
         if path.exists():
             artifacts.append(artifact(artifact_type, path, label=label, media_type=media_type))
@@ -778,6 +780,9 @@ def conversion_next_actions(results: list[Any], options: argparse.Namespace) -> 
     review = report_root / "review-checklist.md"
     if review.exists():
         actions.append({"tool": "read_artifact", "arguments": {"path": str(review), "artifact_type": "review_report"}})
+    decisions = report_root / "review-decisions.md"
+    if decisions.exists():
+        actions.append({"tool": "read_artifact", "arguments": {"path": str(decisions), "artifact_type": "review_decisions"}})
     for item in conversion_artifacts(results, options):
         if item.get("type") in {"markdown", "html", "text", "summary_report"}:
             actions.append({"tool": "read_artifact", "arguments": {"path": item["path"], "artifact_type": item["type"]}})

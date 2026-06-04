@@ -2893,6 +2893,11 @@ def write_batch_summary(results: list[ConversionResult], args: argparse.Namespac
     checklist_md = report_root / "review-checklist.md"
     checklist_json.write_text(json.dumps(checklist_entries, ensure_ascii=False, indent=2), encoding="utf-8")
     checklist_md.write_text(render_review_checklist_markdown(checklist_entries, checklist_json), encoding="utf-8")
+    decisions = build_review_decisions(entries, checklist_entries)
+    decisions_json = report_root / "review-decisions.json"
+    decisions_md = report_root / "review-decisions.md"
+    decisions_json.write_text(json.dumps(decisions, ensure_ascii=False, indent=2), encoding="utf-8")
+    decisions_md.write_text(render_review_decisions_markdown(decisions, decisions_json), encoding="utf-8")
 
 
 def load_report_snapshot(result: ConversionResult) -> dict:
@@ -3017,6 +3022,107 @@ def render_review_checklist_markdown(entries: list[dict], checklist_json: Path) 
             f"{escape_table(reasons[:300])} |"
         )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def build_review_decisions(entries: list[dict], checklist_entries: list[dict]) -> dict:
+    review_by_source = {str(item.get("source") or ""): item for item in checklist_entries}
+    decisions = []
+    counts: dict[str, int] = {}
+    for item in entries:
+        source = str(item.get("source") or "")
+        quality = item.get("quality") or {}
+        status = str(item.get("status") or "")
+        level = str(quality.get("level") or "")
+        checklist_item = review_by_source.get(source)
+        decision = decide_review_disposition(item, checklist_item)
+        counts[decision] = counts.get(decision, 0) + 1
+        actions = (checklist_item or {}).get("next_actions") or suggest_review_next_actions(item)
+        decisions.append(
+            {
+                "source": item.get("source"),
+                "output": item.get("output"),
+                "report": item.get("report"),
+                "status": status,
+                "pipeline": item.get("pipeline"),
+                "quality_level": level,
+                "quality_score": quality.get("score"),
+                "decision": decision,
+                "reasons": review_decision_reasons(item, checklist_item),
+                "next_actions": actions,
+            }
+        )
+    return {
+        "schema_version": "review-decisions-v1",
+        "generated_at": timestamp_now(),
+        "counts": counts,
+        "total": len(decisions),
+        "items": sorted(decisions, key=review_decision_sort_key),
+    }
+
+
+def decide_review_disposition(item: dict, checklist_item: dict | None) -> str:
+    status = str(item.get("status") or "")
+    quality = item.get("quality") or {}
+    level = str(quality.get("level") or "")
+    if status == "failed":
+        return "failed_retry"
+    if level == "poor":
+        return "rerun_or_manual_review"
+    if checklist_item:
+        if checklist_item.get("pdf_scanned_likely"):
+            return "manual_review"
+        return "review_before_accept"
+    return "accept"
+
+
+def review_decision_reasons(item: dict, checklist_item: dict | None) -> list[str]:
+    quality = item.get("quality") or {}
+    reasons = list(quality.get("reasons") or [])
+    if item.get("status") == "failed" and item.get("message"):
+        reasons.append(str(item.get("message")))
+    if checklist_item:
+        reasons.extend(checklist_item.get("pdf_reasons") or [])
+        outline_count = checklist_item.get("pdf_outline_count")
+        if outline_count:
+            reasons.append(f"PDF outline/bookmarks available: {outline_count}")
+    return reasons
+
+
+def render_review_decisions_markdown(payload: dict, decisions_json: Path) -> str:
+    lines = [
+        "# Review Decisions",
+        "",
+        f"- Generated: {payload.get('generated_at')}",
+        f"- Total files: {payload.get('total', 0)}",
+        f"- Counts: {format_counts(payload.get('counts') or {})}",
+        f"- JSON decisions: `{decisions_json}`",
+        "",
+        "| Decision | Quality | Source | Next actions | Reasons |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for item in payload.get("items") or []:
+        action_names = ", ".join(str(action.get("action") or action.get("tool") or "") for action in item.get("next_actions") or [])
+        reasons = "; ".join(str(reason) for reason in item.get("reasons") or [])
+        lines.append(
+            f"| {escape_table(str(item.get('decision') or ''))} | "
+            f"{escape_table(str(item.get('quality_level') or item.get('status') or 'n/a'))} {item.get('quality_score') or ''} | "
+            f"{escape_table(Path(str(item.get('source') or '')).name)} | "
+            f"{escape_table(action_names[:220])} | "
+            f"{escape_table(reasons[:300])} |"
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def review_decision_sort_key(item: dict) -> tuple[int, int]:
+    rank = {
+        "failed_retry": 0,
+        "rerun_or_manual_review": 1,
+        "manual_review": 2,
+        "review_before_accept": 3,
+        "accept": 4,
+    }
+    score = item.get("quality_score")
+    return (rank.get(str(item.get("decision") or ""), 9), int(score) if score is not None else 999)
 
 
 def suggest_review_action(item: dict) -> str:
