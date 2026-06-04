@@ -1389,7 +1389,7 @@ class BookConverterUI:
             path = item.get("path")
             if path:
                 artifacts.append(Path(path))
-        for key in ("book", "review", "order", "jsonl", "sqlite"):
+        for key in ("book", "structure", "structure_json", "review", "order", "jsonl", "sqlite"):
             if payload.get(key):
                 artifacts.append(Path(payload[key]))
         return artifacts

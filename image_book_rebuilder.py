@@ -153,6 +153,8 @@ def rebuild_image_book_from_sources(
     clusters_json = output_dir / "clusters.json"
     order_md = output_dir / "order.md"
     review_md = output_dir / "review.md"
+    structure_md = output_dir / "structure.md"
+    structure_json = output_dir / "structure.json"
     book_md = output_dir / "book.md"
 
     emit_progress(progress_callback, "write", f"Write outputs to {output_dir}")
@@ -160,6 +162,9 @@ def rebuild_image_book_from_sources(
     clusters_json.write_text(json.dumps(duplicate_groups, ensure_ascii=False, indent=2), encoding="utf-8")
     order_md.write_text(render_order_markdown(ordered_pages), encoding="utf-8")
     review_md.write_text(render_review_markdown(pages, ordered_pages, duplicate_groups), encoding="utf-8")
+    structure_payload = build_structure_outline(ordered_pages)
+    structure_json.write_text(json.dumps(structure_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    structure_md.write_text(render_structure_markdown(structure_payload), encoding="utf-8")
     book_md.write_text(render_book_markdown(title, ordered_pages), encoding="utf-8")
 
     return with_artifacts(
@@ -175,12 +180,16 @@ def rebuild_image_book_from_sources(
         "clusters": str(clusters_json),
         "order": str(order_md),
         "review": str(review_md),
+        "structure": str(structure_md),
+        "structure_json": str(structure_json),
         },
         [
             artifact("markdown", book_md, label="Rebuilt Markdown", media_type="text/markdown"),
             artifact("pages_jsonl", pages_jsonl, label="Per-image OCR metadata", media_type="application/x-jsonlines"),
             artifact("clusters_json", clusters_json, label="Duplicate groups", media_type="application/json"),
             artifact("order_report", order_md, label="Inferred order report", media_type="text/markdown"),
+            artifact("structure_report", structure_md, label="Inferred structure outline", media_type="text/markdown"),
+            artifact("structure_json", structure_json, label="Inferred structure outline JSON", media_type="application/json"),
             artifact("review_report", review_md, label="Image book review checklist", media_type="text/markdown"),
         ],
     )
@@ -223,10 +232,15 @@ def rebuild_image_book_from_order(
     book_md = output_dir / "book.md"
     order_md = output_dir / "order.md"
     review_md = output_dir / "review.md"
+    structure_md = output_dir / "structure.md"
+    structure_json = output_dir / "structure.json"
     book_title = title or output_dir.name or "Rebuilt Image Book"
     book_md.write_text(render_book_markdown(book_title, ordered_pages), encoding="utf-8", newline="\n")
     order_md.write_text(render_order_markdown(ordered_pages), encoding="utf-8", newline="\n")
     review_md.write_text(render_manual_order_review_markdown(pages_jsonl, order_markdown, ordered_pages, missing_sources, remaining_pages), encoding="utf-8", newline="\n")
+    structure_payload = build_structure_outline(ordered_pages)
+    structure_json.write_text(json.dumps(structure_payload, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+    structure_md.write_text(render_structure_markdown(structure_payload), encoding="utf-8", newline="\n")
 
     return with_artifacts(
         {
@@ -241,11 +255,15 @@ def rebuild_image_book_from_order(
             "book": str(book_md),
             "rebuilt_order": str(order_md),
             "review": str(review_md),
+            "structure": str(structure_md),
+            "structure_json": str(structure_json),
             "warnings": manual_order_warnings(missing_sources, remaining_pages),
         },
         [
             artifact("markdown", book_md, label="Manually reordered Markdown", media_type="text/markdown"),
             artifact("order_report", order_md, label="Rebuilt order report", media_type="text/markdown"),
+            artifact("structure_report", structure_md, label="Inferred structure outline", media_type="text/markdown"),
+            artifact("structure_json", structure_json, label="Inferred structure outline JSON", media_type="application/json"),
             artifact("review_report", review_md, label="Manual order review", media_type="text/markdown"),
         ],
     )
@@ -713,6 +731,61 @@ def infer_heading_level(line: str, *, previous_blank: bool) -> int | None:
     if previous_blank and 2 <= len(normalized) <= 28 and not re.search(r"[。！？.!?，,；;：:]$", normalized):
         return 3
     return None
+
+
+def build_structure_outline(pages: list[ScreenshotPage]) -> dict:
+    items = []
+    for page in pages:
+        titles = page.title_candidates or detect_title_candidates(page.text)
+        for title in titles:
+            level = infer_heading_level(title, previous_blank=True) or 3
+            items.append(
+                {
+                    "order_index": page.order_index,
+                    "source": page.source,
+                    "page_number": page.page_number,
+                    "level": level,
+                    "title": title,
+                    "order_confidence": round(page.order_confidence, 3),
+                    "order_reason": page.order_reason,
+                }
+            )
+    return {
+        "schema_version": "image-book-structure-v1",
+        "item_count": len(items),
+        "page_count": len(pages),
+        "items": items,
+    }
+
+
+def render_structure_markdown(payload: dict) -> str:
+    lines = [
+        "# 结构草图 / Inferred Structure Outline",
+        "",
+        f"- Pages: {payload.get('page_count', 0)}",
+        f"- Structure items: {payload.get('item_count', 0)}",
+        "",
+    ]
+    items = payload.get("items") or []
+    if not items:
+        lines.append("No title candidates were detected. Check `review.md` and `pages.jsonl` before accepting the rebuilt Markdown.")
+        return "\n".join(lines).rstrip() + "\n"
+    for item in items:
+        level = max(1, min(int(item.get("level") or 3), 6))
+        prefix = "#" * level
+        page = item.get("page_number") or ""
+        source = item.get("source") or ""
+        confidence = item.get("order_confidence")
+        reason = item.get("order_reason") or ""
+        lines.append(f"{prefix} {item.get('title')}")
+        lines.append("")
+        lines.append(f"- Source: `{source}`")
+        if page:
+            lines.append(f"- Page number: {page}")
+        lines.append(f"- Order confidence: {confidence}")
+        lines.append(f"- Order reason: {reason}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def render_order_markdown(pages: list[ScreenshotPage]) -> str:

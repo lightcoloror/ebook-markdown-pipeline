@@ -82,7 +82,7 @@ def main() -> int:
     if not Path(result["book"]).exists():
         raise RuntimeError(f"Expected output files from empty rebuild: {result}")
     artifact_types = {item["type"] for item in result.get("artifacts", [])}
-    expected_artifacts = {"markdown", "pages_jsonl", "clusters_json", "order_report", "review_report"}
+    expected_artifacts = {"markdown", "pages_jsonl", "clusters_json", "order_report", "structure_report", "structure_json", "review_report"}
     if not expected_artifacts.issubset(artifact_types):
         raise RuntimeError(f"Expected image book artifacts: {result}")
     if not {"ocr", "dedupe", "order", "write"}.issubset({event["stage"] for event in events}):
@@ -156,8 +156,11 @@ def main() -> int:
             raise RuntimeError(f"Expected manual order to place a.png before b.png: {manual_book}")
         if manual["manual_order_count"] != 2 or manual["missing_source_count"] != 0:
             raise RuntimeError(f"Unexpected manual rebuild metadata: {manual}")
+        structure_text = Path(manual["structure"]).read_text(encoding="utf-8")
+        if "第一章 开始" not in structure_text:
+            raise RuntimeError(f"Expected inferred structure outline to include title candidates: {structure_text}")
         manual_artifacts = {item["type"] for item in manual.get("artifacts", [])}
-        if not {"markdown", "order_report", "review_report"}.issubset(manual_artifacts):
+        if not {"markdown", "order_report", "structure_report", "structure_json", "review_report"}.issubset(manual_artifacts):
             raise RuntimeError(f"Expected manual rebuild artifacts: {manual}")
 
     print("Image book rebuilder smoke test passed.")

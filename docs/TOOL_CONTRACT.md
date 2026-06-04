@@ -217,6 +217,8 @@ Common artifact types:
 - `pages_jsonl`
 - `clusters_json`
 - `order_report`
+- `structure_report`
+- `structure_json`
 - `tool_log`
 
 ## Reading Artifacts

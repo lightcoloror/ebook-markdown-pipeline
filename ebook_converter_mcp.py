@@ -539,6 +539,7 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
         delegated = start_image_book_rebuild(delegated_arguments)
         next_actions = [
             {"after_job_status": "done", "tool": "read_artifact", "artifact_type": "markdown"},
+            {"after_job_status": "done", "tool": "read_artifact", "artifact_type": "structure_report"},
             {"after_job_status": "done", "tool": "read_artifact", "artifact_type": "review_report"},
         ]
     elif route == "start_conversion":
@@ -938,7 +939,7 @@ def read_artifact(arguments: dict[str, Any]) -> dict[str, Any]:
         "truncated": truncated_by_lines or truncated_by_chars,
         "text": limited_text,
     }
-    if artifact_type in {"json", "clusters_json"} and not payload["truncated"]:
+    if artifact_type in {"json", "clusters_json", "structure_json"} and not payload["truncated"]:
         try:
             payload["json"] = json.loads(text)
         except json.JSONDecodeError:
@@ -1070,7 +1071,7 @@ def artifact_next_actions(artifacts: list[dict[str, Any]]) -> list[dict[str, Any
     for item in artifacts:
         artifact_type = item.get("type")
         path = item.get("path")
-        if artifact_type in {"markdown", "location_index_jsonl", "review_report", "order_report", "summary_report"} and path:
+        if artifact_type in {"markdown", "location_index_jsonl", "review_report", "order_report", "structure_report", "summary_report"} and path:
             actions.append({"tool": "read_artifact", "arguments": {"path": path, "artifact_type": artifact_type}})
     return actions[:4]
 

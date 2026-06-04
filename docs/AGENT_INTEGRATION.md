@@ -241,6 +241,7 @@ Outputs:
 
 - `book.md`: reconstructed Markdown draft.
 - `order.md`: inferred order with confidence and overlap evidence.
+- `structure.md/json`: inferred heading/title outline with source image, page number, and order confidence.
 - `review.md`: duplicate groups, low-confidence order items, and empty OCR items.
 - `pages.jsonl`: per-image OCR and metadata.
 - `clusters.json`: duplicate/near-duplicate groups.

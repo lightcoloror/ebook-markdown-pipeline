@@ -109,6 +109,7 @@ def main() -> int:
         assert_fields("inspect_document", inspection, INSPECTION_FIELDS)
         if not isinstance(inspection.get("next_actions"), list) or "mode" not in inspection.get("structure_strategy", {}):
             raise AssertionError(f"inspect_document must expose structure strategy and next actions: {inspection}")
+        assert_pdf_outline_inspection(tmpdir)
 
         assert_quality_summary_next_actions(tmpdir)
 
@@ -185,6 +186,28 @@ def assert_quality_summary_next_actions(tmpdir: Path) -> None:
     action_names = {item.get("action") for item in review_items[0]["next_actions"]}
     if "compare_pdf_pipelines" not in action_names and "rerun" not in action_names:
         raise AssertionError(f"Expected actionable PDF recovery actions: {summary}")
+
+
+def assert_pdf_outline_inspection(tmpdir: Path) -> None:
+    pdf_path = tmpdir / "outlined.pdf"
+    document = fitz.open()
+    first = document.new_page()
+    first.insert_text((72, 72), "Chapter 1\nOpening text")
+    second = document.new_page()
+    second.insert_text((72, 72), "Section 1.1\nDetails")
+    document.set_toc([[1, "Chapter 1", 1], [2, "Section 1.1", 2]])
+    document.save(pdf_path)
+    document.close()
+
+    inspection = call_tool("inspect_document", {"input": str(pdf_path)})
+    outline = inspection.get("outline") or {}
+    if outline.get("count") != 2 or not outline.get("items"):
+        raise AssertionError(f"Expected PDF outline preview: {inspection}")
+    first_item = outline["items"][0]
+    if first_item.get("title") != "Chapter 1" or first_item.get("level") != 1 or first_item.get("page") != 1:
+        raise AssertionError(f"Unexpected first outline item: {inspection}")
+    if (inspection.get("structure_strategy") or {}).get("mode") != "bookmark_guided_structure_recovery":
+        raise AssertionError(f"Expected bookmark-guided structure strategy: {inspection}")
 
 
 def assert_http_contract(input_path: Path, output_path: Path) -> None:

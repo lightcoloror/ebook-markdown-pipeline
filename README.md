@@ -279,7 +279,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\image_book_rebuilder.py build `
   --recursive
 ```
 
-输出包括 `book.md`、`order.md`、`review.md`、`pages.jsonl`、`clusters.json`。排序会综合图片内页码、文件名数字、文件时间、文本前后重叠和重复截图分组；`order.md` 会写明排序置信度和排序依据，重复截图会作为排序和复查依据保留在 `review.md`，不会静默丢弃。
+输出包括 `book.md`、`order.md`、`structure.md/json`、`review.md`、`pages.jsonl`、`clusters.json`。排序会综合图片内页码、文件名数字、文件时间、文本前后重叠和重复截图分组；`order.md` 会写明排序置信度和排序依据，`structure.md` 会汇总标题候选和推断层级，重复截图会作为排序和复查依据保留在 `review.md`，不会静默丢弃。
 
 如果自动排序不满意，可以直接调整 `order.md` 表格行顺序，然后不重新 OCR、只按人工顺序重建：
 
@@ -291,7 +291,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\image_book_rebuilder.py rebuild-
   --title "人工校正截图书"
 ```
 
-输出仍然包含新的 `book.md`、`order.md` 和 `review.md`，适合先机器排序、人工拖动表格行、再生成最终 Markdown。
+输出仍然包含新的 `book.md`、`order.md`、`structure.md/json` 和 `review.md`，适合先机器排序、人工拖动表格行、再生成最终 Markdown。
 
 失败后只重跑未完成项：
 

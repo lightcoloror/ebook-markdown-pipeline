@@ -120,6 +120,7 @@ def inspect_file(input_path: Path, *, sample_pages: int) -> dict[str, Any]:
 def inspect_pdf(input_path: Path, *, sample_pages: int) -> dict[str, Any]:
     options = normalize_command_options(default_options())
     preflight = inspect_pdf_preflight(input_path, options, sample_pages=sample_pages)
+    outline = extract_pdf_outline(input_path)
     warnings = []
     if preflight.scanned_likely:
         warnings.append("PDF appears scanned or has weak text layer.")
@@ -135,10 +136,36 @@ def inspect_pdf(input_path: Path, *, sample_pages: int) -> dict[str, Any]:
         "extension": ".pdf",
         "size_bytes": input_path.stat().st_size,
         "preflight": asdict(preflight),
+        "outline": outline,
         "recommendation": recommend_pdf_tool(preflight),
         "structure_strategy": structure_strategy,
         "next_actions": pdf_next_actions(preflight, structure_strategy),
         "warnings": warnings,
+    }
+
+
+def extract_pdf_outline(input_path: Path, limit: int = 80) -> dict[str, Any]:
+    try:
+        import pymupdf
+
+        with pymupdf.open(str(input_path)) as doc:
+            toc = doc.get_toc(simple=True)
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "failed", "count": 0, "items": [], "message": str(exc)}
+    items = []
+    for level, title, page in toc[:limit]:
+        items.append(
+            {
+                "level": int(level),
+                "title": str(title).strip(),
+                "page": int(page) if page else None,
+            }
+        )
+    return {
+        "status": "ok",
+        "count": len(toc),
+        "truncated": len(toc) > limit,
+        "items": items,
     }
 
 
@@ -238,6 +265,18 @@ def directory_next_actions(recommendation: str, strategy: dict[str, Any]) -> lis
 
 
 def pdf_structure_strategy(preflight) -> dict[str, Any]:
+    if preflight.bookmark_count:
+        base = {
+            "mode": "bookmark_guided_structure_recovery",
+            "confidence": "high",
+            "reason": "PDF has built-in bookmarks that can guide Markdown heading reconstruction and review.",
+            "preferred_tools": ["mineru", "docling", "pymupdf4llm"],
+        }
+        if preflight.scanned_likely:
+            base["confidence"] = "medium"
+            base["reason"] = "PDF has bookmarks, but weak text layer means OCR output still needs manual structure review."
+            base["preferred_tools"] = ["mineru", "umi"]
+        return base
     if preflight.scanned_likely:
         return {
             "mode": "ocr_first_with_review",
@@ -273,6 +312,11 @@ def pdf_next_actions(preflight, strategy: dict[str, Any]) -> list[dict[str, str]
             {"tool": "start_conversion", "pdf_pipeline_mode": "mineru", "why": "recover headings, tables, and layout blocks"},
             {"tool": "start_conversion", "pdf_pipeline_mode": "docling", "why": "run a versioned second pass when MinerU output needs structure comparison"},
             {"tool": "start_conversion", "pdf_pipeline_mode": "pymupdf4llm", "why": "use a lightweight baseline for text-layer comparison"},
+        ]
+    if mode == "bookmark_guided_structure_recovery":
+        return [
+            {"tool": "start_conversion", "pdf_pipeline_mode": "mineru", "why": "recover layout while using bookmarks as structure review anchors"},
+            {"tool": "read_artifact", "artifact_type": "review_report", "why": "check whether output headings align with PDF bookmarks"},
         ]
     return [
         {"tool": "start_conversion", "pdf_pipeline_mode": preflight.recommended_pipeline or "pymupdf4llm", "why": "convert with the recommended lightweight route"},
