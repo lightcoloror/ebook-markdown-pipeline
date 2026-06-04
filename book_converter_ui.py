@@ -39,6 +39,7 @@ try:
         convert_sources,
         default_options,
         dependency_health_report,
+        environment_capability_summary,
         format_health_report,
         find_missing_dependencies,
         normalize_command_options,
@@ -62,6 +63,7 @@ except ModuleNotFoundError:
         convert_sources,
         default_options,
         dependency_health_report,
+        environment_capability_summary,
         format_health_report,
         find_missing_dependencies,
         normalize_command_options,
@@ -607,14 +609,30 @@ class BookConverterUI:
         checks = dependency_health_report(sources, options)
         report = format_health_report(checks)
         self.write_log(report)
+        capabilities = environment_capability_summary(checks)
+        if capabilities:
+            self.write_log("能力矩阵 / Capability matrix:")
+            for item in capabilities:
+                self.write_log(
+                    f"  - [{item.get('status')}] {item.get('name')}: "
+                    f"{item.get('detail')} / {item.get('action')}"
+                )
         missing = [item for item in checks if item["status"] == "missing"]
         warnings = [item for item in checks if item["status"] == "warning"]
+        degraded_caps = [item for item in capabilities if item.get("status") == "degraded"]
+        missing_caps = [item for item in capabilities if item.get("status") == "missing"]
+        ready_caps = [item for item in capabilities if item.get("status") == "ok"]
+        capability_summary = (
+            f"\n\n能力 / Capabilities: 可用 {len(ready_caps)}，降级 {len(degraded_caps)}，缺失 {len(missing_caps)}。"
+            if capabilities
+            else ""
+        )
         if missing:
-            messagebox.showwarning("环境检查 / Environment check", f"缺少 {len(missing)} 项。详见日志。/ {len(missing)} missing item(s). See log.")
+            messagebox.showwarning("环境检查 / Environment check", f"缺少 {len(missing)} 项。详见日志。/ {len(missing)} missing item(s). See log.{capability_summary}")
         elif warnings:
-            messagebox.showinfo("环境检查 / Environment check", f"{len(warnings)} 项警告。详见日志。/ {len(warnings)} warning item(s). See log.")
+            messagebox.showinfo("环境检查 / Environment check", f"{len(warnings)} 项警告。详见日志。/ {len(warnings)} warning item(s). See log.{capability_summary}")
         else:
-            messagebox.showinfo("环境检查 / Environment check", "当前选择所需环境检查通过。/ All required checks passed.")
+            messagebox.showinfo("环境检查 / Environment check", f"当前选择所需环境检查通过。/ All required checks passed.{capability_summary}")
 
     def load_history_batch(self) -> None:
         output_text = self.output_var.get().strip()
@@ -1307,14 +1325,20 @@ class BookConverterUI:
         selected = self.selected_tree_values()
         if not selected:
             return
+        report = self.report_path_for_selected(selected)
+        if report:
+            self.open_path(report)
+
+    def report_path_for_selected(self, selected: dict[str, str]) -> Path | None:
         source = selected.get("source", "")
         for result in self.latest_results:
             if str(getattr(result, "source", "")) == source and getattr(result, "report", None):
-                self.open_path(Path(result.report))
-                return
+                return Path(result.report)
         output = Path(selected.get("output", ""))
+        if not output:
+            return None
         report = output.parent / ".reports" / f"{output.stem[:140].rstrip(' ._-')}.report.json"
-        self.open_path(report)
+        return report
 
     def open_latest_pdf_log(self) -> None:
         output_text = self.output_var.get().strip()
@@ -1472,6 +1496,9 @@ class BookConverterUI:
         level = quality.get("level")
         if level == "good":
             return "可用 / OK"
+        next_actions = payload.get("next_actions") or self.next_actions_from_report_payload(payload)
+        if next_actions:
+            return self.compact_next_actions(next_actions)
         if source.lower().endswith(".pdf"):
             if "标题" in reasons or "页码" in reasons or "重复短行" in reasons:
                 return "PDF对比或推荐重跑 / Compare"
@@ -1481,6 +1508,53 @@ class BookConverterUI:
         if "标题" in reasons:
             return "检查原目录 / TOC review"
         return "打开报告 / Report"
+
+    def next_actions_from_report_payload(self, payload: dict) -> list[dict]:
+        from ebook_markdown_pipeline.batch_convert_books import suggest_review_next_actions  # noqa: PLC0415
+
+        try:
+            return suggest_review_next_actions(payload)
+        except Exception:
+            return []
+
+    def compact_next_actions(self, actions: list[dict], limit: int = 2) -> str:
+        actions = self.prioritize_next_actions(actions)
+        labels = []
+        label_map = {
+            "read_report": "读报告 / Report",
+            "open_output": "看输出 / Output",
+            "compare_pdf_pipelines": "PDF对比 / Compare",
+            "rerun": "重跑 / Rerun",
+            "export_location_review_pack": "导出复查包 / Review pack",
+            "inspect_toc": "查目录 / TOC",
+            "manual_accept_or_score": "人工评分 / Score",
+        }
+        for action in actions[:limit]:
+            name = str(action.get("action") or action.get("tool") or "")
+            label = label_map.get(name, name or "action")
+            pipeline = action.get("pipeline") or action.get("pdf_pipeline_mode")
+            if pipeline:
+                label = f"{label}:{pipeline}"
+            labels.append(label)
+        suffix = " ..." if len(actions) > limit else ""
+        return " -> ".join(labels) + suffix
+
+    def prioritize_next_actions(self, actions: list[dict]) -> list[dict]:
+        priority = {
+            "compare_pdf_pipelines": 0,
+            "rerun": 1,
+            "export_location_review_pack": 2,
+            "inspect_toc": 3,
+            "manual_accept_or_score": 4,
+            "read_report": 8,
+            "open_output": 9,
+        }
+
+        def sort_key(item: dict) -> tuple[int, str]:
+            name = str(item.get("action") or item.get("tool") or "")
+            return (priority.get(name, 5), name)
+
+        return sorted(actions, key=sort_key)
 
     def sort_tree_by_column(self, column: str) -> None:
         columns = ("source", "format", "pipeline", "quality", "action", "note", "output_format", "output")
@@ -1513,6 +1587,13 @@ class BookConverterUI:
         action = selected.get("action", "")
         source = Path(selected.get("source", ""))
         action_text = f"{quality} {action}".lower()
+        report_payload = self.selected_report_payload(selected)
+        next_actions = self.next_actions_from_report_payload(report_payload) if report_payload else []
+        for next_action in self.prioritize_next_actions(next_actions):
+            if self.execute_next_action(next_action, selected):
+                return
+        if next_actions:
+            return
         if "failed" in action_text or "copy fail" in action_text or "复制失败" in action:
             self.copy_selected_failure_reason()
             return
@@ -1526,6 +1607,45 @@ class BookConverterUI:
             self.open_selected_report()
             return
         self.open_selected_output()
+
+    def selected_report_payload(self, selected: dict[str, str]) -> dict | None:
+        report = self.report_path_for_selected(selected)
+        if not report or not report.exists():
+            return None
+        try:
+            payload = json.loads(report.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def execute_next_action(self, action: dict, selected: dict[str, str]) -> bool:
+        name = str(action.get("action") or action.get("tool") or "")
+        if name == "read_report":
+            self.open_selected_report()
+            return True
+        if name == "open_output":
+            self.open_selected_output()
+            return True
+        if name == "compare_pdf_pipelines":
+            self.start_pdf_pipeline_compare()
+            return True
+        if name == "rerun":
+            pipeline = str(action.get("pipeline") or "")
+            source = Path(selected.get("source", ""))
+            if source.suffix.lower() == ".pdf" and pipeline:
+                self.pdf_mode_var.set(pipeline)
+            self.rerun_selected_recommended()
+            return True
+        if name == "export_location_review_pack":
+            self.start_location_index()
+            return True
+        if name == "inspect_toc":
+            self.open_selected_report()
+            return True
+        if name == "manual_accept_or_score":
+            self.score_selected_review_item()
+            return True
+        return False
 
     def apply_review_filter(self) -> None:
         for item_id in list(self.detached_review_items):
