@@ -27,6 +27,7 @@ Use these tools:
 - `process_material`: default high-level entry point; inspect input and route to conversion, location indexing, or image-book rebuilding.
 - `scan_books`: inspect sources and planned pipelines.
 - `health_check`: verify Pandoc, Calibre, MinerU, Marker, PyMuPDF4LLM, Umi-OCR, CUDA, and model cache.
+- `export_environment_report`: write Markdown/JSON environment diagnostics artifacts for handoff or debugging.
 - `inspect_document`: lightweight preflight for unknown inputs.
 - `start_conversion`: launch conversion as a background job.
 - `get_job_status`: poll progress and results.

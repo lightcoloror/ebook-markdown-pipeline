@@ -29,6 +29,7 @@ REQUIRED_TOOLS = {
     "inspect_document",
     "scan_books",
     "health_check",
+    "export_environment_report",
     "start_conversion",
     "start_location_index",
     "query_location_index",
@@ -104,6 +105,7 @@ def main() -> int:
         assert_fields("health_check", health, HEALTH_FIELDS)
         if not isinstance(health.get("capabilities"), list) or not health["capabilities"]:
             raise AssertionError(f"health_check must expose capability matrix: {health}")
+        assert_environment_report_tool(image_dir, tmpdir / "environment-report")
 
         inspection = call_tool("inspect_document", {"input": str(image_dir), "recursive": False})
         assert_fields("inspect_document", inspection, INSPECTION_FIELDS)
@@ -188,6 +190,26 @@ def assert_quality_summary_next_actions(tmpdir: Path) -> None:
     action_names = {item.get("action") for item in review_items[0]["next_actions"]}
     if "compare_pdf_pipelines" not in action_names and "rerun" not in action_names:
         raise AssertionError(f"Expected actionable PDF recovery actions: {summary}")
+
+
+def assert_environment_report_tool(input_dir: Path, output_dir: Path) -> None:
+    result = call_tool(
+        "export_environment_report",
+        {"input": str(input_dir), "output": str(output_dir), "recursive": False},
+    )
+    if result.get("status") != "ok":
+        raise AssertionError(f"export_environment_report failed: {result}")
+    markdown_report = Path(result.get("markdown_report") or "")
+    json_report = Path(result.get("json_report") or "")
+    if not markdown_report.exists() or not json_report.exists():
+        raise AssertionError(f"export_environment_report must write both reports: {result}")
+    artifact_types = {item.get("type") for item in result.get("artifacts", [])}
+    if not {"environment_report", "environment_json"}.issubset(artifact_types):
+        raise AssertionError(f"Environment report must expose artifacts: {result}")
+    readable = call_tool("read_artifact", {"path": str(json_report), "artifact_type": "environment_json"})
+    payload = readable.get("json") or {}
+    if payload.get("schema_version") != "environment-report-v1":
+        raise AssertionError(f"Environment JSON artifact should be parsed: {readable}")
 
 
 def assert_pdf_outline_inspection(tmpdir: Path) -> None:

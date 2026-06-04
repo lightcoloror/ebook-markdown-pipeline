@@ -125,6 +125,19 @@ Useful optional parameters:
 
 Checks required external commands, Python dependencies, CUDA status, and model cache.
 
+Agents can also call `export_environment_report` through MCP/HTTP when they need persistent diagnostics. It returns `markdown_report`, `json_report`, and readable artifacts:
+
+```json
+{
+  "name": "export_environment_report",
+  "arguments": {
+    "input": "D:\\materials",
+    "output": "D:\\materials\\.reports\\environment",
+    "recursive": true
+  }
+}
+```
+
 For persistent environment handoff, run:
 
 ```powershell

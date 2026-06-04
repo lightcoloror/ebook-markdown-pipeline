@@ -160,6 +160,8 @@ Review checklist JSON entries also include machine-readable `next_actions`. Thes
 
 Agents should use `capabilities` before choosing heavy PDF/OCR routes. For example, if `pdf_structure_recovery` is missing, prefer `pdf_fast_text`, `local_ocr`, or a user-visible health fix instead of blindly launching MinerU.
 
+For persistent handoff, use `export_environment_report`. It writes `environment-report.md` and `environment-report.json`, returns both paths, and exposes them as `environment_report` / `environment_json` artifacts. Use this before large unattended batches or when another agent needs to understand the machine state without shell access.
+
 ## Structure Strategy
 
 `inspect_document` returns a lightweight `structure_strategy` and `next_actions` for documents, PDFs, images, and folders:
@@ -219,6 +221,8 @@ Common artifact types:
 - `order_report`
 - `structure_report`
 - `structure_json`
+- `environment_report`
+- `environment_json`
 - `tool_log`
 
 ## Reading Artifacts
@@ -243,6 +247,7 @@ Use specialist tools when the desired action is already known:
 - `inspect_document`: lightweight preflight without heavy models.
 - `scan_books`: conversion planning only.
 - `health_check`: environment and dependency check.
+- `export_environment_report`: write Markdown/JSON environment diagnostics artifacts for handoff and debugging.
 - `build_location_index`: synchronous short location indexing.
 - `start_location_index`: async location indexing.
 - `query_location_index`: query a generated SQLite location index.

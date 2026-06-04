@@ -29,6 +29,7 @@ from ebook_markdown_pipeline.artifact_schema import artifact  # noqa: E402
 from ebook_markdown_pipeline.batch_convert_books import suggest_review_next_actions  # noqa: E402
 from ebook_markdown_pipeline.document_locator import build_location_index, export_location_review_pack, query_location_index  # noqa: E402
 from ebook_markdown_pipeline.document_inspector import inspect_document  # noqa: E402
+from ebook_markdown_pipeline.environment_report import export_environment_report  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book, rebuild_image_book_from_order  # noqa: E402
 
 
@@ -168,6 +169,20 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "recursive": {"type": "boolean", "default": True},
                     "pdf_pipeline_mode": {"type": "string", "default": "auto"},
                 },
+            },
+        },
+        {
+            "name": "export_environment_report",
+            "description": "Export environment diagnostics as Markdown/JSON artifacts for handoff or debugging.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"},
+                    "output": {"type": "string"},
+                    "recursive": {"type": "boolean", "default": False},
+                    "include_hidden": {"type": "boolean", "default": False},
+                },
+                "required": ["output"],
             },
         },
         {
@@ -401,6 +416,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return scan_books(arguments)
     if name == "health_check":
         return health_check(arguments)
+    if name == "export_environment_report":
+        return export_environment_report_tool(arguments)
     if name == "inspect_document":
         return inspect_document_tool(arguments)
     if name == "process_material":
@@ -484,6 +501,43 @@ def health_check(arguments: dict[str, Any]) -> dict[str, Any]:
         "ready_capabilities": [item["name"] for item in capabilities if item.get("status") == "ok"],
         "degraded_capabilities": [item["name"] for item in capabilities if item.get("status") == "degraded"],
         "missing_capabilities": [item["name"] for item in capabilities if item.get("status") == "missing"],
+    }
+
+
+def export_environment_report_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    input_value = arguments.get("input")
+    output_dir = Path(arguments["output"])
+    payload = export_environment_report(
+        Path(input_value) if input_value else None,
+        output_dir,
+        recursive=bool(arguments.get("recursive", False)),
+        include_hidden=bool(arguments.get("include_hidden", False)),
+    )
+    markdown_report = str(payload["markdown_report"])
+    json_report = str(payload["json_report"])
+    return {
+        "status": "ok",
+        "output": str(output_dir),
+        "markdown_report": markdown_report,
+        "json_report": json_report,
+        "capabilities": payload.get("capabilities", []),
+        "ready_capabilities": payload.get("ready_capabilities", []),
+        "degraded_capabilities": payload.get("degraded_capabilities", []),
+        "missing_capabilities": payload.get("missing_capabilities", []),
+        "artifacts": [
+            artifact(
+                "environment_report",
+                markdown_report,
+                label="Environment report",
+                media_type="text/markdown",
+            ),
+            artifact(
+                "environment_json",
+                json_report,
+                label="Environment report JSON",
+                media_type="application/json",
+            ),
+        ],
     }
 
 
@@ -944,7 +998,7 @@ def read_artifact(arguments: dict[str, Any]) -> dict[str, Any]:
         "truncated": truncated_by_lines or truncated_by_chars,
         "text": limited_text,
     }
-    if artifact_type in {"json", "clusters_json", "structure_json"} and not payload["truncated"]:
+    if artifact_type in {"json", "clusters_json", "structure_json", "environment_json"} and not payload["truncated"]:
         try:
             payload["json"] = json.loads(text)
         except json.JSONDecodeError:
@@ -1076,7 +1130,16 @@ def artifact_next_actions(artifacts: list[dict[str, Any]]) -> list[dict[str, Any
     for item in artifacts:
         artifact_type = item.get("type")
         path = item.get("path")
-        if artifact_type in {"markdown", "location_index_jsonl", "review_report", "order_report", "structure_report", "summary_report"} and path:
+        if artifact_type in {
+            "markdown",
+            "location_index_jsonl",
+            "review_report",
+            "order_report",
+            "structure_report",
+            "summary_report",
+            "environment_report",
+            "environment_json",
+        } and path:
             actions.append({"tool": "read_artifact", "arguments": {"path": path, "artifact_type": artifact_type}})
     return actions[:4]
 
