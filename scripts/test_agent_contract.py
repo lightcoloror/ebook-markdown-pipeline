@@ -210,6 +210,11 @@ def assert_environment_report_tool(input_dir: Path, output_dir: Path) -> None:
     payload = readable.get("json") or {}
     if payload.get("schema_version") != "environment-report-v1":
         raise AssertionError(f"Environment JSON artifact should be parsed: {readable}")
+    snapshot = payload.get("version_snapshot") or {}
+    package_names = {item.get("name") for item in snapshot.get("python_packages") or []}
+    command_names = {item.get("name") for item in snapshot.get("commands") or []}
+    if "PyMuPDF" not in package_names or "pandoc" not in command_names or "torch" not in snapshot:
+        raise AssertionError(f"Environment report must include package, command, and torch version snapshots: {payload}")
 
 
 def assert_pdf_outline_inspection(tmpdir: Path) -> None:

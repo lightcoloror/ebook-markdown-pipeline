@@ -1037,7 +1037,7 @@ def read_artifact(arguments: dict[str, Any]) -> dict[str, Any]:
         "truncated": truncated_by_lines or truncated_by_chars,
         "text": limited_text,
     }
-    if artifact_type in JSON_ARTIFACT_TYPES and not payload["truncated"]:
+    if artifact_type in JSON_ARTIFACT_TYPES:
         try:
             payload["json"] = json.loads(text)
         except json.JSONDecodeError:
