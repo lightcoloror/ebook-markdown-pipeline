@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+import ctypes
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from types import SimpleNamespace
@@ -124,6 +125,7 @@ class BookConverterUI:
         self.setup_drag_and_drop()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.after(150, self.poll_queue)
+        self.root.after(800, self.startup_health_check_async)
 
     def build_layout(self) -> None:
         container = ttk.Frame(self.root, padding=12)
@@ -639,6 +641,201 @@ class BookConverterUI:
             messagebox.showinfo("环境检查 / Environment check", f"{len(warnings)} 项警告。详见日志。/ {len(warnings)} warning item(s). See log.{capability_summary}")
         else:
             messagebox.showinfo("环境检查 / Environment check", f"当前选择所需环境检查通过。/ All required checks passed.{capability_summary}")
+
+    def startup_health_check_async(self) -> None:
+        if self.worker and self.worker.is_alive():
+            return
+
+        def worker() -> None:
+            try:
+                options = self.build_options()
+                checks = dependency_health_report([], options)
+                capabilities = environment_capability_summary(checks)
+                stall_checks = self.pdf_stall_risk_checks()
+                self.queue.put(("startup_health", {"checks": checks, "capabilities": capabilities, "stall_checks": stall_checks}))
+            except Exception as exc:  # noqa: BLE001
+                self.queue.put(("startup_health", {"error": str(exc)}))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def pdf_stall_risk_checks(self) -> list[dict[str, str]]:
+        checks: list[dict[str, str]] = []
+        checks.append(self.windows_commit_memory_check())
+        checks.append(self.nvidia_smi_check())
+        checks.append(self.mineru_process_check())
+        checks.append(self.torch_import_check())
+        return checks
+
+    def windows_commit_memory_check(self) -> dict[str, str]:
+        if os.name != "nt":
+            return {"name": "Windows page file", "status": "skip", "detail": "not Windows"}
+        try:
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = MEMORYSTATUSEX()
+            status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                raise OSError("GlobalMemoryStatusEx failed")
+            avail_commit_gb = status.ullAvailPageFile / (1024**3)
+            total_commit_gb = status.ullTotalPageFile / (1024**3)
+            avail_phys_gb = status.ullAvailPhys / (1024**3)
+            if avail_commit_gb < 8:
+                level = "warning"
+            elif avail_commit_gb < 16:
+                level = "caution"
+            else:
+                level = "ok"
+            return {
+                "name": "Windows page file / commit",
+                "status": level,
+                "detail": f"available commit {avail_commit_gb:.1f} GB / total {total_commit_gb:.1f} GB; available RAM {avail_phys_gb:.1f} GB",
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {"name": "Windows page file / commit", "status": "unknown", "detail": str(exc)}
+
+    def nvidia_smi_check(self) -> dict[str, str]:
+        try:
+            completed = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=memory.total,memory.used,memory.free,utilization.gpu",
+                    "--format=csv,noheader,nounits",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
+                check=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"name": "NVIDIA GPU", "status": "missing", "detail": f"nvidia-smi unavailable: {exc}"}
+        if completed.returncode != 0:
+            return {"name": "NVIDIA GPU", "status": "missing", "detail": (completed.stdout or "").strip()[:240]}
+        first = (completed.stdout or "").strip().splitlines()[0] if (completed.stdout or "").strip() else ""
+        try:
+            total_mb, used_mb, free_mb, util = [int(part.strip()) for part in first.split(",")[:4]]
+            free_gb = free_mb / 1024
+            status = "warning" if free_gb < 3 else "caution" if free_gb < 6 else "ok"
+            return {
+                "name": "NVIDIA GPU memory",
+                "status": status,
+                "detail": f"free {free_gb:.1f} GB / total {total_mb / 1024:.1f} GB; used {used_mb / 1024:.1f} GB; util {util}%",
+            }
+        except Exception:
+            return {"name": "NVIDIA GPU memory", "status": "unknown", "detail": first[:240]}
+
+    def mineru_process_check(self) -> dict[str, str]:
+        if os.name != "nt":
+            return {"name": "MinerU residual processes", "status": "skip", "detail": "not Windows"}
+        command = (
+            "Get-Process python,pythonw,mineru -ErrorAction SilentlyContinue | "
+            "Where-Object { $_.Path -like '*mineru*' } | "
+            "Select-Object Id,CPU,StartTime,Path | ConvertTo-Json -Compress"
+        )
+        try:
+            completed = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", command],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
+                check=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"name": "MinerU residual processes", "status": "unknown", "detail": str(exc)}
+        output = (completed.stdout or "").strip()
+        if completed.returncode != 0:
+            return {"name": "MinerU residual processes", "status": "unknown", "detail": output[:240]}
+        if not output:
+            return {"name": "MinerU residual processes", "status": "ok", "detail": "none detected"}
+        try:
+            payload = json.loads(output)
+            count = len(payload) if isinstance(payload, list) else 1
+        except Exception:
+            count = 1
+        return {"name": "MinerU residual processes", "status": "warning", "detail": f"{count} MinerU-related python process(es) detected"}
+
+    def torch_import_check(self) -> dict[str, str]:
+        code = (
+            "import json\n"
+            "try:\n"
+            " import torch\n"
+            " print(json.dumps({'ok': True, 'version': torch.__version__, 'cuda': bool(torch.cuda.is_available()), 'cuda_version': getattr(torch.version, 'cuda', '')}))\n"
+            "except Exception as e:\n"
+            " print(json.dumps({'ok': False, 'error': str(e)}))\n"
+        )
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-B", "-c", code],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=12,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return {"name": "torch startup", "status": "warning", "detail": "torch import timed out after 12s"}
+        except Exception as exc:  # noqa: BLE001
+            return {"name": "torch startup", "status": "unknown", "detail": str(exc)}
+        output = (completed.stdout or "").strip()
+        try:
+            payload = json.loads(output.splitlines()[-1])
+        except Exception:
+            return {"name": "torch startup", "status": "unknown", "detail": output[:240]}
+        if not payload.get("ok"):
+            detail = str(payload.get("error") or "")
+            status = "warning" if "WinError 1455" in detail or "Error loading" in detail else "missing"
+            return {"name": "torch startup", "status": status, "detail": detail[:240]}
+        return {
+            "name": "torch startup",
+            "status": "ok" if payload.get("cuda") else "caution",
+            "detail": f"torch {payload.get('version')}; cuda={payload.get('cuda')}; cuda_version={payload.get('cuda_version')}",
+        }
+
+    def handle_startup_health(self, payload: dict) -> None:
+        if payload.get("error"):
+            self.write_log(f"启动自检失败 / Startup health check failed: {payload.get('error')}")
+            return
+        checks = payload.get("checks") or []
+        capabilities = payload.get("capabilities") or []
+        stall_checks = payload.get("stall_checks") or []
+        risky = [
+            item
+            for item in [*checks, *stall_checks]
+            if str(item.get("status")) in {"missing", "warning", "caution", "degraded", "unknown"}
+        ]
+        missing_caps = [item for item in capabilities if item.get("status") == "missing"]
+        degraded_caps = [item for item in capabilities if item.get("status") == "degraded"]
+        self.write_log("启动自检 / Startup health check:")
+        for item in stall_checks:
+            self.write_log(f"  - [{item.get('status')}] {item.get('name')}: {item.get('detail')}")
+        if missing_caps or degraded_caps:
+            self.write_log(
+                f"  - 能力风险 / Capability risks: missing={len(missing_caps)}, degraded={len(degraded_caps)}"
+            )
+        if risky or missing_caps or degraded_caps:
+            self.status_var.set("启动自检发现风险 / Startup health risks")
+            self.current_stage_var.set("详见日志 / See log")
+            self.write_log("  建议 / Action: PDF 批量任务优先用 auto 或 PyMuPDF4LLM；MinerU 失败会自动降级。")
+        else:
+            self.write_log("  - [ok] 未发现明显 PDF 卡顿风险 / No obvious PDF stall risk detected.")
 
     def export_environment_report_ui(self) -> None:
         if self.worker and self.worker.is_alive():
@@ -1364,6 +1561,8 @@ class BookConverterUI:
                     )
                 elif kind == "image_book_progress":
                     self.handle_image_book_progress(payload)
+                elif kind == "startup_health":
+                    self.handle_startup_health(payload)
                 elif kind == "error":
                     self.set_running_state(False)
                     self.status_var.set("执行失败 / Failed")

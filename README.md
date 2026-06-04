@@ -35,6 +35,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\book_converter_ui.py
 - 选择输出格式：`markdown`、`html`、`text`
 - 自定义 `pandoc`、`ebook-convert`、`marker_single` 路径
 - 一键检查当前选择需要的转换环境，包括 Pandoc、Calibre、MinerU、MinerU 模型缓存、PyMuPDF4LLM、Umi-OCR 和 CUDA
+- UI 启动后会自动做轻量自检，检查页面文件/提交内存、GPU 显存、torch/CUDA、MinerU 残留进程和关键依赖风险，并写入日志区
 - 批量转换并显示日志
 - 默认写入 `manifest.json` 和 `.reports/*.report.json`，方便失败后继续跑和排查每本书的耗时/管道/输出位置
 - report 会包含轻量 Markdown 质量评分，用来提示无标题、页码噪声、脚注密度、乱码、HTML 残留等风险
@@ -46,6 +47,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\book_converter_ui.py
 - Marker/MinerU 长任务会流式读取外部工具输出；能解析页码时显示当前页，页处理完成后会切换为“正在收尾/写文件”，并提示长时间无输出的疑似卡住状态
 - 每次 Marker/MinerU 调用会写入 `.reports/pdf-tool-logs/*.log`，report 中也会记录 `pdf_tool_diagnostics`，用于排查卡在页级解析、收尾写文件、无输出等待、启动失败或非零退出码
 - PDF 工具有自动防卡死保护：无输出超过 `--pdf-tool-idle-timeout` 或页处理完成后收尾超过 `--pdf-tool-finalize-timeout` 会终止进程树、保留临时目录并自动回退到 PyMuPDF4LLM
+- MinerU/Marker 日志中出现明确失败信号时会提前中止并降级，例如 `ArrayMemoryError`、`WinError 1455`、CUDA DLL 加载失败或 `Local mineru-api exited before becoming healthy`
 - 200 页以上 PDF 默认按 50 页分段跑 MinerU，降低长文档整本卡死的风险；可用 `--mineru-segment-min-pages` 和 `--mineru-segment-pages` 调整
 - UI 提供复查入口：打开复查清单、选中输出、选中报告和最近 PDF 工具日志
 - UI 的 `PDF对比 / Compare` 支持 `对比页码 / Pages`，可填 `1-3,100,600-602` 对超长 PDF 只抽页比较四管道质量

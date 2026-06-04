@@ -131,6 +131,12 @@ class PdfToolTimeoutError(RuntimeError):
         self.diagnostic = diagnostic
 
 
+class PdfToolFailedError(RuntimeError):
+    def __init__(self, message: str, diagnostic: dict[str, object]):
+        super().__init__(message)
+        self.diagnostic = diagnostic
+
+
 class DoclingTimeoutError(RuntimeError):
     def __init__(self, message: str, diagnostic: dict[str, object]):
         super().__init__(message)
@@ -1576,6 +1582,8 @@ def run_pdf_convert(
         }
         if isinstance(exc, PdfToolTimeoutError):
             fallback_diagnostic["timeout_diagnostic"] = exc.diagnostic
+        if isinstance(exc, PdfToolFailedError):
+            fallback_diagnostic["failure_diagnostic"] = exc.diagnostic
         getattr(args, "_pdf_fallback_diagnostics", []).append(fallback_diagnostic)
         fallback_started = time.monotonic()
         emit_stage(
@@ -3541,6 +3549,26 @@ def run_pdf_tool_command(
                 diagnostic["last_output_at"] = timestamp_now()
                 lines.append(clean)
                 log_event("stdout", clean)
+                failure_reason = parse_pdf_tool_failure(clean)
+                if failure_reason:
+                    diagnostic["status"] = "failed"
+                    diagnostic["failure_reason"] = failure_reason
+                    diagnostic["last_page"] = last_page
+                    diagnostic["duration_seconds"] = round(now - started, 3)
+                    diagnostic["finished_at"] = timestamp_now()
+                    diagnostic["last_lines"] = lines[-20:]
+                    log_event(
+                        "failure_detected",
+                        {
+                            "reason": failure_reason,
+                            "elapsed_seconds": round(now - started, 3),
+                            "last_page": last_page,
+                            "page_count": page_count,
+                        },
+                    )
+                    terminate_process_tree(process)
+                    log_file.close()
+                    raise PdfToolFailedError(f"{label} failed: {failure_reason}", diagnostic)
                 parsed = parse_pdf_tool_progress(clean, page_count)
                 if parsed:
                     last_page = parsed
@@ -3664,6 +3692,26 @@ def parse_pdf_tool_progress(line: str, page_count: int) -> int | None:
         if page_count and current > page_count:
             continue
         return current
+    return None
+
+
+def parse_pdf_tool_failure(line: str) -> str | None:
+    lowered = line.lower()
+    fatal_markers = (
+        "arraymemoryerror",
+        "unable to allocate",
+        "error: 1 task(s) failed",
+        " task(s) failed while processing documents",
+        "failed for task#",
+        "managed mineru process",
+        "winerror 1455",
+        "error loading",
+        "local mineru-api exited before becoming healthy",
+        "no markdown file was produced",
+    )
+    for marker in fatal_markers:
+        if marker in lowered:
+            return line[:500]
     return None
 
 
@@ -4493,7 +4541,7 @@ def should_fallback_from_pdf_tool(exc: Exception, selected: str, args: argparse.
         return False
     if not pymupdf4llm_available():
         return False
-    if isinstance(exc, PdfToolTimeoutError):
+    if isinstance(exc, (PdfToolTimeoutError, PdfToolFailedError)):
         return True
     if isinstance(exc, FileNotFoundError):
         return True
