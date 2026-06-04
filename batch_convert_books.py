@@ -2849,6 +2849,11 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
     if Path(result.source).suffix.lower() == ".pdf":
         payload["pdf_preflight"] = asdict(pdf_preflight(Path(result.source), args))
         payload["pdf_outline"] = extract_pdf_outline(Path(result.source))
+        if result.output and Path(result.output).exists():
+            payload["pdf_outline_alignment"] = pdf_outline_markdown_alignment(
+                payload["pdf_outline"],
+                Path(result.output),
+            )
         diagnostics = getattr(args, "_pdf_tool_diagnostics", [])
         if diagnostics:
             payload["pdf_tool_diagnostics"] = diagnostics
@@ -2972,10 +2977,17 @@ def build_review_checklist_entries(entries: list[dict]) -> list[dict]:
         quality = item.get("quality") or {}
         preflight = item.get("pdf_preflight") or {}
         outline = item.get("pdf_outline") or {}
+        outline_alignment = item.get("pdf_outline_alignment") or {}
         status = item.get("status")
         level = quality.get("level")
-        if status != "failed" and level not in {"review", "poor"} and not preflight.get("scanned_likely"):
+        outline_alignment_low = bool(outline_alignment.get("status") == "low_alignment")
+        if status != "failed" and level not in {"review", "poor"} and not preflight.get("scanned_likely") and not outline_alignment_low:
             continue
+        quality_reasons = list(quality.get("reasons") or [])
+        if outline_alignment_low:
+            quality_reasons.append(
+                f"PDF 书签与 Markdown 标题匹配率低：{outline_alignment.get('match_ratio')}"
+            )
         checklist.append(
             {
                 "source": item.get("source"),
@@ -2985,11 +2997,12 @@ def build_review_checklist_entries(entries: list[dict]) -> list[dict]:
                 "pipeline": item.get("pipeline"),
                 "quality_level": level,
                 "quality_score": quality.get("score"),
-                "quality_reasons": quality.get("reasons") or [],
+                "quality_reasons": quality_reasons,
                 "pdf_scanned_likely": preflight.get("scanned_likely"),
                 "pdf_complex_layout_likely": preflight.get("complex_layout_likely"),
                 "pdf_outline_count": outline.get("count"),
                 "pdf_outline_items": (outline.get("items") or [])[:10],
+                "pdf_outline_alignment": outline_alignment,
                 "pdf_reasons": preflight.get("reasons") or [],
                 "suggested_action": suggest_review_action(item),
                 "next_actions": suggest_review_next_actions(item),
@@ -4038,6 +4051,94 @@ def extract_pdf_outline(source: Path, limit: int = 80) -> dict[str, object]:
         "truncated": len(toc) > limit,
         "items": items,
     }
+
+
+def pdf_outline_markdown_alignment(outline: dict[str, object], output_path: Path, *, sample_limit: int = 12) -> dict[str, object]:
+    outline_items = [item for item in outline.get("items", []) if isinstance(item, dict)] if isinstance(outline, dict) else []
+    outline_titles = [str(item.get("title") or "").strip() for item in outline_items if str(item.get("title") or "").strip()]
+    if not outline_titles:
+        return {
+            "status": "no_outline",
+            "outline_count": 0,
+            "markdown_heading_count": 0,
+            "matched_count": 0,
+            "match_ratio": None,
+            "matched": [],
+            "missing": [],
+            "markdown_heading_samples": [],
+        }
+    markdown_headings = extract_markdown_headings(output_path)
+    normalized_markdown = [(heading, normalize_heading_for_match(heading)) for heading in markdown_headings]
+    matched = []
+    missing = []
+    for title in outline_titles:
+        normalized_title = normalize_heading_for_match(title)
+        match = find_heading_match(normalized_title, normalized_markdown)
+        if match:
+            matched.append({"outline_title": title, "markdown_heading": match})
+        else:
+            missing.append(title)
+    match_ratio = round(len(matched) / max(len(outline_titles), 1), 3)
+    status = "ok"
+    if not markdown_headings:
+        status = "no_markdown_headings"
+    elif match_ratio < 0.4 and len(outline_titles) >= 2:
+        status = "low_alignment"
+    elif match_ratio < 0.75:
+        status = "partial_alignment"
+    return {
+        "status": status,
+        "outline_count": len(outline_titles),
+        "markdown_heading_count": len(markdown_headings),
+        "matched_count": len(matched),
+        "match_ratio": match_ratio,
+        "matched": matched[:sample_limit],
+        "missing": missing[:sample_limit],
+        "markdown_heading_samples": markdown_headings[:sample_limit],
+    }
+
+
+def extract_markdown_headings(path: Path, *, limit: int = 200) -> list[str]:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return []
+    headings = []
+    for line in text.splitlines():
+        match = re.match(r"^#{1,6}\s+(.+?)\s*$", line.strip())
+        if not match:
+            continue
+        title = re.sub(r"\s+#+\s*$", "", match.group(1).strip())
+        if title:
+            headings.append(title)
+        if len(headings) >= limit:
+            break
+    return headings
+
+
+def normalize_heading_for_match(value: str) -> str:
+    normalized = value.lower()
+    normalized = re.sub(r"<!--.*?-->", "", normalized)
+    normalized = re.sub(r"^[#\s]+", "", normalized)
+    normalized = re.sub(r"^(chapter|section|part)\s+", "", normalized)
+    normalized = re.sub(r"[第\s]*(\d+)[\s]*(章|节|篇|部|卷)", r"\1\2", normalized)
+    normalized = re.sub(r"[\s\-—–_·•:：,，.。;；!！?？()\[\]【】《》<>\"'“”‘’]+", "", normalized)
+    return normalized
+
+
+def find_heading_match(normalized_title: str, markdown_headings: list[tuple[str, str]]) -> str:
+    if not normalized_title:
+        return ""
+    for heading, normalized_heading in markdown_headings:
+        if not normalized_heading:
+            continue
+        if normalized_title == normalized_heading:
+            return heading
+        if len(normalized_title) >= 4 and normalized_title in normalized_heading:
+            return heading
+        if len(normalized_heading) >= 4 and normalized_heading in normalized_title:
+            return heading
+    return ""
 
 
 def empty_pdf_preflight() -> PdfPreflight:

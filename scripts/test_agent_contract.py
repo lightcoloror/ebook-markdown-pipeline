@@ -264,10 +264,30 @@ def assert_conversion_report_pdf_outline(tmpdir: Path) -> None:
     outline = report.get("pdf_outline") or {}
     if outline.get("count") != 1 or outline.get("items", [{}])[0].get("title") != "Chapter 1":
         raise AssertionError(f"Expected conversion report PDF outline: {report}")
+    alignment = report.get("pdf_outline_alignment") or {}
+    if alignment.get("status") != "no_markdown_headings" or alignment.get("outline_count") != 1:
+        raise AssertionError(f"Expected PDF outline alignment warning: {report}")
     summary = conversion_quality_summary([result])
     actions = summary["review_items"][0].get("next_actions") or []
     if not any(item.get("action") == "inspect_pdf_outline" for item in actions):
         raise AssertionError(f"Expected outline inspection next action: {summary}")
+
+    aligned_output = tmpdir / "report-outlined-aligned.md"
+    aligned_output.write_text("# Chapter 1\n\nOpening text", encoding="utf-8")
+    aligned_result = ConversionResult(
+        source=str(pdf_path),
+        output=str(aligned_output),
+        status="ok",
+        pipeline="pymupdf4llm",
+        message="",
+        detected_format="PDF",
+        duration_seconds=0,
+    )
+    write_conversion_report(aligned_result, options, aligned_output)
+    aligned_report = json.loads(Path(aligned_result.report).read_text(encoding="utf-8"))
+    aligned = aligned_report.get("pdf_outline_alignment") or {}
+    if aligned.get("status") != "ok" or aligned.get("match_ratio") != 1.0:
+        raise AssertionError(f"Expected aligned PDF outline headings: {aligned_report}")
 
 
 def assert_review_decisions_report(tmpdir: Path) -> None:
