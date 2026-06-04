@@ -17,7 +17,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR.parent))
 
 from ebook_markdown_pipeline.artifact_schema import SCHEMA_VERSION
-from ebook_markdown_pipeline.batch_convert_books import ConversionResult
+from ebook_markdown_pipeline.batch_convert_books import ConversionResult, default_options, write_conversion_report
 from ebook_markdown_pipeline.ebook_converter_http import build_handler
 from ebook_markdown_pipeline.ebook_converter_mcp import call_tool, conversion_quality_summary, tool_schemas
 
@@ -110,6 +110,7 @@ def main() -> int:
         if not isinstance(inspection.get("next_actions"), list) or "mode" not in inspection.get("structure_strategy", {}):
             raise AssertionError(f"inspect_document must expose structure strategy and next actions: {inspection}")
         assert_pdf_outline_inspection(tmpdir)
+        assert_conversion_report_pdf_outline(tmpdir)
 
         assert_quality_summary_next_actions(tmpdir)
 
@@ -208,6 +209,37 @@ def assert_pdf_outline_inspection(tmpdir: Path) -> None:
         raise AssertionError(f"Unexpected first outline item: {inspection}")
     if (inspection.get("structure_strategy") or {}).get("mode") != "bookmark_guided_structure_recovery":
         raise AssertionError(f"Expected bookmark-guided structure strategy: {inspection}")
+
+
+def assert_conversion_report_pdf_outline(tmpdir: Path) -> None:
+    pdf_path = tmpdir / "report-outlined.pdf"
+    output_path = tmpdir / "report-outlined.md"
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 72), "Chapter 1\nOpening text")
+    document.set_toc([[1, "Chapter 1", 1]])
+    document.save(pdf_path)
+    document.close()
+    output_path.write_text("body without headings", encoding="utf-8")
+    result = ConversionResult(
+        source=str(pdf_path),
+        output=str(output_path),
+        status="ok",
+        pipeline="pymupdf4llm",
+        message="",
+        detected_format="PDF",
+        duration_seconds=0,
+    )
+    options = default_options(report_dir=tmpdir / ".reports")
+    write_conversion_report(result, options, output_path)
+    report = json.loads(Path(result.report).read_text(encoding="utf-8"))
+    outline = report.get("pdf_outline") or {}
+    if outline.get("count") != 1 or outline.get("items", [{}])[0].get("title") != "Chapter 1":
+        raise AssertionError(f"Expected conversion report PDF outline: {report}")
+    summary = conversion_quality_summary([result])
+    actions = summary["review_items"][0].get("next_actions") or []
+    if not any(item.get("action") == "inspect_pdf_outline" for item in actions):
+        raise AssertionError(f"Expected outline inspection next action: {summary}")
 
 
 def assert_http_contract(input_path: Path, output_path: Path) -> None:

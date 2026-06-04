@@ -2848,6 +2848,7 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
             payload["quality"] = asdict(quality)
     if Path(result.source).suffix.lower() == ".pdf":
         payload["pdf_preflight"] = asdict(pdf_preflight(Path(result.source), args))
+        payload["pdf_outline"] = extract_pdf_outline(Path(result.source))
         diagnostics = getattr(args, "_pdf_tool_diagnostics", [])
         if diagnostics:
             payload["pdf_tool_diagnostics"] = diagnostics
@@ -2965,6 +2966,7 @@ def build_review_checklist_entries(entries: list[dict]) -> list[dict]:
     for item in entries:
         quality = item.get("quality") or {}
         preflight = item.get("pdf_preflight") or {}
+        outline = item.get("pdf_outline") or {}
         status = item.get("status")
         level = quality.get("level")
         if status != "failed" and level not in {"review", "poor"} and not preflight.get("scanned_likely"):
@@ -2981,6 +2983,8 @@ def build_review_checklist_entries(entries: list[dict]) -> list[dict]:
                 "quality_reasons": quality.get("reasons") or [],
                 "pdf_scanned_likely": preflight.get("scanned_likely"),
                 "pdf_complex_layout_likely": preflight.get("complex_layout_likely"),
+                "pdf_outline_count": outline.get("count"),
+                "pdf_outline_items": (outline.get("items") or [])[:10],
                 "pdf_reasons": preflight.get("reasons") or [],
                 "suggested_action": suggest_review_action(item),
                 "next_actions": suggest_review_next_actions(item),
@@ -3049,6 +3053,7 @@ def suggest_review_next_actions(item: dict) -> list[dict[str, str]]:
     quality = item.get("quality") or {}
     reasons = "；".join(quality.get("reasons") or [])
     preflight = item.get("pdf_preflight") or {}
+    outline = item.get("pdf_outline") or {}
     source_suffix = Path(source).suffix.lower()
 
     actions: list[dict[str, str]] = []
@@ -3061,6 +3066,8 @@ def suggest_review_next_actions(item: dict) -> list[dict[str, str]]:
         actions.append({"action": "rerun", "pipeline": fallback, "why": "recover a failed conversion with a lightweight fallback"})
         return actions
     if source_suffix == ".pdf":
+        if int(outline.get("count") or 0) > 0 and quality.get("level") in {"review", "poor"}:
+            actions.append({"action": "inspect_pdf_outline", "why": "compare generated Markdown headings with built-in PDF bookmarks"})
         if preflight.get("scanned_likely"):
             actions.append({"action": "rerun", "pipeline": "umi", "why": "long or scanned PDF may need OCR-first extraction"})
             actions.append({"action": "export_location_review_pack", "why": "verify representative OCR pages/images before accepting output"})
@@ -3899,6 +3906,32 @@ def inspect_pdf_preflight(source: Path, args: argparse.Namespace, sample_pages: 
     finally:
         if doc is not None:
             doc.close()
+
+
+def extract_pdf_outline(source: Path, limit: int = 80) -> dict[str, object]:
+    try:
+        import pymupdf
+
+        with pymupdf.open(str(source)) as doc:
+            toc = doc.get_toc(simple=True)
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "failed", "count": 0, "truncated": False, "items": [], "message": str(exc)}
+
+    items = []
+    for level, title, page in toc[:limit]:
+        items.append(
+            {
+                "level": int(level),
+                "title": str(title).strip(),
+                "page": int(page) if page else None,
+            }
+        )
+    return {
+        "status": "ok",
+        "count": len(toc),
+        "truncated": len(toc) > limit,
+        "items": items,
+    }
 
 
 def empty_pdf_preflight() -> PdfPreflight:

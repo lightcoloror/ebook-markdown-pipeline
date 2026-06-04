@@ -164,6 +164,8 @@ Important options:
 
 Reports may include `pdf_fallback_diagnostics` and `docling_diagnostics`. Agents should surface these fields when a job succeeds through fallback, because a successful artifact can still mean a lower-structure fallback pipeline was used.
 
+PDF conversion reports may also include `pdf_outline`, a preview of built-in PDF bookmarks with `level`, `title`, and `page`. When review `next_actions` includes `inspect_pdf_outline`, compare these bookmarks against generated Markdown headings before accepting or replacing the output.
+
 ### `get_job_status`
 
 Polls job progress, recent events, and final results.

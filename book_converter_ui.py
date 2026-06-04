@@ -1188,6 +1188,11 @@ class BookConverterUI:
                     self.write_log(f"完成 / Finished. 成功 / Success: {ok_count}/{len(payload)}")
                     self.write_log(f"汇总 / Summary: {Path(self.output_var.get().strip()) / '.reports' / 'summary.md'}")
                     self.write_log(f"复查清单 / Review checklist: {Path(self.output_var.get().strip()) / '.reports' / 'review-checklist.md'}")
+                    self.notify_task_finished(
+                        "转换完成 / Conversion finished",
+                        f"成功 / Success: {ok_count}/{len(payload)}\n"
+                        f"输出 / Output: {self.output_var.get().strip()}",
+                    )
                 elif kind == "location_done":
                     self.progress.configure(value=self.total_files)
                     self.status_var.set("定位索引完成 / Location index finished")
@@ -1199,6 +1204,10 @@ class BookConverterUI:
                     self.write_log(f"SQLite: {payload.get('sqlite')}")
                     self.write_log(f"JSONL: {payload.get('jsonl')}")
                     self.write_log(f"状态统计 / Status: {payload.get('status_counts')}")
+                    self.notify_task_finished(
+                        "定位索引完成 / Location index finished",
+                        f"SQLite: {payload.get('sqlite')}\nJSONL: {payload.get('jsonl')}",
+                    )
                 elif kind == "image_book_done":
                     self.progress.configure(value=self.total_files)
                     self.status_var.set("截图成书完成 / Image book finished")
@@ -1210,6 +1219,10 @@ class BookConverterUI:
                     self.write_log(f"Book: {payload.get('book')}")
                     self.write_log(f"Order: {payload.get('order')}")
                     self.write_log(f"Review: {payload.get('review')}")
+                    self.notify_task_finished(
+                        "截图成书完成 / Image book finished",
+                        f"Book: {payload.get('book')}\nReview: {payload.get('review')}",
+                    )
                 elif kind == "artifact_done":
                     self.set_running_state(False)
                     self.worker = None
@@ -1220,6 +1233,12 @@ class BookConverterUI:
                     self.write_log(str(payload.get("message") or "Artifact finished"))
                     for path in self.latest_artifacts:
                         self.write_log(f"Artifact: {path}")
+                    artifact_text = "\n".join(str(path) for path in self.latest_artifacts[:3])
+                    self.notify_task_finished(
+                        "任务完成 / Task finished",
+                        f"{payload.get('message') or 'Artifact finished'}"
+                        + (f"\n{artifact_text}" if artifact_text else ""),
+                    )
                 elif kind == "compare_progress":
                     completed = int(payload.get("completed") or 0)
                     total = int(payload.get("total") or 4)
@@ -1245,6 +1264,12 @@ class BookConverterUI:
             pass
         finally:
             self.root.after(150, self.poll_queue)
+
+    def notify_task_finished(self, title: str, message: str) -> None:
+        try:
+            messagebox.showinfo(title, message, parent=self.root)
+        except Exception:
+            self.write_log(f"{title}: {message}")
 
     def handle_progress(self, payload) -> None:
         event = payload["event"]
@@ -1527,6 +1552,7 @@ class BookConverterUI:
             "compare_pdf_pipelines": "PDF对比 / Compare",
             "rerun": "重跑 / Rerun",
             "export_location_review_pack": "导出复查包 / Review pack",
+            "inspect_pdf_outline": "查书签 / Outline",
             "inspect_toc": "查目录 / TOC",
             "manual_accept_or_score": "人工评分 / Score",
         }
@@ -1639,6 +1665,9 @@ class BookConverterUI:
             return True
         if name == "export_location_review_pack":
             self.start_location_index()
+            return True
+        if name == "inspect_pdf_outline":
+            self.open_selected_report()
             return True
         if name == "inspect_toc":
             self.open_selected_report()
