@@ -314,6 +314,16 @@ def assert_review_decisions_report(tmpdir: Path) -> None:
         raise AssertionError(f"Unexpected review decisions: {decisions}")
     if not any(item.get("decision") == "rerun_or_manual_review" for item in decisions.get("items") or []):
         raise AssertionError(f"Expected poor output to require rerun/manual review: {decisions}")
+    summary_artifact = call_tool("read_artifact", {"path": str(output_dir / ".reports" / "summary.json")})
+    if summary_artifact.get("artifact_type") != "summary_json" or not isinstance(summary_artifact.get("json"), list):
+        raise AssertionError(f"Expected parsed summary_json artifact: {summary_artifact}")
+    decision_artifact = call_tool("read_artifact", {"path": str(decisions_path), "artifact_type": "review_decisions_json"})
+    decision_payload = decision_artifact.get("json") or {}
+    if decision_payload.get("schema_version") != "review-decisions-v1":
+        raise AssertionError(f"Expected parsed review_decisions_json artifact: {decision_artifact}")
+    report_artifact = call_tool("read_artifact", {"path": str(poor.report), "artifact_type": "conversion_report"})
+    if (report_artifact.get("json") or {}).get("source") != poor.source:
+        raise AssertionError(f"Expected parsed conversion_report artifact: {report_artifact}")
 
 
 def assert_http_contract(input_path: Path, output_path: Path) -> None:

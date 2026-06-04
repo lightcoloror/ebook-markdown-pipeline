@@ -44,6 +44,36 @@ for stream in (sys.stdin, sys.stdout, sys.stderr):
 JOBS: dict[str, dict[str, Any]] = {}
 JOBS_LOCK = threading.Lock()
 JSON_STDOUT = sys.stdout
+JSON_ARTIFACT_TYPES = {
+    "json",
+    "conversion_report",
+    "summary_json",
+    "review_json",
+    "review_decisions_json",
+    "clusters_json",
+    "structure_json",
+    "environment_json",
+}
+READABLE_ARTIFACT_TYPES = {
+    "markdown",
+    "html",
+    "text",
+    "conversion_report",
+    "summary_report",
+    "summary_json",
+    "review_report",
+    "review_json",
+    "review_decisions",
+    "review_decisions_json",
+    "location_index_jsonl",
+    "pages_jsonl",
+    "order_report",
+    "structure_report",
+    "structure_json",
+    "environment_report",
+    "environment_json",
+    "tool_log",
+}
 
 
 def main() -> int:
@@ -831,12 +861,21 @@ def conversion_next_actions(results: list[Any], options: argparse.Namespace) -> 
     summary = report_root / "summary.md"
     if summary.exists():
         actions.append({"tool": "read_artifact", "arguments": {"path": str(summary), "artifact_type": "summary_report"}})
+    summary_json = report_root / "summary.json"
+    if summary_json.exists():
+        actions.append({"tool": "read_artifact", "arguments": {"path": str(summary_json), "artifact_type": "summary_json"}})
     review = report_root / "review-checklist.md"
     if review.exists():
         actions.append({"tool": "read_artifact", "arguments": {"path": str(review), "artifact_type": "review_report"}})
+    review_json = report_root / "review-checklist.json"
+    if review_json.exists():
+        actions.append({"tool": "read_artifact", "arguments": {"path": str(review_json), "artifact_type": "review_json"}})
     decisions = report_root / "review-decisions.md"
     if decisions.exists():
         actions.append({"tool": "read_artifact", "arguments": {"path": str(decisions), "artifact_type": "review_decisions"}})
+    decisions_json = report_root / "review-decisions.json"
+    if decisions_json.exists():
+        actions.append({"tool": "read_artifact", "arguments": {"path": str(decisions_json), "artifact_type": "review_decisions_json"}})
     for item in conversion_artifacts(results, options):
         if item.get("type") in {"markdown", "html", "text", "summary_report"}:
             actions.append({"tool": "read_artifact", "arguments": {"path": item["path"], "artifact_type": item["type"]}})
@@ -998,7 +1037,7 @@ def read_artifact(arguments: dict[str, Any]) -> dict[str, Any]:
         "truncated": truncated_by_lines or truncated_by_chars,
         "text": limited_text,
     }
-    if artifact_type in {"json", "clusters_json", "structure_json", "environment_json"} and not payload["truncated"]:
+    if artifact_type in JSON_ARTIFACT_TYPES and not payload["truncated"]:
         try:
             payload["json"] = json.loads(text)
         except json.JSONDecodeError:
@@ -1018,8 +1057,20 @@ def infer_artifact_type(path: Path) -> str:
             return "location_index_jsonl"
         return "pages_jsonl"
     if suffix == ".json":
+        if "review-decisions" in name:
+            return "review_decisions_json"
+        if "review-checklist" in name:
+            return "review_json"
+        if "summary" in name:
+            return "summary_json"
+        if "environment-report" in name:
+            return "environment_json"
+        if "report" in name:
+            return "conversion_report"
         if "cluster" in name:
             return "clusters_json"
+        if "structure" in name:
+            return "structure_json"
         return "json"
     if suffix in {".log", ".txt"}:
         return "text"
@@ -1130,16 +1181,7 @@ def artifact_next_actions(artifacts: list[dict[str, Any]]) -> list[dict[str, Any
     for item in artifacts:
         artifact_type = item.get("type")
         path = item.get("path")
-        if artifact_type in {
-            "markdown",
-            "location_index_jsonl",
-            "review_report",
-            "order_report",
-            "structure_report",
-            "summary_report",
-            "environment_report",
-            "environment_json",
-        } and path:
+        if artifact_type in READABLE_ARTIFACT_TYPES and path:
             actions.append({"tool": "read_artifact", "arguments": {"path": path, "artifact_type": artifact_type}})
     return actions[:4]
 
