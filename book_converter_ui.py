@@ -1194,12 +1194,25 @@ class BookConverterUI:
                 elif kind == "artifact_done":
                     self.set_running_state(False)
                     self.worker = None
+                    self.progress.configure(value=self.total_files)
                     self.latest_artifacts = self.artifact_paths_from_payload(payload)
                     self.status_var.set("Artifact 已生成 / Artifact finished")
                     self.current_stage_var.set(str(payload.get("message") or ""))
                     self.write_log(str(payload.get("message") or "Artifact finished"))
                     for path in self.latest_artifacts:
                         self.write_log(f"Artifact: {path}")
+                elif kind == "compare_progress":
+                    completed = int(payload.get("completed") or 0)
+                    total = int(payload.get("total") or 4)
+                    self.progress.configure(maximum=max(total, 1), value=min(completed, total))
+                    self.status_var.set(f"PDF 管道对比 / Compare {completed}/{total}")
+                    self.current_stage_var.set(str(payload.get("summary") or ""))
+                    partial = payload.get("partial")
+                    self.write_log(
+                        f"PDF 对比进度 / Compare progress {completed}/{total}: "
+                        f"{payload.get('summary') or ''}"
+                        + (f"; partial={partial}" if partial else "")
+                    )
                 elif kind == "image_book_progress":
                     self.handle_image_book_progress(payload)
                 elif kind == "error":
@@ -1836,10 +1849,14 @@ class BookConverterUI:
         output_text = self.output_var.get().strip() or str(source.parent)
         compare_dir = Path(output_text) / ".reports" / "pipeline-compare" / source.stem[:80]
         self.set_running_state(True)
+        self.total_files = 4
+        self.progress.configure(maximum=4, value=0)
         self.status_var.set("PDF 管道对比中 / Comparing PDF pipelines")
         self.current_stage_var.set(str(compare_dir))
         page_note = f" pages={page_ranges}" if page_ranges else ""
         self.write_log(f"开始 PDF 管道对比 / Start PDF pipeline compare: {source}{page_note}")
+        self.write_log(f"对比输出目录 / Compare output: {compare_dir}")
+        self.write_log("将依次试跑 pymupdf4llm、mineru、umi、docling；过程中会刷新 partial 报告。/ Running pipelines and polling partial reports.")
 
         def worker() -> None:
             try:
@@ -1861,7 +1878,23 @@ class BookConverterUI:
                 ]
                 if page_ranges:
                     cmd.extend(["--page-ranges", page_ranges])
-                completed = subprocess.run(cmd, cwd=Path(__file__).resolve().parent, text=True, encoding="utf-8", errors="replace", capture_output=True)
+                process = subprocess.Popen(
+                    cmd,
+                    cwd=Path(__file__).resolve().parent,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                partial_json = compare_dir / "pipeline-comparison.partial.json"
+                seen_count = -1
+                while process.poll() is None:
+                    seen_count = self.poll_pdf_compare_partial(partial_json, seen_count)
+                    time.sleep(2)
+                stdout, stderr = process.communicate()
+                seen_count = self.poll_pdf_compare_partial(partial_json, seen_count, force=True)
+                completed = SimpleNamespace(returncode=process.returncode, stdout=stdout, stderr=stderr)
                 if completed.returncode not in {0, 3}:
                     raise RuntimeError((completed.stderr or completed.stdout or "").strip() or f"compare_pipelines exited {completed.returncode}")
                 self.queue.put(
@@ -1882,6 +1915,31 @@ class BookConverterUI:
 
         self.worker = threading.Thread(target=worker, daemon=True)
         self.worker.start()
+
+    def poll_pdf_compare_partial(self, partial_json: Path, seen_count: int, *, force: bool = False) -> int:
+        if not partial_json.exists():
+            if force:
+                self.queue.put(("compare_progress", {"completed": 0, "total": 4, "summary": "等待 partial 报告 / Waiting for partial report"}))
+            return seen_count
+        try:
+            payload = json.loads(partial_json.read_text(encoding="utf-8"))
+        except Exception:
+            return seen_count
+        comparisons = payload.get("comparisons") or []
+        completed = len(comparisons)
+        if not force and completed == seen_count:
+            return seen_count
+        counts: dict[str, int] = {}
+        latest = ""
+        for item in comparisons:
+            status = str(item.get("status") or "unknown")
+            counts[status] = counts.get(status, 0) + 1
+            latest = f"{item.get('pipeline')}: {status}"
+        summary = ", ".join(f"{key}={value}" for key, value in sorted(counts.items())) or "running"
+        if latest:
+            summary = f"{summary}; latest {latest}"
+        self.queue.put(("compare_progress", {"completed": completed, "total": 4, "summary": summary, "partial": str(partial_json)}))
+        return completed
 
     def valid_page_ranges(self, value: str) -> bool:
         parts = [part.strip() for part in value.split(",") if part.strip()]
