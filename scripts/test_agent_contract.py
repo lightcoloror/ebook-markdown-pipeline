@@ -17,8 +17,9 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR.parent))
 
 from ebook_markdown_pipeline.artifact_schema import SCHEMA_VERSION
+from ebook_markdown_pipeline.batch_convert_books import ConversionResult
 from ebook_markdown_pipeline.ebook_converter_http import build_handler
-from ebook_markdown_pipeline.ebook_converter_mcp import call_tool, tool_schemas
+from ebook_markdown_pipeline.ebook_converter_mcp import call_tool, conversion_quality_summary, tool_schemas
 
 
 REQUIRED_TOOLS = {
@@ -109,6 +110,8 @@ def main() -> int:
         if not isinstance(inspection.get("next_actions"), list) or "mode" not in inspection.get("structure_strategy", {}):
             raise AssertionError(f"inspect_document must expose structure strategy and next actions: {inspection}")
 
+        assert_quality_summary_next_actions(tmpdir)
+
         readable = next(item for item in job["artifacts"] if item["type"] == "location_index_jsonl")
         artifact = call_tool("read_artifact", {"path": readable["path"], "artifact_type": readable["type"]})
         if artifact.get("artifact_type") != "location_index_jsonl" or "text" not in artifact:
@@ -142,6 +145,46 @@ def assert_fields(label: str, payload: dict[str, Any], fields: set[str]) -> None
     missing = sorted(fields - set(payload))
     if missing:
         raise AssertionError(f"{label} missing fields {missing}: {payload}")
+
+
+def assert_quality_summary_next_actions(tmpdir: Path) -> None:
+    report = tmpdir / "poor-pdf.report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "source": str(tmpdir / "poor.pdf"),
+                "output": str(tmpdir / "poor.md"),
+                "report": str(report),
+                "status": "ok",
+                "pipeline": "pymupdf4llm",
+                "quality": {
+                    "level": "poor",
+                    "score": 40,
+                    "reasons": ["没有 Markdown 标题，章节层级可能缺失"],
+                },
+                "pdf_preflight": {"complex_layout_likely": True, "reasons": ["complex"]},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    result = ConversionResult(
+        source=str(tmpdir / "poor.pdf"),
+        output=str(tmpdir / "poor.md"),
+        status="ok",
+        pipeline="pymupdf4llm",
+        message="",
+        detected_format="PDF",
+        duration_seconds=0,
+        report=str(report),
+    )
+    summary = conversion_quality_summary([result])
+    review_items = summary.get("review_items") or []
+    if not review_items or not review_items[0].get("next_actions"):
+        raise AssertionError(f"quality_summary review items must expose next_actions: {summary}")
+    action_names = {item.get("action") for item in review_items[0]["next_actions"]}
+    if "compare_pdf_pipelines" not in action_names and "rerun" not in action_names:
+        raise AssertionError(f"Expected actionable PDF recovery actions: {summary}")
 
 
 def assert_http_contract(input_path: Path, output_path: Path) -> None:

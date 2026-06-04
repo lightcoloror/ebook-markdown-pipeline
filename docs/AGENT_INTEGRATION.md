@@ -164,7 +164,7 @@ For conversion jobs, the final response also includes `quality_summary`.
 Agents should read it before presenting the generated Markdown as final:
 
 - `quality_summary.counts` shows how many outputs are `good`, `review`, or `poor`.
-- `quality_summary.review_items` includes source/output/report paths, quality score, reasons, and a machine-readable `suggested_action`.
+- `quality_summary.review_items` includes source/output/report paths, quality score, reasons, `suggested_action`, and machine-readable per-item `next_actions`.
 - If `review_count` is greater than zero, follow `next_actions` to read `summary_report` and `review_report`, then either show the user the review reason or rerun with a better recommended PDF pipeline.
 
 ### `read_report`

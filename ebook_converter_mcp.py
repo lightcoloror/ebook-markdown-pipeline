@@ -26,6 +26,7 @@ from ebook_markdown_pipeline import (  # noqa: E402
     write_batch_summary,
 )
 from ebook_markdown_pipeline.artifact_schema import artifact  # noqa: E402
+from ebook_markdown_pipeline.batch_convert_books import suggest_review_next_actions  # noqa: E402
 from ebook_markdown_pipeline.document_locator import build_location_index, export_location_review_pack, query_location_index  # noqa: E402
 from ebook_markdown_pipeline.document_inspector import inspect_document  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book, rebuild_image_book_from_order  # noqa: E402
@@ -807,6 +808,7 @@ def conversion_quality_summary(results: list[Any]) -> dict[str, Any]:
                     "quality_score": quality.get("score"),
                     "quality_reasons": quality.get("reasons") or [],
                     "suggested_action": agent_suggested_quality_action(payload, result),
+                    "next_actions": suggest_review_next_actions(payload or asdict(result)),
                 }
             )
     return {
