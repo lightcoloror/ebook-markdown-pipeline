@@ -609,7 +609,8 @@ class BookConverterUI:
         checks = dependency_health_report(sources, options)
         report = format_health_report(checks)
         self.write_log(report)
-        capabilities = environment_capability_summary(checks)
+        capability_checks = dependency_health_report([], options)
+        capabilities = environment_capability_summary(capability_checks)
         if capabilities:
             self.write_log("能力矩阵 / Capability matrix:")
             for item in capabilities:

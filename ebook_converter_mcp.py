@@ -474,9 +474,11 @@ def health_check(arguments: dict[str, Any]) -> dict[str, Any]:
     if getattr(options, "input", None):
         _, sources = resolve_sources_and_root(options)
     checks = dependency_health_report(sources, options)
-    capabilities = environment_capability_summary(checks)
+    capability_checks = dependency_health_report([], options)
+    capabilities = environment_capability_summary(capability_checks)
     return {
         "checks": checks,
+        "capability_checks": capability_checks,
         "capabilities": capabilities,
         "ok": all(item["status"] != "missing" for item in checks),
         "ready_capabilities": [item["name"] for item in capabilities if item.get("status") == "ok"],

@@ -106,6 +106,16 @@ MCP 工具包括：
 稳定调用契约见 [docs/TOOL_CONTRACT.md](docs/TOOL_CONTRACT.md)，详细接入说明见 [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md)。支持 skill 的 agent 可参考 [skills/ebook-markdown-pipeline/SKILL.md](skills/ebook-markdown-pipeline/SKILL.md)。
 HTTP、MCP stdio 和 CLI-style 的最小调用示例见 [examples/agent-calls](examples/agent-calls)。
 
+如果要把当前机器环境封装成可复查材料，可导出环境快照：
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\export_environment_report.py `
+  --input D:\downloads `
+  --output D:\downloads\.reports\environment
+```
+
+输出 `environment-report.md/json`，包含 Python/系统信息、依赖检查和能力矩阵，适合发给其他 agent 或用于环境故障复盘。
+
 接入前可先跑 MCP smoke test：
 
 ```powershell
