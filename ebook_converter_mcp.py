@@ -20,6 +20,7 @@ from ebook_markdown_pipeline import (  # noqa: E402
     convert_sources,
     default_options,
     dependency_health_report,
+    environment_capability_summary,
     find_missing_dependencies,
     normalize_command_options,
     write_batch_summary,
@@ -472,7 +473,15 @@ def health_check(arguments: dict[str, Any]) -> dict[str, Any]:
     if getattr(options, "input", None):
         _, sources = resolve_sources_and_root(options)
     checks = dependency_health_report(sources, options)
-    return {"checks": checks, "ok": all(item["status"] != "missing" for item in checks)}
+    capabilities = environment_capability_summary(checks)
+    return {
+        "checks": checks,
+        "capabilities": capabilities,
+        "ok": all(item["status"] != "missing" for item in checks),
+        "ready_capabilities": [item["name"] for item in capabilities if item.get("status") == "ok"],
+        "degraded_capabilities": [item["name"] for item in capabilities if item.get("status") == "degraded"],
+        "missing_capabilities": [item["name"] for item in capabilities if item.get("status") == "missing"],
+    }
 
 
 def inspect_document_tool(arguments: dict[str, Any]) -> dict[str, Any]:

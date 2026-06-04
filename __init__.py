@@ -9,6 +9,7 @@ from .batch_convert_books import (
     convert_sources,
     default_options,
     dependency_health_report,
+    environment_capability_summary,
     format_health_report,
     find_missing_dependencies,
     normalize_command_options,

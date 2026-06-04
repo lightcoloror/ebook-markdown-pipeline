@@ -37,6 +37,8 @@ REQUIRED_TOOLS = {
 }
 
 PROCESS_MATERIAL_FIELDS = {"status", "route", "inspection", "job_id", "warnings", "errors", "next_actions"}
+HEALTH_FIELDS = {"checks", "capabilities", "ok", "ready_capabilities", "degraded_capabilities", "missing_capabilities"}
+INSPECTION_FIELDS = {"status", "input", "kind", "recommendation", "structure_strategy", "next_actions", "warnings"}
 JOB_FIELDS = {
     "job_id",
     "kind",
@@ -96,6 +98,16 @@ def main() -> int:
             raise AssertionError(f"Job warnings/errors must be lists: {job}")
         if not isinstance(job.get("next_actions"), list):
             raise AssertionError(f"Job next_actions must be a list: {job}")
+
+        health = call_tool("health_check", {"input": str(image_dir), "output": str(output_dir)})
+        assert_fields("health_check", health, HEALTH_FIELDS)
+        if not isinstance(health.get("capabilities"), list) or not health["capabilities"]:
+            raise AssertionError(f"health_check must expose capability matrix: {health}")
+
+        inspection = call_tool("inspect_document", {"input": str(image_dir), "recursive": False})
+        assert_fields("inspect_document", inspection, INSPECTION_FIELDS)
+        if not isinstance(inspection.get("next_actions"), list) or "mode" not in inspection.get("structure_strategy", {}):
+            raise AssertionError(f"inspect_document must expose structure strategy and next actions: {inspection}")
 
         readable = next(item for item in job["artifacts"] if item["type"] == "location_index_jsonl")
         artifact = call_tool("read_artifact", {"path": readable["path"], "artifact_type": readable["type"]})

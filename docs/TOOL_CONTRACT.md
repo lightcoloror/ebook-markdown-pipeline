@@ -115,13 +115,75 @@ For conversion jobs, `quality_summary` is available after completion:
       "quality_level": "review",
       "quality_score": 74,
       "quality_reasons": ["没有 Markdown 标题，章节层级可能缺失"],
-      "suggested_action": "run_compare_pipelines_or_rerun_recommended_pdf_backend"
+      "suggested_action": "run_compare_pipelines_or_rerun_recommended_pdf_backend",
+      "next_actions": [
+        {
+          "action": "read_report",
+          "path": "D:\\output\\.reports\\book.report.json",
+          "why": "inspect converter diagnostics and quality reasons"
+        },
+        {
+          "action": "compare_pdf_pipelines",
+          "pipelines": "mineru,docling,pymupdf4llm",
+          "why": "compare structure recovery rather than trusting one parser"
+        }
+      ]
     }
   ]
 }
 ```
 
 Agents should treat `quality_summary.review_count > 0` as a prompt to read the `summary_report` or `review_report` before presenting the output as final.
+
+Review checklist JSON entries also include machine-readable `next_actions`. These actions are advisory, not automatic permission to overwrite files. Prefer versioned reruns and ask the user before destructive replacement.
+
+## Environment Capabilities
+
+`health_check` returns both raw dependency `checks` and a capability matrix:
+
+```json
+{
+  "checks": [],
+  "capabilities": [
+    {
+      "name": "pdf_structure_recovery",
+      "status": "ok",
+      "detail": "MinerU available with model cache.",
+      "action": "Use MinerU for complex PDFs."
+    }
+  ],
+  "ready_capabilities": ["structured_ebooks", "pdf_fast_text"],
+  "degraded_capabilities": ["gpu_acceleration"],
+  "missing_capabilities": ["docling_documents"]
+}
+```
+
+Agents should use `capabilities` before choosing heavy PDF/OCR routes. For example, if `pdf_structure_recovery` is missing, prefer `pdf_fast_text`, `local_ocr`, or a user-visible health fix instead of blindly launching MinerU.
+
+## Structure Strategy
+
+`inspect_document` returns a lightweight `structure_strategy` and `next_actions` for documents, PDFs, images, and folders:
+
+```json
+{
+  "kind": "pdf",
+  "recommendation": "mineru",
+  "structure_strategy": {
+    "mode": "layout_aware_structure_recovery",
+    "confidence": "medium",
+    "preferred_tools": ["mineru", "docling", "marker"]
+  },
+  "next_actions": [
+    {
+      "tool": "start_conversion",
+      "pdf_pipeline_mode": "mineru",
+      "why": "recover headings, tables, and layout blocks"
+    }
+  ]
+}
+```
+
+Use this when deciding whether to convert, build a location index, rebuild an image book, export a review pack, or compare PDF pipelines.
 
 ## Artifacts
 

@@ -806,7 +806,117 @@ def format_health_report(checks: list[dict[str, str]]) -> str:
     lines = ["Dependency health check:"]
     for item in checks:
         lines.append(f"- [{item['status']}] {item['name']} ({item['kind']}): {item['detail']}")
+    capabilities = environment_capability_summary(checks)
+    if capabilities:
+        lines.extend(["", "Capability matrix:"])
+        for item in capabilities:
+            lines.append(f"- [{item['status']}] {item['name']}: {item['detail']} Action: {item['action']}")
     return "\n".join(lines)
+
+
+def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[str, str]]:
+    by_name = {str(item.get("name", "")).lower(): item for item in checks}
+    names = set(by_name)
+
+    def command_ok(candidates: tuple[str, ...]) -> bool:
+        return any(
+            any(candidate in name for name in names)
+            and by_name[name].get("status") == "ok"
+            for candidate in candidates
+            for name in names
+        )
+
+    def check_ok(name: str) -> bool:
+        return by_name.get(name.lower(), {}).get("status") == "ok"
+
+    def check_status(name: str) -> str:
+        return str(by_name.get(name.lower(), {}).get("status") or "missing")
+
+    pandoc_ok = command_ok(("pandoc",))
+    calibre_ok = command_ok(("ebook-convert",))
+    mineru_ok = command_ok(("mineru",))
+    marker_ok = command_ok(("marker", "marker_single"))
+    pymupdf_ok = check_ok("PyMuPDF")
+    pymupdf4llm_ok = check_ok("pymupdf4llm")
+    docling_ok = check_ok("docling")
+    umi_ok = check_ok("Umi PaddleOCR module")
+    mineru_cache = check_status("MinerU model cache")
+    cuda_status = check_status("CUDA for torch")
+
+    capabilities: list[dict[str, str]] = []
+
+    structured_ok = pandoc_ok and calibre_ok
+    capabilities.append(
+        capability_item(
+            "structured_ebooks",
+            "ok" if structured_ok else "missing",
+            "EPUB/TXT/RTF/ODT via Pandoc; AZW/AZW3/MOBI via Calibre+Pandoc"
+            if structured_ok
+            else "Pandoc and Calibre are both needed for broad ebook coverage.",
+            "Use normal conversion." if structured_ok else "Install/fix Pandoc and Calibre before large ebook batches.",
+        )
+    )
+
+    fast_pdf_ok = pymupdf_ok and pymupdf4llm_ok
+    capabilities.append(
+        capability_item(
+            "pdf_fast_text",
+            "ok" if fast_pdf_ok else "missing",
+            "Fast text-layer extraction with PyMuPDF/PyMuPDF4LLM." if fast_pdf_ok else "Fast PDF fallback is incomplete.",
+            "Use pymupdf4llm for text-layer PDFs." if fast_pdf_ok else "Install PyMuPDF and pymupdf4llm for safe PDF fallback.",
+        )
+    )
+
+    structured_pdf_status = "ok" if mineru_ok and mineru_cache == "ok" else "degraded" if mineru_ok else "missing"
+    capabilities.append(
+        capability_item(
+            "pdf_structure_recovery",
+            structured_pdf_status,
+            "MinerU available with model cache." if structured_pdf_status == "ok" else "MinerU command/model cache is incomplete.",
+            "Use MinerU for complex PDFs." if structured_pdf_status == "ok" else "Run health details, download models, or fall back to PyMuPDF4LLM/Umi-OCR.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
+            "pdf_marker_layout",
+            "ok" if marker_ok else "missing",
+            "Marker is available for short layout-heavy PDFs." if marker_ok else "Marker command is not available.",
+            "Use Marker only for short selected PDFs." if marker_ok else "Install Marker or keep using MinerU/PyMuPDF4LLM.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
+            "local_ocr",
+            "ok" if umi_ok else "missing",
+            "Umi-OCR Paddle module is available." if umi_ok else "Umi-OCR Paddle module is not configured.",
+            "Use Umi-OCR for long scanned documents or image batches." if umi_ok else "Configure Umi-OCR path for scanned PDFs/images.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
+            "docling_documents",
+            "ok" if docling_ok else "missing",
+            "Docling backend is importable." if docling_ok else "Docling optional backend is not installed.",
+            "Use Docling for office-like documents and selected PDFs." if docling_ok else "Install optional Docling deps only if needed.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
+            "gpu_acceleration",
+            "ok" if cuda_status == "ok" else "degraded",
+            "Torch CUDA is available." if cuda_status == "ok" else "Torch CUDA is unavailable; model pipelines may run on CPU.",
+            "Prefer GPU MinerU/VLM workloads." if cuda_status == "ok" else "Use lighter/fallback pipelines or install CUDA-enabled torch.",
+        )
+    )
+    return capabilities
+
+
+def capability_item(name: str, status: str, detail: str, action: str) -> dict[str, str]:
+    return {"name": name, "status": status, "detail": detail, "action": action}
 
 
 def command_version(command: str) -> str:
@@ -2873,6 +2983,7 @@ def build_review_checklist_entries(entries: list[dict]) -> list[dict]:
                 "pdf_complex_layout_likely": preflight.get("complex_layout_likely"),
                 "pdf_reasons": preflight.get("reasons") or [],
                 "suggested_action": suggest_review_action(item),
+                "next_actions": suggest_review_next_actions(item),
             }
         )
     return sorted(checklist, key=review_checklist_sort_key)
@@ -2893,11 +3004,12 @@ def render_review_checklist_markdown(entries: list[dict], checklist_json: Path) 
         lines.append("| ok | good | No review candidates | - | - |")
     for item in entries:
         reasons = "; ".join((item.get("quality_reasons") or []) + (item.get("pdf_reasons") or []))
+        next_actions = ", ".join(action.get("action", "") for action in item.get("next_actions") or [])
         lines.append(
             f"| {escape_table(str(item.get('status') or ''))} | "
             f"{escape_table(str(item.get('quality_level') or 'n/a'))} {item.get('quality_score') or ''} | "
             f"{escape_table(Path(str(item.get('source') or '')).name)} | "
-            f"{escape_table(str(item.get('suggested_action') or ''))} | "
+            f"{escape_table(str(item.get('suggested_action') or '') + ('; next: ' + next_actions if next_actions else ''))} | "
             f"{escape_table(reasons[:300])} |"
         )
     return "\n".join(lines).rstrip() + "\n"
@@ -2926,6 +3038,46 @@ def suggest_review_action(item: dict) -> str:
     if quality.get("reasons"):
         return "按 reasons 抽查对应问题；重点看标题层级、页码噪声、脚注、乱码和 HTML 残留"
     return "人工抽查"
+
+
+def suggest_review_next_actions(item: dict) -> list[dict[str, str]]:
+    status = item.get("status")
+    source = str(item.get("source") or "")
+    output = str(item.get("output") or "")
+    report = str(item.get("report") or "")
+    pipeline = str(item.get("pipeline") or "").lower()
+    quality = item.get("quality") or {}
+    reasons = "；".join(quality.get("reasons") or [])
+    preflight = item.get("pdf_preflight") or {}
+    source_suffix = Path(source).suffix.lower()
+
+    actions: list[dict[str, str]] = []
+    if report:
+        actions.append({"action": "read_report", "path": report, "why": "inspect converter diagnostics and quality reasons"})
+    if output:
+        actions.append({"action": "open_output", "path": output, "why": "spot-check visible structure before replacing any existing file"})
+    if status == "failed":
+        fallback = "pymupdf4llm" if source_suffix == ".pdf" else "auto"
+        actions.append({"action": "rerun", "pipeline": fallback, "why": "recover a failed conversion with a lightweight fallback"})
+        return actions
+    if source_suffix == ".pdf":
+        if preflight.get("scanned_likely"):
+            actions.append({"action": "rerun", "pipeline": "umi", "why": "long or scanned PDF may need OCR-first extraction"})
+            actions.append({"action": "export_location_review_pack", "why": "verify representative OCR pages/images before accepting output"})
+        elif preflight.get("complex_layout_likely") or "没有 Markdown 标题" in reasons or "章节层级" in reasons:
+            preferred = "docling" if "mineru" in pipeline else "mineru"
+            actions.append({"action": "compare_pdf_pipelines", "pipelines": "mineru,docling,pymupdf4llm", "why": "compare structure recovery rather than trusting one parser"})
+            actions.append({"action": "rerun", "pipeline": preferred, "why": "try a structure-aware PDF backend"})
+        elif "页码" in reasons:
+            actions.append({"action": "rerun", "pipeline": "docling", "why": "reduce page-heading style output when structure is weak"})
+    elif source_suffix in CALIBRE_INTERMEDIATE_FORMATS | PANDOC_DIRECT_FORMATS:
+        if "没有 Markdown 标题" in reasons or "章节层级" in reasons:
+            actions.append({"action": "inspect_toc", "why": "align EPUB/Calibre TOC titles with body text before manual cleanup"})
+        if "输出文本很短" in reasons:
+            actions.append({"action": "rerun", "pipeline": "calibre+pandoc", "why": "verify source conversion before post-processing"})
+    if quality.get("level") in {"review", "poor"}:
+        actions.append({"action": "manual_accept_or_score", "why": "record human judgment so future batches can be filtered"})
+    return actions
 
 
 def review_checklist_sort_key(item: dict) -> tuple[int, int]:
