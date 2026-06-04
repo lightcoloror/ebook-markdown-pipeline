@@ -29,6 +29,7 @@ try:
         build_location_index_from_sources,
         collect_location_sources,
     )
+    from ebook_markdown_pipeline.environment_report import compare_environment_lock, export_environment_report  # noqa: E402
     from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book_from_sources  # noqa: E402
     from ebook_markdown_pipeline import (
         OUTPUT_FORMATS,
@@ -53,6 +54,7 @@ except ModuleNotFoundError:
         build_location_index_from_sources,
         collect_location_sources,
     )
+    from environment_report import compare_environment_lock, export_environment_report  # noqa: E402
     from image_book_rebuilder import rebuild_image_book_from_sources  # noqa: E402
     from batch_convert_books import (
         OUTPUT_FORMATS,
@@ -275,6 +277,8 @@ class BookConverterUI:
         toolbar_items = [
             self.scan_button,
             self.health_button,
+            ttk.Button(buttons, text="导出环境 / Env Export", command=self.export_environment_report_ui),
+            ttk.Button(buttons, text="对比环境 / Env Compare", command=self.compare_environment_lock_ui),
             self.start_button,
             self.location_button,
             self.image_book_button,
@@ -635,6 +639,112 @@ class BookConverterUI:
             messagebox.showinfo("环境检查 / Environment check", f"{len(warnings)} 项警告。详见日志。/ {len(warnings)} warning item(s). See log.{capability_summary}")
         else:
             messagebox.showinfo("环境检查 / Environment check", f"当前选择所需环境检查通过。/ All required checks passed.{capability_summary}")
+
+    def export_environment_report_ui(self) -> None:
+        if self.worker and self.worker.is_alive():
+            messagebox.showinfo("忙碌 / Busy", "已有任务正在运行。/ A task is already running.")
+            return
+        output_root = self.environment_output_root()
+        input_path = self.environment_input_path()
+        self.set_running_state(True)
+        self.total_files = 1
+        self.progress.configure(maximum=1, value=0.15)
+        self.status_var.set("导出环境报告 / Exporting environment")
+        self.current_stage_var.set(str(output_root))
+        self.write_log(f"导出环境报告 / Export environment report: {output_root}")
+
+        def worker() -> None:
+            try:
+                payload = export_environment_report(
+                    input_path,
+                    output_root,
+                    recursive=bool(self.recursive_var.get()),
+                    include_hidden=bool(self.include_hidden_var.get()),
+                )
+                self.queue.put(
+                    (
+                        "artifact_done",
+                        {
+                            "message": "Environment report exported",
+                            "artifacts": [
+                                {"path": str(payload.get("markdown_report"))},
+                                {"path": str(payload.get("json_report"))},
+                                {"path": str(payload.get("lock_report"))},
+                                {"path": str(payload.get("requirements_lock"))},
+                            ],
+                        },
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.queue.put(("error", str(exc)))
+
+        self.worker = threading.Thread(target=worker, daemon=True)
+        self.worker.start()
+
+    def compare_environment_lock_ui(self) -> None:
+        if self.worker and self.worker.is_alive():
+            messagebox.showinfo("忙碌 / Busy", "已有任务正在运行。/ A task is already running.")
+            return
+        initial_dir = self.environment_output_root()
+        path = filedialog.askopenfilename(
+            title="选择 environment-lock.json / Choose environment-lock.json",
+            initialdir=str(initial_dir if initial_dir.exists() else Path.home()),
+            filetypes=[("Environment lock", "environment-lock.json *.json"), ("JSON", "*.json"), ("All", "*.*")],
+        )
+        if not path:
+            return
+        output_root = self.environment_compare_output_root()
+        self.set_running_state(True)
+        self.total_files = 1
+        self.progress.configure(maximum=1, value=0.15)
+        self.status_var.set("对比环境锁 / Comparing environment")
+        self.current_stage_var.set(str(output_root))
+        self.write_log(f"对比环境锁 / Compare environment lock: {path}")
+
+        def worker() -> None:
+            try:
+                payload = compare_environment_lock(Path(path), output_root)
+                self.queue.put(
+                    (
+                        "artifact_done",
+                        {
+                            "message": f"Environment comparison finished: {payload.get('severity')} ({payload.get('difference_count')} differences)",
+                            "artifacts": [
+                                {"path": str(payload.get("markdown_report"))},
+                                {"path": str(payload.get("json_report"))},
+                            ],
+                        },
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.queue.put(("error", str(exc)))
+
+        self.worker = threading.Thread(target=worker, daemon=True)
+        self.worker.start()
+
+    def environment_output_root(self) -> Path:
+        output_text = self.output_var.get().strip()
+        if output_text:
+            return Path(output_text) / ".reports" / "environment"
+        input_path = self.environment_input_path()
+        if input_path:
+            base = input_path if input_path.is_dir() else input_path.parent
+            return base / ".reports" / "environment"
+        return Path.home() / "ebook-markdown-pipeline-environment"
+
+    def environment_compare_output_root(self) -> Path:
+        output_text = self.output_var.get().strip()
+        if output_text:
+            return Path(output_text) / ".reports" / "environment-compare"
+        return self.environment_output_root() / "compare"
+
+    def environment_input_path(self) -> Path | None:
+        if self.selected_input_files:
+            return self.selected_input_files[0].parent
+        input_text = self.input_var.get().strip()
+        if input_text:
+            return Path(input_text)
+        return None
 
     def load_history_batch(self) -> None:
         output_text = self.output_var.get().strip()
