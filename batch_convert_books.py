@@ -2889,7 +2889,7 @@ def write_batch_summary(results: list[ConversionResult], args: argparse.Namespac
         report_root = summary_path.parent
     report_root.mkdir(parents=True, exist_ok=True)
 
-    entries = [load_report_snapshot(result) for result in results]
+    entries = merge_manual_review_records([load_report_snapshot(result) for result in results], report_root)
     summary_json = summary_path.with_suffix(".json")
     summary_json.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
     summary_path.write_text(render_batch_summary_markdown(entries, summary_json), encoding="utf-8")
@@ -2915,12 +2915,41 @@ def load_report_snapshot(result: ConversionResult) -> dict:
     return payload
 
 
+def merge_manual_review_records(entries: list[dict], report_root: Path) -> list[dict]:
+    records = load_manual_review_records(report_root)
+    if not records:
+        return entries
+    merged = []
+    for item in entries:
+        source = str(item.get("source") or "")
+        record = records.get(source)
+        if record:
+            item = dict(item)
+            item["manual_review"] = record
+        merged.append(item)
+    return merged
+
+
+def load_manual_review_records(report_root: Path) -> dict[str, dict]:
+    path = report_root / "manual-review.json"
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    records = payload.get("records", []) if isinstance(payload, dict) else []
+    return {str(item.get("source") or ""): item for item in records if item.get("source")}
+
+
 def render_batch_summary_markdown(entries: list[dict], summary_json: Path) -> str:
     total = len(entries)
     status_counts = count_by(entries, "status")
     pipeline_counts = count_by(entries, "pipeline")
     quality_counts = count_nested(entries, "quality", "level")
     pdf_risk_count = sum(1 for item in entries if (item.get("pdf_preflight") or {}).get("scanned_likely"))
+    manual_count = sum(1 for item in entries if item.get("manual_review"))
+    manual_accepted_count = sum(1 for item in entries if (item.get("manual_review") or {}).get("human_status") == "accepted")
     failed = [item for item in entries if item.get("status") == "failed"]
     review_items = [
         item
@@ -2937,6 +2966,7 @@ def render_batch_summary_markdown(entries: list[dict], summary_json: Path) -> st
         f"- Pipelines: {format_counts(pipeline_counts)}",
         f"- Quality: {format_counts(quality_counts) if quality_counts else 'n/a'}",
         f"- PDF scanned-like: {pdf_risk_count}",
+        f"- Manual reviewed: {manual_count}; accepted: {manual_accepted_count}",
         f"- JSON summary: `{summary_json}`",
         "",
     ]
@@ -2980,6 +3010,9 @@ def build_review_checklist_entries(entries: list[dict]) -> list[dict]:
         outline_alignment = item.get("pdf_outline_alignment") or {}
         status = item.get("status")
         level = quality.get("level")
+        manual_review = item.get("manual_review") or {}
+        if manual_review.get("human_status") == "accepted":
+            continue
         outline_alignment_low = bool(outline_alignment.get("status") == "low_alignment")
         if status != "failed" and level not in {"review", "poor"} and not preflight.get("scanned_likely") and not outline_alignment_low:
             continue
@@ -2998,6 +3031,7 @@ def build_review_checklist_entries(entries: list[dict]) -> list[dict]:
                 "quality_level": level,
                 "quality_score": quality.get("score"),
                 "quality_reasons": quality_reasons,
+                "manual_review": manual_review,
                 "pdf_scanned_likely": preflight.get("scanned_likely"),
                 "pdf_complex_layout_likely": preflight.get("complex_layout_likely"),
                 "pdf_outline_count": outline.get("count"),
@@ -3059,6 +3093,7 @@ def build_review_decisions(entries: list[dict], checklist_entries: list[dict]) -
                 "pipeline": item.get("pipeline"),
                 "quality_level": level,
                 "quality_score": quality.get("score"),
+                "manual_review": item.get("manual_review") or {},
                 "decision": decision,
                 "reasons": review_decision_reasons(item, checklist_item),
                 "next_actions": actions,
@@ -3077,6 +3112,12 @@ def decide_review_disposition(item: dict, checklist_item: dict | None) -> str:
     status = str(item.get("status") or "")
     quality = item.get("quality") or {}
     level = str(quality.get("level") or "")
+    manual_review = item.get("manual_review") or {}
+    manual_status = str(manual_review.get("human_status") or "")
+    if manual_status == "accepted":
+        return "accept_manual"
+    if manual_status == "review":
+        return "manual_review"
     if status == "failed":
         return "failed_retry"
     if level == "poor":
@@ -3091,6 +3132,11 @@ def decide_review_disposition(item: dict, checklist_item: dict | None) -> str:
 def review_decision_reasons(item: dict, checklist_item: dict | None) -> list[str]:
     quality = item.get("quality") or {}
     reasons = list(quality.get("reasons") or [])
+    manual_review = item.get("manual_review") or {}
+    if manual_review:
+        status = manual_review.get("human_status")
+        score = manual_review.get("human_score")
+        reasons.append(f"Manual review: {status}" + (f" score={score}" if score is not None else ""))
     if item.get("status") == "failed" and item.get("message"):
         reasons.append(str(item.get("message")))
     if checklist_item:
@@ -3132,7 +3178,8 @@ def review_decision_sort_key(item: dict) -> tuple[int, int]:
         "rerun_or_manual_review": 1,
         "manual_review": 2,
         "review_before_accept": 3,
-        "accept": 4,
+        "accept_manual": 4,
+        "accept": 5,
     }
     score = item.get("quality_score")
     return (rank.get(str(item.get("decision") or ""), 9), int(score) if score is not None else 999)

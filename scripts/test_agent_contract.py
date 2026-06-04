@@ -386,6 +386,24 @@ def assert_review_decisions_report(tmpdir: Path) -> None:
     for result in (good, poor, failed):
         output_path = Path(result.output) if result.output else output_dir / f"{Path(result.source).stem}.md"
         write_conversion_report(result, options, output_path)
+    manual_path = output_dir / ".reports" / "manual-review.json"
+    manual_path.parent.mkdir(parents=True, exist_ok=True)
+    manual_path.write_text(
+        json.dumps(
+            {
+                "records": [
+                    {
+                        "source": good.source,
+                        "output": good.output,
+                        "human_status": "accepted",
+                        "human_score": 95,
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
     write_batch_summary([good, poor, failed], options)
     decisions_path = output_dir / ".reports" / "review-decisions.json"
     decisions_md = output_dir / ".reports" / "review-decisions.md"
@@ -393,13 +411,19 @@ def assert_review_decisions_report(tmpdir: Path) -> None:
         raise AssertionError("Expected review decision reports to be generated.")
     decisions = json.loads(decisions_path.read_text(encoding="utf-8"))
     decision_counts = decisions.get("counts") or {}
-    if decision_counts.get("accept") != 1 or decision_counts.get("failed_retry") != 1:
+    if decision_counts.get("accept_manual") != 1 or decision_counts.get("failed_retry") != 1:
         raise AssertionError(f"Unexpected review decisions: {decisions}")
+    manual_item = next((item for item in decisions.get("items") or [] if item.get("source") == good.source), {})
+    if (manual_item.get("manual_review") or {}).get("human_score") != 95:
+        raise AssertionError(f"Expected manual review to propagate into decisions: {decisions}")
     if not any(item.get("decision") == "rerun_or_manual_review" for item in decisions.get("items") or []):
         raise AssertionError(f"Expected poor output to require rerun/manual review: {decisions}")
     summary_artifact = call_tool("read_artifact", {"path": str(output_dir / ".reports" / "summary.json")})
     if summary_artifact.get("artifact_type") != "summary_json" or not isinstance(summary_artifact.get("json"), list):
         raise AssertionError(f"Expected parsed summary_json artifact: {summary_artifact}")
+    summary_good = next((item for item in summary_artifact.get("json") or [] if item.get("source") == good.source), {})
+    if (summary_good.get("manual_review") or {}).get("human_status") != "accepted":
+        raise AssertionError(f"Expected manual review to propagate into summary.json: {summary_artifact}")
     decision_artifact = call_tool("read_artifact", {"path": str(decisions_path), "artifact_type": "review_decisions_json"})
     decision_payload = decision_artifact.get("json") or {}
     if decision_payload.get("schema_version") != "review-decisions-v1":
