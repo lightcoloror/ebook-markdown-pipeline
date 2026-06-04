@@ -733,19 +733,95 @@ def infer_heading_level(line: str, *, previous_blank: bool) -> int | None:
     return None
 
 
+def score_title_candidate(line: str, *, line_index: int, previous_blank: bool, next_blank: bool) -> tuple[float, list[str], int | None]:
+    normalized = line.strip()
+    signals: list[str] = []
+    level = infer_heading_level(normalized, previous_blank=previous_blank)
+    score = 0.0
+    if level:
+        score += 0.55
+        signals.append(f"heading_pattern_level_{level}")
+    if line_index <= 6:
+        score += 0.12
+        signals.append("near_page_top")
+    if previous_blank:
+        score += 0.08
+        signals.append("previous_blank")
+    if next_blank:
+        score += 0.08
+        signals.append("next_blank")
+    if 2 <= len(normalized) <= 32 and not re.search(r"[。！？.!?，,；;：:]$", normalized):
+        score += 0.18
+        signals.append("short_title_like_line")
+    if re.search(r"^(序|前言|目录|后记|附录|致谢|引言|绪论)$", normalized, re.I):
+        score += 0.25
+        signals.append("front_matter_title")
+        level = level or 2
+    if re.search(r"^(chapter|section|part)\b", normalized, re.I):
+        score += 0.18
+        signals.append("english_heading_keyword")
+        level = level or 2
+    if re.match(r"^\d+(?:\.\d+){0,3}\s+.+", normalized):
+        score += 0.2
+        signals.append("numbered_heading")
+        level = level or infer_heading_level(normalized, previous_blank=True)
+    if re.search(r"^[\-•·*]\s+", normalized):
+        score -= 0.35
+        signals.append("list_item_penalty")
+    if len(normalized) > 48:
+        score -= 0.3
+        signals.append("too_long_penalty")
+    if re.search(r"[。！？.!?]$", normalized):
+        score -= 0.25
+        signals.append("sentence_ending_penalty")
+    return max(0.0, min(score, 1.0)), signals, level
+
+
+def detect_title_candidate_details(text: str, *, limit: int = 6) -> list[dict]:
+    normalized_lines = [line.strip() for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    details = []
+    for index, line in enumerate(normalized_lines):
+        if not line:
+            continue
+        previous_blank = index == 0 or not normalized_lines[index - 1]
+        next_blank = index == len(normalized_lines) - 1 or not normalized_lines[index + 1]
+        score, signals, level = score_title_candidate(
+            line,
+            line_index=index,
+            previous_blank=previous_blank,
+            next_blank=next_blank,
+        )
+        if score < 0.42:
+            continue
+        details.append(
+            {
+                "title": line,
+                "level": level or 3,
+                "confidence": round(score, 3),
+                "signals": signals,
+                "line_index": index,
+            }
+        )
+    details.sort(key=lambda item: (-float(item["confidence"]), int(item["line_index"])))
+    return details[:limit]
+
+
 def build_structure_outline(pages: list[ScreenshotPage]) -> dict:
     items = []
     for page in pages:
-        titles = page.title_candidates or detect_title_candidates(page.text)
-        for title in titles:
-            level = infer_heading_level(title, previous_blank=True) or 3
+        details = title_details_for_page(page)
+        for detail in details:
+            title = str(detail.get("title") or "")
             items.append(
                 {
                     "order_index": page.order_index,
                     "source": page.source,
                     "page_number": page.page_number,
-                    "level": level,
+                    "level": int(detail.get("level") or 3),
                     "title": title,
+                    "confidence": detail.get("confidence"),
+                    "signals": detail.get("signals") or [],
+                    "line_index": detail.get("line_index"),
                     "order_confidence": round(page.order_confidence, 3),
                     "order_reason": page.order_reason,
                 }
@@ -756,6 +832,23 @@ def build_structure_outline(pages: list[ScreenshotPage]) -> dict:
         "page_count": len(pages),
         "items": items,
     }
+
+
+def title_details_for_page(page: ScreenshotPage) -> list[dict]:
+    details = detect_title_candidate_details(page.text)
+    if details:
+        return details
+    fallback = page.title_candidates or detect_title_candidates(page.text)
+    return [
+        {
+            "title": title,
+            "level": infer_heading_level(title, previous_blank=True) or 3,
+            "confidence": 0.5,
+            "signals": ["legacy_title_candidate"],
+            "line_index": None,
+        }
+        for title in fallback
+    ]
 
 
 def render_structure_markdown(payload: dict) -> str:
@@ -777,11 +870,17 @@ def render_structure_markdown(payload: dict) -> str:
         source = item.get("source") or ""
         confidence = item.get("order_confidence")
         reason = item.get("order_reason") or ""
+        title_confidence = item.get("confidence")
+        signals = ", ".join(str(value) for value in item.get("signals") or [])
         lines.append(f"{prefix} {item.get('title')}")
         lines.append("")
         lines.append(f"- Source: `{source}`")
         if page:
             lines.append(f"- Page number: {page}")
+        if title_confidence is not None:
+            lines.append(f"- Title confidence: {title_confidence}")
+        if signals:
+            lines.append(f"- Title signals: {signals}")
         lines.append(f"- Order confidence: {confidence}")
         lines.append(f"- Order reason: {reason}")
         lines.append("")
@@ -859,14 +958,7 @@ def write_pages_jsonl(path: Path, pages: Iterable[ScreenshotPage]) -> None:
 
 
 def detect_title_candidates(text: str) -> list[str]:
-    candidates = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if infer_heading_level(stripped, previous_blank=True):
-            candidates.append(stripped)
-        if len(candidates) >= 5:
-            break
-    return candidates
+    return [str(item["title"]) for item in detect_title_candidate_details(text, limit=5)]
 
 
 def extract_page_number(text: str, *, filename_number: int | None = None) -> int | None:

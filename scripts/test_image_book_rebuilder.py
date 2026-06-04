@@ -8,6 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from ebook_markdown_pipeline.image_book_rebuilder import (  # noqa: E402
     ScreenshotPage,
+    build_structure_outline,
+    detect_title_candidate_details,
     extract_page_number,
     infer_page_order,
     mark_duplicates,
@@ -58,6 +60,14 @@ def main() -> int:
     markdown = text_to_markdown("第一章 开始\n\n1.1 小节\n正文")
     if "## 第一章 开始" not in markdown or "### 1.1 小节" not in markdown:
         raise RuntimeError(f"Expected heading promotion: {markdown}")
+    title_details = detect_title_candidate_details("前言\n\n这是正文。\n\n2.1 关键原则\n继续说明")
+    detail_titles = {item["title"] for item in title_details}
+    if "前言" not in detail_titles or "2.1 关键原则" not in detail_titles:
+        raise RuntimeError(f"Expected scored title candidates: {title_details}")
+    outline = build_structure_outline([make_page("title.png", "前言\n\n这是正文。\n\n2.1 关键原则\n继续说明", 1)])
+    outline_items = outline.get("items") or []
+    if not outline_items or "confidence" not in outline_items[0] or not outline_items[0].get("signals"):
+        raise RuntimeError(f"Expected structure outline evidence: {outline}")
     if extract_page_number("03/08", filename_number=3) != 3:
         raise RuntimeError("Expected slash page number extraction.")
     if extract_page_number("03108", filename_number=3) != 3:
@@ -157,7 +167,7 @@ def main() -> int:
         if manual["manual_order_count"] != 2 or manual["missing_source_count"] != 0:
             raise RuntimeError(f"Unexpected manual rebuild metadata: {manual}")
         structure_text = Path(manual["structure"]).read_text(encoding="utf-8")
-        if "第一章 开始" not in structure_text:
+        if "第一章 开始" not in structure_text or "Title confidence" not in structure_text:
             raise RuntimeError(f"Expected inferred structure outline to include title candidates: {structure_text}")
         manual_artifacts = {item["type"] for item in manual.get("artifacts", [])}
         if not {"markdown", "order_report", "structure_report", "structure_json", "review_report"}.issubset(manual_artifacts):
