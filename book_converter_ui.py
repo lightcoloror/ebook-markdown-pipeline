@@ -273,12 +273,14 @@ class BookConverterUI:
             buttons.columnconfigure(column, weight=0)
         self.scan_button = ttk.Button(buttons, text="扫描 / Scan", command=self.scan)
         self.health_button = ttk.Button(buttons, text="检查环境 / Health", command=self.health_check)
+        self.cleanup_button = ttk.Button(buttons, text="清理残留 / Cleanup", command=self.cleanup_mineru_processes)
         self.start_button = ttk.Button(buttons, text="开始 / Start", command=self.start_convert)
         self.location_button = ttk.Button(buttons, text="定位索引 / Location Index", command=self.start_location_index)
         self.image_book_button = ttk.Button(buttons, text="截图成书 / Image Book", command=self.start_image_book_rebuild)
         toolbar_items = [
             self.scan_button,
             self.health_button,
+            self.cleanup_button,
             ttk.Button(buttons, text="导出环境 / Env Export", command=self.export_environment_report_ui),
             ttk.Button(buttons, text="对比环境 / Env Compare", command=self.compare_environment_lock_ui),
             self.start_button,
@@ -834,8 +836,60 @@ class BookConverterUI:
             self.status_var.set("启动自检发现风险 / Startup health risks")
             self.current_stage_var.set("详见日志 / See log")
             self.write_log("  建议 / Action: PDF 批量任务优先用 auto 或 PyMuPDF4LLM；MinerU 失败会自动降级。")
+            if any(item.get("name") == "MinerU residual processes" and item.get("status") == "warning" for item in stall_checks):
+                self.write_log("  建议 / Action: 如无正在运行的转换任务，可点击“清理残留 / Cleanup”。")
         else:
             self.write_log("  - [ok] 未发现明显 PDF 卡顿风险 / No obvious PDF stall risk detected.")
+
+    def cleanup_mineru_processes(self) -> None:
+        if self.worker and self.worker.is_alive():
+            messagebox.showinfo("忙碌 / Busy", "已有任务正在运行，暂不清理进程。/ A task is running; cleanup is disabled.")
+            return
+        if os.name != "nt":
+            messagebox.showinfo("不支持 / Unsupported", "当前只实现了 Windows MinerU 残留清理。/ Cleanup is implemented for Windows only.")
+            return
+        if not messagebox.askyesno(
+            "清理 MinerU 残留 / Cleanup MinerU",
+            "将终止路径包含 mineru 的 python/pythonw/mineru 进程。\n"
+            "如果你确认没有正在跑 MinerU 转换，可以继续。\n\n"
+            "Stop python/pythonw/mineru processes whose path contains mineru?",
+            parent=self.root,
+        ):
+            return
+        command = (
+            "$targets = Get-Process python,pythonw,mineru -ErrorAction SilentlyContinue | "
+            "Where-Object { $_.Path -like '*mineru*' }; "
+            "$items = @($targets | Select-Object Id,ProcessName,CPU,Path); "
+            "$count = $items.Count; "
+            "$targets | Stop-Process -Force -ErrorAction SilentlyContinue; "
+            "[pscustomobject]@{ stopped = $count; items = $items } | ConvertTo-Json -Depth 4 -Compress"
+        )
+        try:
+            completed = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", command],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=8,
+                check=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("清理失败 / Cleanup failed", str(exc), parent=self.root)
+            return
+        output = (completed.stdout or "").strip()
+        self.write_log(f"清理 MinerU 残留 / Cleanup MinerU residuals: {output or completed.returncode}")
+        if completed.returncode != 0:
+            messagebox.showerror("清理失败 / Cleanup failed", output or f"exit {completed.returncode}", parent=self.root)
+            return
+        try:
+            stopped = int((json.loads(output) or {}).get("stopped") or 0)
+        except Exception:
+            stopped = 0
+        self.status_var.set(f"已清理 MinerU 残留 / Cleaned {stopped}")
+        messagebox.showinfo("清理完成 / Cleanup finished", f"已终止 {stopped} 个 MinerU 残留进程。/ Stopped {stopped} process(es).", parent=self.root)
+        self.startup_health_check_async()
 
     def export_environment_report_ui(self) -> None:
         if self.worker and self.worker.is_alive():
@@ -2442,6 +2496,7 @@ class BookConverterUI:
         state = "disabled" if is_running else "normal"
         self.scan_button.configure(state=state)
         self.health_button.configure(state=state)
+        self.cleanup_button.configure(state=state)
         self.start_button.configure(state=state)
         self.location_button.configure(state=state)
         self.image_book_button.configure(state=state)

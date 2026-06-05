@@ -36,6 +36,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\book_converter_ui.py
 - 自定义 `pandoc`、`ebook-convert`、`marker_single` 路径
 - 一键检查当前选择需要的转换环境，包括 Pandoc、Calibre、MinerU、MinerU 模型缓存、PyMuPDF4LLM、Umi-OCR 和 CUDA
 - UI 启动后会自动做轻量自检，检查页面文件/提交内存、GPU 显存、torch/CUDA、MinerU 残留进程和关键依赖风险，并写入日志区
+- UI 提供 `清理残留 / Cleanup`，可在确认没有任务运行时终止 MinerU 相关残留进程
 - 批量转换并显示日志
 - 默认写入 `manifest.json` 和 `.reports/*.report.json`，方便失败后继续跑和排查每本书的耗时/管道/输出位置
 - report 会包含轻量 Markdown 质量评分，用来提示无标题、页码噪声、脚注密度、乱码、HTML 残留等风险
