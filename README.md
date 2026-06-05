@@ -29,6 +29,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\book_converter_ui.py
 
 - 自动识别输入文件格式
 - 支持把文件或文件夹直接拖放到窗口中
+- UI 主界面只保留常用流程按钮；复查、PDF 对比、环境导出、Agent 调用、定位索引等低频操作集中在 `高级 / Advanced` 窗口
 - 自动探测常见的 `pandoc`、`ebook-convert`、`marker_single` 安装路径
 - 电子书优先用 Pandoc；当 EPUB/FB2/ODT 的 Pandoc 输出质量较弱或失败时，会尝试 Calibre 预处理为 EPUB 后再转 Markdown，并在 report 中记录是否采用 fallback
 - 扫描文件夹并预览每个文件会走哪条转换流水线

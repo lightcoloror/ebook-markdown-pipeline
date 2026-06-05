@@ -119,6 +119,7 @@ class BookConverterUI:
         self.output_manually_selected = False
         self.history_records: list[dict] = []
         self.one_shot_output_name_suffix = ""
+        self.advanced_window: tk.Toplevel | None = None
 
         self.build_layout()
         self.load_ui_config()
@@ -275,44 +276,21 @@ class BookConverterUI:
         self.health_button = ttk.Button(buttons, text="检查环境 / Health", command=self.health_check)
         self.cleanup_button = ttk.Button(buttons, text="清理残留 / Cleanup", command=self.cleanup_mineru_processes)
         self.start_button = ttk.Button(buttons, text="开始 / Start", command=self.start_convert)
-        self.location_button = ttk.Button(buttons, text="定位索引 / Location Index", command=self.start_location_index)
-        self.image_book_button = ttk.Button(buttons, text="截图成书 / Image Book", command=self.start_image_book_rebuild)
+        self.advanced_button = ttk.Button(buttons, text="高级 / Advanced", command=self.open_advanced_tools)
         toolbar_items = [
             self.scan_button,
+            self.start_button,
             self.health_button,
             self.cleanup_button,
-            ttk.Button(buttons, text="导出环境 / Env Export", command=self.export_environment_report_ui),
-            ttk.Button(buttons, text="对比环境 / Env Compare", command=self.compare_environment_lock_ui),
-            self.start_button,
-            self.location_button,
-            self.image_book_button,
-            ttk.Button(buttons, text="加载历史 / History", command=self.load_history_batch),
-            ttk.Button(buttons, text="只载问题 / Problems", command=self.load_history_problems),
-            ttk.Button(buttons, text="PDF对比 / Compare", command=self.start_pdf_pipeline_compare),
-            ttk.Button(buttons, text="执行建议 / Do Action", command=self.execute_selected_suggestion),
-            ttk.Button(buttons, text="推荐重跑 / Rerun Rec", command=self.rerun_selected_recommended),
-            ttk.Button(buttons, text="重跑失败 / Retry Failed", command=self.retry_failed_items),
-            ttk.Button(buttons, text="复查清单 / Checklist", command=self.open_review_checklist),
-            ttk.Button(buttons, text="决策摘要 / Decisions", command=self.open_review_decisions),
-            ttk.Button(buttons, text="人工记录 / Manual", command=self.open_manual_review),
-            ttk.Button(buttons, text="标记验收 / Accept", command=self.mark_selected_review_accepted),
-            ttk.Button(buttons, text="人工评分 / Score", command=self.score_selected_review_item),
-            ttk.Checkbutton(buttons, text="只看复查 / Review only", variable=self.review_only_var, command=self.apply_review_filter),
-            ttk.Button(buttons, text="上一条 / Prev", command=lambda: self.select_relative_review_item(-1)),
-            ttk.Button(buttons, text="下一条 / Next", command=lambda: self.select_relative_review_item(1)),
             ttk.Button(buttons, text="选中输出 / Output", command=self.open_selected_output),
-            ttk.Button(buttons, text="原文件 / Source", command=self.open_selected_source),
             ttk.Button(buttons, text="选中报告 / Report", command=self.open_selected_report),
-            ttk.Button(buttons, text="打开Artifact / Artifact", command=self.open_latest_artifact),
-            ttk.Button(buttons, text="PDF日志 / PDF log", command=self.open_latest_pdf_log),
-            ttk.Button(buttons, text="复制失败 / Copy Fail", command=self.copy_selected_failure_reason),
-            ttk.Button(buttons, text="复制Agent调用 / Copy Agent", command=self.copy_agent_call),
             ttk.Button(buttons, text="清空日志 / Clear", command=self.clear_log),
+            self.advanced_button,
         ]
-        toolbar_rows = self.grid_toolbar_items(buttons, toolbar_items, columns=6)
+        toolbar_rows = self.grid_toolbar_items(buttons, toolbar_items, columns=8)
 
         status_row = ttk.Frame(buttons)
-        status_row.grid(row=toolbar_rows, column=0, columnspan=6, sticky="ew", pady=(6, 0))
+        status_row.grid(row=toolbar_rows, column=0, columnspan=8, sticky="ew", pady=(6, 0))
         status_row.columnconfigure(2, weight=1)
         self.progress = ttk.Progressbar(status_row, mode="determinate", length=220)
         self.progress.grid(row=0, column=0, sticky="w", padx=(0, 8))
@@ -336,6 +314,120 @@ class BookConverterUI:
             row, column = divmod(index, columns)
             widget.grid(row=row, column=column, sticky="w", padx=(0, 8), pady=(0, 4))
         return (len(widgets) + columns - 1) // columns
+
+    def open_advanced_tools(self) -> None:
+        if self.advanced_window is not None and self.advanced_window.winfo_exists():
+            self.advanced_window.lift()
+            self.advanced_window.focus_force()
+            return
+        window = tk.Toplevel(self.root)
+        self.advanced_window = window
+        window.title("高级工具 / Advanced Tools")
+        window.geometry("760x520")
+        window.minsize(680, 460)
+        window.transient(self.root)
+        window.protocol("WM_DELETE_WINDOW", self.close_advanced_tools)
+
+        container = ttk.Frame(window, padding=12)
+        container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=1)
+        container.columnconfigure(1, weight=1)
+
+        self.add_advanced_group(
+            container,
+            "复查与重跑 / Review And Retry",
+            0,
+            0,
+            [
+                ("执行建议 / Do Action", self.execute_selected_suggestion),
+                ("推荐重跑 / Rerun Rec", self.rerun_selected_recommended),
+                ("重跑失败 / Retry Failed", self.retry_failed_items),
+                ("复查清单 / Checklist", self.open_review_checklist),
+                ("决策摘要 / Decisions", self.open_review_decisions),
+                ("人工记录 / Manual", self.open_manual_review),
+                ("标记验收 / Accept", self.mark_selected_review_accepted),
+                ("人工评分 / Score", self.score_selected_review_item),
+                ("上一条 / Prev", lambda: self.select_relative_review_item(-1)),
+                ("下一条 / Next", lambda: self.select_relative_review_item(1)),
+            ],
+        )
+        self.add_advanced_group(
+            container,
+            "PDF 与 Artifact / PDF And Artifacts",
+            0,
+            1,
+            [
+                ("PDF对比 / Compare", self.start_pdf_pipeline_compare),
+                ("PDF日志 / PDF log", self.open_latest_pdf_log),
+                ("打开Artifact / Artifact", self.open_latest_artifact),
+                ("原文件 / Source", self.open_selected_source),
+                ("复制失败 / Copy Fail", self.copy_selected_failure_reason),
+            ],
+        )
+        self.add_advanced_group(
+            container,
+            "环境 / Environment",
+            1,
+            0,
+            [
+                ("导出环境 / Env Export", self.export_environment_report_ui),
+                ("对比环境 / Env Compare", self.compare_environment_lock_ui),
+                ("重新启动自检 / Startup Check", self.startup_health_check_async),
+            ],
+        )
+        self.add_advanced_group(
+            container,
+            "历史与 Agent / History And Agent",
+            1,
+            1,
+            [
+                ("加载历史 / History", self.load_history_batch),
+                ("只载问题 / Problems", self.load_history_problems),
+                ("复制Agent调用 / Copy Agent", self.copy_agent_call),
+            ],
+        )
+        self.add_advanced_group(
+            container,
+            "图文材料 / Image And Location",
+            2,
+            0,
+            [
+                ("定位索引 / Location Index", self.start_location_index),
+                ("截图成书 / Image Book", self.start_image_book_rebuild),
+            ],
+        )
+
+        filters = ttk.LabelFrame(container, text="显示过滤 / Filters", padding=8)
+        filters.grid(row=2, column=1, sticky="nsew", padx=(6, 0), pady=(8, 0))
+        ttk.Checkbutton(filters, text="只看复查 / Review only", variable=self.review_only_var, command=self.apply_review_filter).grid(
+            row=0, column=0, sticky="w", padx=(0, 8), pady=(0, 4)
+        )
+        ttk.Label(
+            filters,
+            text="提示：普通转换只需要主界面的“扫描”和“开始”。这里保留诊断、复查、Agent 调用等低频工具。",
+            wraplength=320,
+        ).grid(row=1, column=0, sticky="w")
+
+    def close_advanced_tools(self) -> None:
+        if self.advanced_window is not None and self.advanced_window.winfo_exists():
+            self.advanced_window.destroy()
+        self.advanced_window = None
+
+    def add_advanced_group(
+        self,
+        parent: ttk.Frame,
+        title: str,
+        row: int,
+        column: int,
+        actions: list[tuple[str, object]],
+    ) -> None:
+        frame = ttk.LabelFrame(parent, text=title, padding=8)
+        frame.grid(row=row, column=column, sticky="nsew", padx=(0 if column == 0 else 6, 6 if column == 0 else 0), pady=(0 if row == 0 else 8, 0))
+        frame.columnconfigure(0, weight=1)
+        frame.columnconfigure(1, weight=1)
+        for index, (text, command) in enumerate(actions):
+            button = ttk.Button(frame, text=text, command=command)
+            button.grid(row=index // 2, column=index % 2, sticky="ew", padx=(0, 6), pady=(0, 4))
 
     def pick_input_files(self) -> None:
         all_supported = SUPPORTED_FORMATS | IMAGE_EXTENSIONS
@@ -2498,8 +2590,6 @@ class BookConverterUI:
         self.health_button.configure(state=state)
         self.cleanup_button.configure(state=state)
         self.start_button.configure(state=state)
-        self.location_button.configure(state=state)
-        self.image_book_button.configure(state=state)
 
     def stage_progress_offset(self, stage: str) -> float:
         mapping = {
