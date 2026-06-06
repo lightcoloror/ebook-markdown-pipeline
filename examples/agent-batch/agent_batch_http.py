@@ -871,11 +871,13 @@ def summarize_artifacts(results: list[dict[str, Any]]) -> dict[str, Any]:
 def render_markdown(payload: dict[str, Any]) -> str:
     selection = payload.get("selection") or {}
     artifact_summary = payload.get("artifact_summary") or {}
+    contract_validation = payload.get("contract_validation") or {}
     lines = [
         "# Agent Batch Summary",
         "",
         f"- Created: {payload['created_at']}",
         f"- Manifest: `{payload['manifest']}`",
+        f"- Contract validation: {format_contract_validation(contract_validation)}",
         f"- Select: {selection.get('select', 'all')}",
         f"- Selected jobs: {selection.get('selected_count', len(payload.get('results') or []))}/{selection.get('manifest_job_count', len(payload.get('results') or []))}",
         f"- Status: {payload['summary']['status_counts']}",
@@ -900,11 +902,13 @@ def render_run_summary(payload: dict[str, Any]) -> str:
     summary = payload["summary"]
     selection = payload.get("selection") or {}
     artifact_summary = payload.get("artifact_summary") or {}
+    contract_validation = payload.get("contract_validation") or {}
     lines = [
         "# Run Summary",
         "",
         f"- Created: {payload['created_at']}",
         f"- Manifest: `{payload['manifest']}`",
+        f"- Contract validation: {format_contract_validation(contract_validation)}",
         f"- Select: {selection.get('select', 'all')}",
         f"- Rerun mode: {selection.get('rerun_mode', 'as-manifest')}",
         f"- Previous results: `{selection.get('previous_results', '')}`",
@@ -956,6 +960,16 @@ def summarize_batch_next_actions(actions: list[dict[str, Any]]) -> str:
     return ", ".join(names[:4])
 
 
+def format_contract_validation(validation: dict[str, Any]) -> str:
+    if not validation:
+        return "missing"
+    status = "ok" if validation.get("ok") else "failed"
+    errors = validation.get("errors") or []
+    if errors:
+        return f"{status} ({len(errors)} error(s))"
+    return status
+
+
 def first_rerun_command(actions: list[dict[str, Any]]) -> str:
     for action in actions:
         if action.get("action") == "rerun_failed_or_review" and action.get("powershell_command"):
@@ -984,11 +998,13 @@ def summarize_next_action(item: dict[str, Any]) -> str:
 
 def render_plan_markdown(payload: dict[str, Any]) -> str:
     selection = payload.get("selection") or {}
+    contract_validation = payload.get("contract_validation") or {}
     lines = [
         "# Agent Batch Plan",
         "",
         f"- Created: {payload['created_at']}",
         f"- Manifest: `{payload['manifest']}`",
+        f"- Contract validation: {format_contract_validation(contract_validation)}",
         f"- Valid: {payload['summary']['valid']}",
         f"- Jobs: {payload['summary']['jobs']}",
         f"- Errors: {payload['summary']['errors']}",

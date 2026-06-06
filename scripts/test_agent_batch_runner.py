@@ -100,8 +100,12 @@ def main() -> int:
             raise AssertionError(f"Expected handoff next actions in report payload: {report_payload}")
         if not (root / "reports" / "run_summary.md").exists():
             raise AssertionError(f"Expected run_summary.md to be written: {report_payload}")
-        if "Artifact read failures: 1" not in (root / "reports" / "run_summary.md").read_text(encoding="utf-8"):
+        run_summary_text = (root / "reports" / "run_summary.md").read_text(encoding="utf-8")
+        if "Artifact read failures: 1" not in run_summary_text or "Contract validation: ok" not in run_summary_text:
             raise AssertionError(f"Expected artifact read failures in run_summary.md: {report_payload}")
+        batch_summary_text = (root / "reports" / "agent-batch-summary.md").read_text(encoding="utf-8")
+        if "Contract validation: ok" not in batch_summary_text:
+            raise AssertionError(f"Expected contract validation in agent-batch-summary.md: {report_payload}")
 
         previous_payload = {
             "results": [
@@ -241,6 +245,8 @@ def main() -> int:
         if plan_payload.get("contract_validation", {}).get("ok") is not True:
             raise AssertionError(f"Expected self-validating batch plan contract: {plan_payload}")
         plan_text = (root / "plans" / "agent-batch-plan.md").read_text(encoding="utf-8")
+        if "Contract validation: ok" not in plan_text:
+            raise AssertionError(f"Expected contract validation in plan markdown: {plan_payload}")
         if plan_payload.get("selection", {}).get("selected_count") != 1 or "Selected jobs: 1/2: archive" not in plan_text:
             raise AssertionError(f"Expected selected job count in plan markdown: {plan_payload}")
 
