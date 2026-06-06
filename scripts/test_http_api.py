@@ -49,6 +49,11 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"Health response is missing capability flags: {health}")
     if "read_artifact" not in set(health.get("tools", [])):
         raise RuntimeError(f"Health response is missing tool names: {health}")
+    http_config = health.get("http_config") or {}
+    if not http_config.get("config_path") or not http_config.get("local_url") or not http_config.get("docker_url"):
+        raise RuntimeError(f"Health response is missing HTTP config: {health}")
+    if not isinstance(health.get("pipeline_capabilities"), dict) or health.get("risk_status") not in {"ok", "degraded", "missing_dependencies"}:
+        raise RuntimeError(f"Health response is missing capability/risk summary: {health}")
 
     tools = request_json(f"{url.rstrip('/')}/tools", headers=headers)
     tool_names = {item["name"] for item in tools.get("tools", [])}

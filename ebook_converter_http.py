@@ -20,7 +20,7 @@ from ebook_markdown_pipeline.ebook_converter_mcp import (  # noqa: E402
     tool_schemas,
 )
 from ebook_markdown_pipeline.artifact_schema import SCHEMA_VERSION  # noqa: E402
-from ebook_markdown_pipeline.http_config import load_http_config  # noqa: E402
+from ebook_markdown_pipeline.http_config import HttpConfig, load_http_config  # noqa: E402
 
 
 def main() -> int:
@@ -35,7 +35,7 @@ def main() -> int:
         print("Refusing non-local bind without --token or EBOOK_CONVERTER_API_TOKEN.", file=sys.stderr)
         return 2
 
-    handler = build_handler(args.token)
+    handler = build_handler(args.token, config=config, bind_host=args.host, bind_port=args.port)
     server = ThreadingHTTPServer((args.host, args.port), handler)
     print(f"{SERVER_NAME} HTTP bridge listening on http://{args.host}:{args.port}", flush=True)
     try:
@@ -47,8 +47,10 @@ def main() -> int:
     return 0
 
 
-def build_handler(token: str):
+def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: str | None = None, bind_port: int | None = None):
     started_at = time.time()
+    http_config = config or load_http_config()
+    capability_cache: dict[str, Any] = {"time": 0.0, "payload": None}
 
     class Handler(BaseHTTPRequestHandler):
         server_version = f"{SERVER_NAME}/{SERVER_VERSION}"
@@ -59,6 +61,7 @@ def build_handler(token: str):
                 return
             if self.path == "/health":
                 tools = tool_schemas()
+                capabilities = cached_capability_summary(capability_cache)
                 self.write_json(
                     {
                         "ok": True,
@@ -70,6 +73,19 @@ def build_handler(token: str):
                         "tools": [tool["name"] for tool in tools],
                         "supports_async_jobs": True,
                         "supports_artifacts": True,
+                        "http_config": {
+                            "scheme": http_config.scheme,
+                            "host": http_config.host,
+                            "port": http_config.port,
+                            "docker_host": http_config.docker_host,
+                            "local_url": http_config.local_url,
+                            "docker_url": http_config.docker_url,
+                            "config_path": str(http_config.source),
+                            "bind_host": bind_host or http_config.host,
+                            "bind_port": bind_port or http_config.port,
+                        },
+                        "pipeline_capabilities": capabilities,
+                        "risk_status": health_risk_status(capabilities),
                         "uptime_seconds": round(time.time() - started_at, 3),
                     }
                 )
@@ -158,6 +174,49 @@ def build_handler(token: str):
             print(f"{self.address_string()} - {format % args}", file=sys.stderr)
 
     return Handler
+
+
+def safe_capability_summary() -> dict[str, Any]:
+    try:
+        payload = call_tool("health_check", {})
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "error": True,
+            "message": str(exc),
+            "ready": [],
+            "degraded": [],
+            "missing": ["health_check"],
+            "capabilities": [],
+        }
+    return {
+        "ready": payload.get("ready_capabilities", []),
+        "degraded": payload.get("degraded_capabilities", []),
+        "missing": payload.get("missing_capabilities", []),
+        "capabilities": payload.get("capabilities", []),
+    }
+
+
+def cached_capability_summary(cache: dict[str, Any], *, ttl_seconds: float = 60.0) -> dict[str, Any]:
+    now_time = time.time()
+    cached = cache.get("payload")
+    if isinstance(cached, dict) and now_time - float(cache.get("time") or 0) < ttl_seconds:
+        return cached
+    payload = safe_capability_summary()
+    cache["time"] = now_time
+    cache["payload"] = payload
+    return payload
+
+
+def health_risk_status(capabilities: dict[str, Any]) -> str:
+    if capabilities.get("error"):
+        return "missing_dependencies"
+    missing = capabilities.get("missing") or []
+    degraded = capabilities.get("degraded") or []
+    if missing:
+        return "missing_dependencies"
+    if degraded:
+        return "degraded"
+    return "ok"
 
 
 if __name__ == "__main__":
