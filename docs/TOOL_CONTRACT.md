@@ -4,6 +4,8 @@ This document defines the stable calling contract for AI agents using this proje
 
 ## Stable Entry Points
 
+MCP-native agents can call `get_agent_contract` to retrieve the same stable calling contract in machine-readable form. The response uses `schema_version=ebook-agent-contract-v1` and includes preferred entrypoints, specialist tools, full tool schemas, artifact/error contract versions, and docs pointers.
+
 Preferred order:
 
 1. `process_material`

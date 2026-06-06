@@ -15,6 +15,8 @@ The long-term technical direction is documented in [TECHNICAL_DIRECTION.md](TECH
 
 The stable agent calling contract is documented in [TOOL_CONTRACT.md](TOOL_CONTRACT.md). Agents should prefer `process_material`, poll long jobs with `get_job_status`, and read outputs through `read_artifact`.
 
+MCP-native agents can call `get_agent_contract` first to retrieve `schema_version=ebook-agent-contract-v1`, preferred entrypoints, specialist tools, full tool schemas, artifact/error contract versions, and docs pointers without scraping this document.
+
 ## Recommended Integration
 
 Use MCP for OpenClaw, Hermes Agent, Codex, Claude Code, or other agents that support tool schemas.
@@ -148,6 +150,10 @@ powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipelin
 The smoke test generates tiny `TXT / FB2 / RTF / EPUB / ODT / AZW3 / MOBI / AZW / PDF` fixtures, starts the HTTP bridge temporarily, converts them through the API, and verifies that the OpenClaw and Hermes containers can call the bridge through `host.docker.internal`.
 
 ## MCP Tools
+
+### `get_agent_contract`
+
+One-shot discovery tool for MCP-native agents. It returns `schema_version=ebook-agent-contract-v1`, preferred entrypoints, specialist tools, full tool schemas, artifact/error contract versions, and docs pointers. Call it before choosing a tool when the agent has not seen this project before.
 
 ### `process_material`
 

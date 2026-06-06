@@ -23,6 +23,7 @@ from ebook_markdown_pipeline.ebook_converter_mcp import call_tool, conversion_qu
 
 
 REQUIRED_TOOLS = {
+    "get_agent_contract",
     "process_material",
     "process_web_archive",
     "get_job_status",

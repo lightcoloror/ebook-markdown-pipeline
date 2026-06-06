@@ -10,6 +10,8 @@ def main() -> int:
     required = {
         "docs/AGENT_INTEGRATION.md": [
             "--baseline-results",
+            "get_agent_contract",
+            "ebook-agent-contract-v1",
             "benchmark-quality-comparison.json/md",
             "top-level `next_actions`",
             "copyable recommended rerun command",
@@ -41,6 +43,8 @@ def main() -> int:
         ],
         "docs/TOOL_CONTRACT.md": [
             "Batch Quality Baselines",
+            "get_agent_contract",
+            "ebook-agent-contract-v1",
             "ebook-http-contract-v1",
             "artifact_schema_version",
             "--baseline-results",
@@ -98,6 +102,7 @@ def main() -> int:
             "inspect_agent_batch_results",
             "list_agent_batch_results",
             "build_agent_handoff_bundle",
+            "get_agent_contract",
             "cli_agent_batch_handoff.py",
             "http_agent_batch_handoff.py",
             "完整 agent contract",

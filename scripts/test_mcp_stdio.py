@@ -43,6 +43,7 @@ def main() -> int:
             tools = call(proc, 2, "tools/list")
             tool_names = {item["name"] for item in tools["result"]["tools"]}
             required_tools = {
+                "get_agent_contract",
                 "scan_books",
                 "health_check",
                 "inspect_document",
@@ -67,6 +68,15 @@ def main() -> int:
             missing = sorted(required_tools - tool_names)
             if missing:
                 raise RuntimeError(f"Missing MCP tools: {missing}")
+
+            contract = call_tool(proc, 21, "get_agent_contract", {})
+            if contract.get("schema_version") != "ebook-agent-contract-v1" or contract.get("transport") != "mcp-stdio":
+                raise RuntimeError(f"MCP agent contract failed: {contract}")
+            if contract.get("entrypoints")[:3] != ["process_material", "get_job_status", "read_artifact"]:
+                raise RuntimeError(f"MCP agent contract entrypoints failed: {contract}")
+            contract_tool_names = {item.get("name") for item in contract.get("tools") or []}
+            if not {"process_material", "read_artifact", "build_agent_handoff_bundle"}.issubset(contract_tool_names):
+                raise RuntimeError(f"MCP agent contract missing tool schemas: {contract}")
 
             scan = call_tool(
                 proc,

@@ -92,6 +92,7 @@ MCP 配置示例：
 
 MCP 工具包括：
 
+- `get_agent_contract`：返回稳定 agent 调用契约、首选入口、完整工具 schema、artifact/error schema 和文档路径。
 - `process_material`：高层路由入口，自动识别输入并启动合适的异步任务。
 - `scan_books`：扫描输入并返回每本书的转换计划。
 - `health_check`：检查 Pandoc、Calibre、MinerU、Marker、Umi-OCR、PyMuPDF4LLM、CUDA 和模型缓存。

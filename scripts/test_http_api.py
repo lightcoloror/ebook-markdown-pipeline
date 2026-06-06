@@ -48,7 +48,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     if not health.get("supports_async_jobs") or not health.get("supports_artifacts"):
         raise RuntimeError(f"Health response is missing capability flags: {health}")
     health_tool_names = set(health.get("tools", []))
-    if not {"read_artifact", "inspect_agent_batch_results", "list_agent_batch_results", "build_agent_handoff_bundle"}.issubset(health_tool_names):
+    if not {"get_agent_contract", "read_artifact", "inspect_agent_batch_results", "list_agent_batch_results", "build_agent_handoff_bundle"}.issubset(health_tool_names):
         raise RuntimeError(f"Health response is missing tool names: {health}")
     http_config = health.get("http_config") or {}
     if not http_config.get("config_path") or not http_config.get("local_url") or not http_config.get("docker_url"):
@@ -66,7 +66,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     if contract.get("tool_count", 0) < 10 or not isinstance(contract.get("tools"), list):
         raise RuntimeError(f"HTTP contract missing tool schemas: {contract}")
     contract_tool_names = {item.get("name") for item in contract.get("tools") or []}
-    if not {"process_material", "read_artifact", "build_agent_handoff_bundle"}.issubset(contract_tool_names):
+    if not {"get_agent_contract", "process_material", "read_artifact", "build_agent_handoff_bundle"}.issubset(contract_tool_names):
         raise RuntimeError(f"HTTP contract missing key tools: {contract}")
     docs = contract.get("docs") or {}
     if not docs.get("tool_contract") or not docs.get("agent_integration"):
@@ -78,6 +78,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     tools = request_json(f"{url.rstrip('/')}/tools", headers=headers)
     tool_names = {item["name"] for item in tools.get("tools", [])}
     required = {
+        "get_agent_contract",
         "scan_books",
         "inspect_document",
         "process_material",
@@ -151,7 +152,7 @@ def start_local_server(token: str) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer(("127.0.0.1", 0), build_handler(token))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    url = f"http://127.0.0.1:{server.server_port}/health"
+    url = f"http://127.0.0.1:{server.server_port}/contract"
     deadline = time.time() + 10
     while time.time() < deadline:
         try:
@@ -161,7 +162,7 @@ def start_local_server(token: str) -> ThreadingHTTPServer:
             time.sleep(0.1)
     server.shutdown()
     server.server_close()
-    raise RuntimeError("In-process HTTP server did not become healthy.")
+    raise RuntimeError("In-process HTTP server did not expose /contract in time.")
 
 
 def request_json(

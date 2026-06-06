@@ -208,6 +208,14 @@ def write_json(payload: dict[str, Any]) -> None:
 def tool_schemas() -> list[dict[str, Any]]:
     return [
         {
+            "name": "get_agent_contract",
+            "description": "Return the stable agent calling contract, preferred entrypoints, tool schemas, artifact schema, and docs pointers.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+        {
             "name": "scan_books",
             "description": "Scan ebook/PDF inputs and return planned conversion pipelines.",
             "inputSchema": {
@@ -546,6 +554,8 @@ def tool_schemas() -> list[dict[str, Any]]:
 
 
 def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    if name == "get_agent_contract":
+        return agent_contract_payload()
     if name == "scan_books":
         return scan_books(arguments)
     if name == "health_check":
@@ -591,6 +601,44 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     if name == "rebuild_image_book_from_order":
         return rebuild_image_book_from_order_tool(arguments)
     raise ValueError(f"Unknown tool: {name}")
+
+
+def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
+    tools = tool_schemas()
+    project_dir = Path(__file__).resolve().parent
+    return {
+        "schema_version": "ebook-agent-contract-v1",
+        "server": SERVER_NAME,
+        "version": SERVER_VERSION,
+        "transport": transport,
+        "protocol_version": PROTOCOL_VERSION if transport == "mcp-stdio" else "",
+        "artifact_schema_version": "artifact-schema-v1",
+        "entrypoints": ["process_material", "get_job_status", "read_artifact"],
+        "specialist_tools": [
+            "health_check",
+            "inspect_document",
+            "scan_books",
+            "inspect_agent_batch_results",
+            "list_agent_batch_results",
+            "build_agent_handoff_bundle",
+        ],
+        "supports_async_jobs": True,
+        "supports_artifacts": True,
+        "tool_count": len(tools),
+        "tools": tools,
+        "docs": {
+            "tool_contract": str(project_dir / "docs" / "TOOL_CONTRACT.md"),
+            "agent_integration": str(project_dir / "docs" / "AGENT_INTEGRATION.md"),
+            "agent_call_examples": str(project_dir / "examples" / "agent-calls" / "README.md"),
+        },
+        "error_contract": {
+            "ok": False,
+            "error": True,
+            "code": "invalid_request",
+            "retryable": False,
+            "schema_version": "artifact-schema-v1",
+        },
+    }
 
 
 def options_from_arguments(arguments: dict[str, Any]) -> argparse.Namespace:
