@@ -40,6 +40,8 @@ def main() -> int:
             raise AssertionError(f"Expected review bundle to need attention: {bundle}")
         if bundle.get("handoff_status") != "needs_review" or bundle.get("recommended_next_action", {}).get("action") != "inspect_review_items":
             raise AssertionError(f"Expected review bundle status and recommendation: {bundle}")
+        if bundle.get("recommended_next_action", {}).get("review_jobs") != 1:
+            raise AssertionError(f"Expected executable review recommendation details: {bundle}")
         if bundle.get("contract_validation", {}).get("ok") is not True:
             raise AssertionError(f"Expected valid contract in handoff bundle: {bundle}")
         if not bundle.get("next_actions") or not bundle.get("review_items"):

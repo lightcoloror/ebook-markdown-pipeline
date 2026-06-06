@@ -1396,52 +1396,58 @@ def classify_agent_handoff_bundle(bundle: dict[str, Any]) -> tuple[str, dict[str
     if validation.get("ok") is not True:
         return (
             "contract_failed",
-            {
-                "action": "inspect_contract_validation",
-                "reason": "The source batch contract did not validate; inspect errors before trusting handoff fields.",
-            },
+            recommended_bundle_action(
+                bundle,
+                "inspect_contract_validation",
+                "The source batch contract did not validate; inspect errors before trusting handoff fields.",
+            ),
         )
     attention = bundle.get("attention") or {}
     reasons = list(attention.get("reasons") or [])
     if "hard_failed_jobs" in reasons:
         return (
             "needs_recovery",
-            {
-                "action": "rerun_failed_or_review",
-                "reason": "The batch has hard-failed jobs; rerun failed/review items before accepting the handoff.",
-            },
+            recommended_bundle_action(
+                bundle,
+                "rerun_failed_or_review",
+                "The batch has hard-failed jobs; rerun failed/review items before accepting the handoff.",
+            ),
         )
     if "artifact_read_failures" in reasons:
         return (
             "needs_artifact_review",
-            {
-                "action": "inspect_failed_artifacts",
-                "reason": "Some referenced artifacts were unreadable; inspect failed artifacts before accepting the handoff.",
-            },
+            recommended_bundle_action(
+                bundle,
+                "inspect_failed_artifacts",
+                "Some referenced artifacts were unreadable; inspect failed artifacts before accepting the handoff.",
+            ),
         )
     if "quality_regression" in reasons:
         return (
             "needs_quality_compare",
-            {
-                "action": "read_quality_comparison",
-                "reason": "Quality comparison reports a regression; inspect it before accepting the handoff.",
-            },
+            recommended_bundle_action(
+                bundle,
+                "read_quality_comparison",
+                "Quality comparison reports a regression; inspect it before accepting the handoff.",
+            ),
         )
     if "review_jobs" in reasons:
         return (
             "needs_review",
-            {
-                "action": "inspect_review_items",
-                "reason": "Some jobs completed with review signals; inspect review items before accepting outputs.",
-            },
+            recommended_bundle_action(
+                bundle,
+                "inspect_review_items",
+                "Some jobs completed with review signals; inspect review items before accepting outputs.",
+            ),
         )
     if attention.get("needs_attention"):
         return (
             "needs_attention",
-            {
-                "action": "inspect_agent_batch_results",
-                "reason": "The batch needs attention; inspect the batch results before accepting the handoff.",
-            },
+            recommended_bundle_action(
+                bundle,
+                "inspect_agent_batch_results",
+                "The batch needs attention; inspect the batch results before accepting the handoff.",
+            ),
         )
     return (
         "ready",
@@ -1450,6 +1456,17 @@ def classify_agent_handoff_bundle(bundle: dict[str, Any]) -> tuple[str, dict[str
             "reason": "Contract validation passed and no attention signals were detected.",
         },
     )
+
+
+def recommended_bundle_action(bundle: dict[str, Any], action_name: str, reason: str) -> dict[str, Any]:
+    for action in bundle.get("next_actions") or []:
+        if not isinstance(action, dict):
+            continue
+        if action.get("action") == action_name:
+            recommended = dict(action)
+            recommended.setdefault("reason", reason)
+            return recommended
+    return {"action": action_name, "reason": reason}
 
 
 def validate_agent_batch_contract_payload(payload: dict[str, Any], path: Path | None = None) -> dict[str, Any]:

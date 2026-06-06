@@ -202,6 +202,9 @@ def assert_agent_handoff_bundle_tool(tmpdir: Path) -> None:
         raise AssertionError(f"Expected valid handoff bundle payload: {generated}")
     if bundle.get("handoff_status") != "needs_quality_compare" or bundle.get("recommended_next_action", {}).get("action") != "read_quality_comparison":
         raise AssertionError(f"Expected machine-readable handoff status and recommendation: {generated}")
+    recommended = bundle.get("recommended_next_action") or {}
+    if recommended.get("tool") != "read_artifact" or (recommended.get("arguments") or {}).get("artifact_type") != "markdown":
+        raise AssertionError(f"Expected executable recommended handoff action: {generated}")
     artifact_types = {item.get("type") for item in generated.get("artifacts") or []}
     if not {"agent_handoff_bundle_json", "agent_handoff_bundle_markdown"}.issubset(artifact_types):
         raise AssertionError(f"Expected handoff bundle artifacts: {generated}")
