@@ -2350,6 +2350,7 @@ def clean_umi_ocr_markdown(text: str) -> str:
     """Keep page boundaries without treating every page as a document heading."""
     lines = text.split("\n")
     cleaned: list[str] = []
+    repeated_edge_noise = repeated_ocr_edge_noise_keys(lines)
     pending_page = False
     promoted_on_page = False
     for idx, line in enumerate(lines):
@@ -2368,6 +2369,9 @@ def clean_umi_ocr_markdown(text: str) -> str:
         if pending_page and is_umi_ocr_noise_header(stripped):
             cleaned.append(line)
             continue
+        if pending_page and normalize_repeated_noise_key(stripped) in repeated_edge_noise:
+            cleaned.append(line)
+            continue
         if (
             pending_page
             and not promoted_on_page
@@ -2381,9 +2385,77 @@ def clean_umi_ocr_markdown(text: str) -> str:
             pending_page = False
         cleaned.append(line)
     text = "\n".join(cleaned)
+    text = remove_umi_ocr_page_edge_numbers(text)
     text = remove_repeated_ocr_noise_lines(text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip() + "\n"
+
+
+def repeated_ocr_edge_noise_keys(lines: list[str]) -> set[str]:
+    page_markers = [idx for idx, line in enumerate(lines) if re.match(r"^<!--\s*Page\s+\d+\s*-->\s*$", line.strip(), re.I)]
+    if len(page_markers) < 4:
+        return set()
+    counts: dict[str, int] = {}
+    for marker_pos, start in enumerate(page_markers):
+        end = page_markers[marker_pos + 1] if marker_pos + 1 < len(page_markers) else len(lines)
+        content = [
+            lines[idx].strip()
+            for idx in range(start + 1, end)
+            if lines[idx].strip() and not lines[idx].strip().startswith("<!--")
+        ]
+        for line in content[:2] + content[-2:]:
+            key = normalize_repeated_noise_key(line)
+            if key:
+                counts[key] = counts.get(key, 0) + 1
+    return {key for key, count in counts.items() if count >= 4 and len(key) <= 24}
+
+
+def remove_umi_ocr_page_edge_numbers(text: str) -> str:
+    """Hide isolated page-number lines at OCR page edges.
+
+    Umi-OCR sees printed page numbers as ordinary text. Keeping the explicit
+    `<!-- Page N -->` marker is useful for traceability, but standalone printed
+    page numbers near the top/bottom of each page usually hurt Markdown quality.
+    """
+    lines = text.split("\n")
+    page_markers = [idx for idx, line in enumerate(lines) if re.match(r"^<!--\s*Page\s+\d+\s*-->\s*$", line.strip(), re.I)]
+    if not page_markers:
+        return text
+    total_pages = len(page_markers)
+    remove_indexes: set[int] = set()
+    for marker_pos, start in enumerate(page_markers):
+        end = page_markers[marker_pos + 1] if marker_pos + 1 < total_pages else len(lines)
+        content_indexes = [
+            idx
+            for idx in range(start + 1, end)
+            if lines[idx].strip() and not lines[idx].strip().startswith("<!--")
+        ]
+        edge_indexes = set(content_indexes[:2] + content_indexes[-2:])
+        for idx in edge_indexes:
+            if is_umi_ocr_page_number_line(lines[idx].strip(), total_pages):
+                remove_indexes.add(idx)
+    if not remove_indexes:
+        return text
+    cleaned = []
+    for idx, line in enumerate(lines):
+        if idx in remove_indexes:
+            cleaned.append(f"<!-- removed OCR page number: {line.strip()} -->")
+        else:
+            cleaned.append(line)
+    return "\n".join(cleaned)
+
+
+def is_umi_ocr_page_number_line(line: str, total_pages: int) -> bool:
+    stripped = re.sub(r"\s+", "", line.strip())
+    if not stripped:
+        return False
+    match = re.match(r"^[\-—–_·•]*(?:第)?(\d{1,4})(?:页)?(?:/\d{1,4})?[\-—–_·•]*$", stripped, re.I)
+    if not match:
+        return False
+    number = int(match.group(1))
+    if len(match.group(1)) >= 4 and number > total_pages + 20:
+        return False
+    return True
 
 
 def remove_repeated_ocr_noise_lines(text: str) -> str:
@@ -2428,11 +2500,20 @@ def normalize_repeated_noise_key(line: str) -> str:
         return ""
     if re.match(r"^\d{1,4}$", stripped):
         return ""
+    stripped = strip_variable_page_number_from_noise_key(stripped)
+    if not stripped:
+        return ""
     if len(stripped) > 24:
         return ""
     if re.search(r"[。！？!?；;：:，,、]$", stripped):
         return ""
     return stripped
+
+
+def strip_variable_page_number_from_noise_key(value: str) -> str:
+    value = re.sub(r"^[\-—–_·•]*(?:第)?\d{1,4}(?:页)?(?:/\d{1,4})?[\-—–_·•]+", "", value)
+    value = re.sub(r"[\-—–_·•]+(?:第)?\d{1,4}(?:页)?(?:/\d{1,4})?[\-—–_·•]*$", "", value)
+    return value.strip("-—–_·•")
 
 
 def next_nonempty_line(lines: list[str], start: int) -> str:

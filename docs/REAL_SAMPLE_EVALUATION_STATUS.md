@@ -184,6 +184,8 @@ Umi-OCR Markdown post-processing now keeps page boundaries as HTML comments inst
 
 The desktop UI now exposes page-range PDF comparison through the `对比页码 / Pages` field next to the compare timeout. When populated with values such as `1-3,100,600-602`, `PDF对比 / Compare` passes `--page-ranges` to `compare_pipelines.py`; the value is saved in the UI config and restored on restart.
 
+Umi-OCR cleanup now also hides isolated printed page-number lines at OCR page edges and removes repeated short running headers/footers before they can be promoted into Markdown headings. This specifically targets the remaining repeated page header/footer and page-number noise observed in long scanned/layered PDF samples.
+
 ## Latest Agent HTTP Stress Verification
 
 Fast run directory: `benchmarks/runs/agent-http-fast`
