@@ -206,7 +206,11 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\run_benchmarks.py `
   --manifest D:\used-by-codex\ebook_markdown_pipeline\benchmarks\samples.local.json `
   --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\latest `
   --sample-timeout 600 `
-  --pdf-mode-for-benchmark fast
+  --pdf-mode-for-benchmark fast `
+  --min-success-rate 0.95 `
+  --max-timeout-rate 0.05 `
+  --max-failed-rate 0 `
+  --fail-on-quality-gate
 ```
 
 输出目录会包含：
@@ -216,6 +220,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\run_benchmarks.py `
 - `benchmark-summary.md`：人工快速浏览的样本状态、质量和失败原因。
 - `benchmark-summary.partial.md`：中断前可读的阶段性摘要。
 - `docling-decision.md`：根据真实样本自动给出 Docling 是否默认启用的建议；在样本不足、依赖缺失或成功率偏低时会保持 Docling 为可选后端。
+- `quality-regression-summary.md/json`：汇总成功率、标题数量、页码标题比例、噪声行、fallback 次数和可选质量 gate。传入 `--fail-on-quality-gate` 后，任何配置的 gate 失败都会让命令以非 0 退出，适合 agent 批处理或 CI。
 
 `--sample-timeout` 可以避免单个坏文件、慢 OCR 或模型收尾卡住拖死整批评测；超时样本会记录为 `timeout` 并继续处理后续样本。Windows 下会用进程树终止，避免 MinerU/Marker 等子进程留下孤儿进程。
 

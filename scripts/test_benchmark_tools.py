@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import importlib.util
+import argparse
 import subprocess
 import sys
 import tempfile
@@ -15,6 +17,9 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR.parent))
 
 from ebook_markdown_pipeline.ebook_converter_http import build_handler
+
+
+RUN_BENCHMARKS_PATH = PROJECT_DIR / "scripts" / "run_benchmarks.py"
 
 
 def main() -> int:
@@ -47,11 +52,15 @@ def main() -> int:
             "--limit",
             "1",
             "--overwrite",
-            "--skip-heavy",
             "--sample-timeout",
             "20",
             "--pdf-mode-for-benchmark",
             "fast",
+            "--min-success-rate",
+            "0.5",
+            "--max-timeout-rate",
+            "0.5",
+            "--fail-on-quality-gate",
         )
         if (
             not (run_dir / "benchmark-results.json").exists()
@@ -65,9 +74,27 @@ def main() -> int:
         run_payload = json.loads((run_dir / "benchmark-results.json").read_text(encoding="utf-8"))
         if run_payload.get("pdf_mode_for_benchmark") != "fast":
             raise RuntimeError(f"Expected benchmark PDF mode in report: {run_payload}")
+        gates = (run_payload.get("summary") or {}).get("quality_gates") or {}
+        if gates.get("status") != "passed" or not gates.get("checks"):
+            raise RuntimeError(f"Expected passing benchmark quality gates: {run_payload}")
         quality_payload = json.loads((run_dir / "quality-regression-summary.json").read_text(encoding="utf-8"))
         if quality_payload.get("schema_version") != "quality-regression-summary-v1":
             raise RuntimeError(f"Expected quality regression summary: {quality_payload}")
+        if quality_payload.get("quality_gates", {}).get("status") != "passed":
+            raise RuntimeError(f"Expected quality gates in regression summary: {quality_payload}")
+        benchmark_module = load_run_benchmarks()
+        failed_gate = benchmark_module.evaluate_quality_gates(
+            [{"status": "failed", "metrics": {"level": "poor"}}],
+            argparse.Namespace(
+                min_success_rate=1.0,
+                min_good_rate=None,
+                max_review_poor_rate=None,
+                max_timeout_rate=None,
+                max_failed_rate=0.0,
+            ),
+        )
+        if failed_gate.get("status") != "failed":
+            raise RuntimeError(f"Expected failing quality gate: {failed_gate}")
 
         compare_dir = root / "compare"
         run_cmd("compare_pipelines.py", "--input", str(pdf), "--output", str(compare_dir), "--pipelines", "pymupdf4llm", "--overwrite", "--pipeline-timeout", "20")
@@ -120,6 +147,15 @@ def main() -> int:
 
 def run_cmd(script: str, *args: str) -> None:
     subprocess.run([sys.executable, str(PROJECT_DIR / "scripts" / script), *args], check=True, cwd=PROJECT_DIR)
+
+
+def load_run_benchmarks():
+    spec = importlib.util.spec_from_file_location("run_benchmarks", RUN_BENCHMARKS_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Could not load {RUN_BENCHMARKS_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def start_http_server():

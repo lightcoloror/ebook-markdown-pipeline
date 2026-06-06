@@ -36,6 +36,12 @@ def main() -> int:
     parser.add_argument("--skip-heavy", action="store_true", help="Skip PDF OCR/model-heavy categories.")
     parser.add_argument("--sample-timeout", type=float, default=0, help="Maximum seconds per sample. 0 disables per-sample timeout.")
     parser.add_argument("--no-partial", action="store_true", help="Do not write benchmark-results.partial.json after each sample.")
+    parser.add_argument("--min-success-rate", type=float, default=None, help="Optional quality gate: minimum ok / total ratio.")
+    parser.add_argument("--min-good-rate", type=float, default=None, help="Optional quality gate: minimum good / scored ratio.")
+    parser.add_argument("--max-review-poor-rate", type=float, default=None, help="Optional quality gate: maximum review-or-poor / scored ratio.")
+    parser.add_argument("--max-timeout-rate", type=float, default=None, help="Optional quality gate: maximum timeout / total ratio.")
+    parser.add_argument("--max-failed-rate", type=float, default=None, help="Optional quality gate: maximum failed / total ratio.")
+    parser.add_argument("--fail-on-quality-gate", action="store_true", help="Exit non-zero when any configured quality gate fails.")
     parser.add_argument(
         "--pdf-mode-for-benchmark",
         choices=["auto", "fast", "pymupdf4llm", "mineru", "marker", "umi", "docling"],
@@ -67,6 +73,10 @@ def main() -> int:
     payload = write_run_payload(args, results, final=True)
     (args.output / "benchmark-summary.md").write_text(render_benchmark_summary(payload), encoding="utf-8")
     (args.output / "docling-decision.md").write_text(render_docling_decision(payload), encoding="utf-8")
+    gates = payload["summary"].get("quality_gates") or {}
+    if args.fail_on_quality_gate and gates.get("status") == "failed":
+        print(json.dumps({"quality_gates": gates}, ensure_ascii=False, indent=2))
+        return 4
     return 0
 
 
@@ -79,7 +89,7 @@ def write_run_payload(args: argparse.Namespace, results: list[dict], *, final: b
         "sample_timeout_seconds": args.sample_timeout,
         "pdf_mode_for_benchmark": args.pdf_mode_for_benchmark,
         "final": final,
-        "summary": summarize_results(results),
+        "summary": summarize_results(results, args=args),
         "results": results,
     }
     write_json(args.output / ("benchmark-results.json" if final else "benchmark-results.partial.json"), payload)
@@ -262,7 +272,7 @@ def finish_result(base: dict, started: float, status: str, **updates) -> dict:
     return payload
 
 
-def summarize_results(results: list[dict]) -> dict:
+def summarize_results(results: list[dict], args: argparse.Namespace | None = None) -> dict:
     counts = {}
     for item in results:
         counts[item["status"]] = counts.get(item["status"], 0) + 1
@@ -274,14 +284,73 @@ def summarize_results(results: list[dict]) -> dict:
             quality_counts[level] = quality_counts.get(level, 0) + 1
         else:
             unscored_count += 1
-    return {
+    summary = {
         "count": len(results),
         "status_counts": counts,
         "quality_counts": quality_counts,
         "unscored_count": unscored_count,
         "docling_policy": recommend_docling_policy(results),
         "quality_regression": quality_regression_summary({"results": results})["summary"],
+        "quality_gates": evaluate_quality_gates(results, args),
     }
+    return summary
+
+
+def evaluate_quality_gates(results: list[dict], args: argparse.Namespace | None = None) -> dict:
+    thresholds = quality_gate_thresholds(args)
+    total = len(results)
+    scored = [item for item in results if item.get("metrics")]
+    ok_count = sum(1 for item in results if item.get("status") == "ok")
+    timeout_count = sum(1 for item in results if item.get("status") == "timeout")
+    failed_count = sum(1 for item in results if item.get("status") == "failed")
+    good_count = sum(1 for item in scored if (item.get("metrics") or {}).get("level") == "good")
+    review_poor_count = sum(1 for item in scored if (item.get("metrics") or {}).get("level") in {"review", "poor"})
+    metrics = {
+        "success_rate": ratio(ok_count, total),
+        "good_rate": ratio(good_count, len(scored)),
+        "review_poor_rate": ratio(review_poor_count, len(scored)),
+        "timeout_rate": ratio(timeout_count, total),
+        "failed_rate": ratio(failed_count, total),
+        "total": total,
+        "scored": len(scored),
+    }
+    checks = []
+    for name, threshold in thresholds.items():
+        actual = metrics.get(name)
+        if actual is None:
+            continue
+        operator = "min" if name in {"success_rate", "good_rate"} else "max"
+        passed = actual >= threshold if operator == "min" else actual <= threshold
+        checks.append({"name": name, "operator": operator, "threshold": threshold, "actual": actual, "passed": passed})
+    if not checks:
+        status = "not_configured"
+    elif all(item["passed"] for item in checks):
+        status = "passed"
+    else:
+        status = "failed"
+    return {
+        "status": status,
+        "metrics": metrics,
+        "thresholds": thresholds,
+        "checks": checks,
+    }
+
+
+def quality_gate_thresholds(args: argparse.Namespace | None) -> dict[str, float]:
+    if args is None:
+        return {}
+    raw = {
+        "success_rate": getattr(args, "min_success_rate", None),
+        "good_rate": getattr(args, "min_good_rate", None),
+        "review_poor_rate": getattr(args, "max_review_poor_rate", None),
+        "timeout_rate": getattr(args, "max_timeout_rate", None),
+        "failed_rate": getattr(args, "max_failed_rate", None),
+    }
+    return {name: float(value) for name, value in raw.items() if value is not None}
+
+
+def ratio(numerator: int, denominator: int) -> float:
+    return round(numerator / denominator, 3) if denominator else 0.0
 
 
 def quality_regression_summary(payload: dict) -> dict:
@@ -315,6 +384,7 @@ def quality_regression_summary(payload: dict) -> dict:
         "created_at": payload.get("created_at") or now(),
         "manifest": payload.get("manifest", ""),
         "summary": summary,
+        "quality_gates": (payload.get("summary") or {}).get("quality_gates") or {"status": "not_configured", "checks": []},
     }
 
 
@@ -365,6 +435,7 @@ def render_benchmark_summary(payload: dict) -> str:
         f"- Status: {payload['summary']['status_counts']}",
         f"- Quality: {payload['summary']['quality_counts']}",
         f"- Unscored: {payload['summary'].get('unscored_count', 0)}",
+        f"- Quality gates: {payload['summary'].get('quality_gates', {}).get('status', 'not_configured')}",
         f"- Docling decision: {payload['summary']['docling_policy']['decision']}",
         f"- PDF benchmark mode: {payload.get('pdf_mode_for_benchmark', 'auto')}",
         "",
@@ -414,6 +485,7 @@ def render_docling_decision(payload: dict) -> str:
 def render_quality_regression_summary(payload: dict) -> str:
     report = quality_regression_summary(payload)
     summary = report["summary"]
+    gates = report.get("quality_gates") or {}
     lines = [
         "# Quality Regression Summary",
         "",
@@ -429,7 +501,16 @@ def render_quality_regression_summary(payload: dict) -> str:
         f"- Repeated noise lines: {summary['repeated_noise_lines']}",
         f"- Fallback count: {summary['fallback_count']}",
         f"- Review or poor: {summary['review_or_poor']}",
+        f"- Quality gates: {gates.get('status', 'not_configured')}",
     ]
+    checks = gates.get("checks") or []
+    if checks:
+        lines.extend(["", "## Quality Gates", "", "| Gate | Operator | Threshold | Actual | Passed |", "| --- | --- | ---: | ---: | --- |"])
+        for item in checks:
+            lines.append(
+                f"| {escape_table(str(item.get('name', '')))} | {item.get('operator', '')} | "
+                f"{item.get('threshold', '')} | {item.get('actual', '')} | {item.get('passed', '')} |"
+            )
     return "\n".join(lines).rstrip() + "\n"
 
 
