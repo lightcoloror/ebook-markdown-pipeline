@@ -83,9 +83,13 @@ def write_run_payload(args: argparse.Namespace, results: list[dict], *, final: b
         "results": results,
     }
     write_json(args.output / ("benchmark-results.json" if final else "benchmark-results.partial.json"), payload)
+    write_json(args.output / ("quality-regression-summary.json" if final else "quality-regression-summary.partial.json"), quality_regression_summary(payload))
     if not final:
         (args.output / "benchmark-summary.partial.md").write_text(render_benchmark_summary(payload), encoding="utf-8")
         (args.output / "docling-decision.partial.md").write_text(render_docling_decision(payload), encoding="utf-8")
+        (args.output / "quality-regression-summary.partial.md").write_text(render_quality_regression_summary(payload), encoding="utf-8")
+    else:
+        (args.output / "quality-regression-summary.md").write_text(render_quality_regression_summary(payload), encoding="utf-8")
     return payload
 
 
@@ -276,7 +280,46 @@ def summarize_results(results: list[dict]) -> dict:
         "quality_counts": quality_counts,
         "unscored_count": unscored_count,
         "docling_policy": recommend_docling_policy(results),
+        "quality_regression": quality_regression_summary({"results": results})["summary"],
     }
+
+
+def quality_regression_summary(payload: dict) -> dict:
+    results = payload.get("results") or []
+    scored = [item for item in results if item.get("metrics")]
+    status_counts: dict[str, int] = {}
+    category_counts: dict[str, int] = {}
+    for item in results:
+        status_counts[item.get("status", "unknown")] = status_counts.get(item.get("status", "unknown"), 0) + 1
+        category = str(item.get("category") or "unknown")
+        category_counts[category] = category_counts.get(category, 0) + 1
+    heading_counts = [int((item.get("metrics") or {}).get("headings") or 0) for item in scored]
+    page_heading_counts = [int((item.get("metrics") or {}).get("page_headings") or 0) for item in scored]
+    characters = [int((item.get("metrics") or {}).get("characters") or 0) for item in scored]
+    repeated_noise = [int((item.get("metrics") or {}).get("repeated_noise_lines") or 0) for item in scored]
+    fallback_count = sum(1 for item in results if "fallback" in str(item.get("actual_pipeline") or item.get("pipeline") or "").lower())
+    summary = {
+        "total": len(results),
+        "scored": len(scored),
+        "status_counts": status_counts,
+        "category_counts": category_counts,
+        "avg_headings": average(heading_counts),
+        "page_heading_ratio": round(sum(page_heading_counts) / max(sum(heading_counts), 1), 3),
+        "avg_characters": average(characters),
+        "repeated_noise_lines": sum(repeated_noise),
+        "fallback_count": fallback_count,
+        "review_or_poor": sum(1 for item in scored if (item.get("metrics") or {}).get("level") in {"review", "poor"}),
+    }
+    return {
+        "schema_version": "quality-regression-summary-v1",
+        "created_at": payload.get("created_at") or now(),
+        "manifest": payload.get("manifest", ""),
+        "summary": summary,
+    }
+
+
+def average(values: list[int]) -> float:
+    return round(sum(values) / max(len(values), 1), 3)
 
 
 def recommend_docling_policy(results: list[dict]) -> dict:
@@ -365,6 +408,28 @@ def render_docling_decision(payload: dict) -> str:
             f"{item.get('duration_seconds', '')} | {Path(item.get('source', '')).name} | "
             f"{escape_table(str(item.get('failure_reason') or ''))[:220]} |"
         )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_quality_regression_summary(payload: dict) -> str:
+    report = quality_regression_summary(payload)
+    summary = report["summary"]
+    lines = [
+        "# Quality Regression Summary",
+        "",
+        f"- Created: {report['created_at']}",
+        f"- Manifest: `{report.get('manifest', '')}`",
+        f"- Total: {summary['total']}",
+        f"- Scored: {summary['scored']}",
+        f"- Status: {summary['status_counts']}",
+        f"- Categories: {summary['category_counts']}",
+        f"- Average headings: {summary['avg_headings']}",
+        f"- Page heading ratio: {summary['page_heading_ratio']}",
+        f"- Average characters: {summary['avg_characters']}",
+        f"- Repeated noise lines: {summary['repeated_noise_lines']}",
+        f"- Fallback count: {summary['fallback_count']}",
+        f"- Review or poor: {summary['review_or_poor']}",
+    ]
     return "\n".join(lines).rstrip() + "\n"
 
 

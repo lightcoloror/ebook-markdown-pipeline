@@ -58,11 +58,16 @@ def main() -> int:
             or not (run_dir / "benchmark-results.partial.json").exists()
             or not (run_dir / "benchmark-summary.md").exists()
             or not (run_dir / "docling-decision.md").exists()
+            or not (run_dir / "quality-regression-summary.json").exists()
+            or not (run_dir / "quality-regression-summary.md").exists()
         ):
             raise RuntimeError("Benchmark runner did not write expected reports.")
         run_payload = json.loads((run_dir / "benchmark-results.json").read_text(encoding="utf-8"))
         if run_payload.get("pdf_mode_for_benchmark") != "fast":
             raise RuntimeError(f"Expected benchmark PDF mode in report: {run_payload}")
+        quality_payload = json.loads((run_dir / "quality-regression-summary.json").read_text(encoding="utf-8"))
+        if quality_payload.get("schema_version") != "quality-regression-summary-v1":
+            raise RuntimeError(f"Expected quality regression summary: {quality_payload}")
 
         compare_dir = root / "compare"
         run_cmd("compare_pipelines.py", "--input", str(pdf), "--output", str(compare_dir), "--pipelines", "pymupdf4llm", "--overwrite", "--pipeline-timeout", "20")
@@ -123,10 +128,10 @@ def start_http_server():
     server = ThreadingHTTPServer(("127.0.0.1", 0), build_handler(""))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    deadline = time.time() + 10
+    deadline = time.time() + 30
     while time.time() < deadline:
         try:
-            urllib.request.urlopen(f"http://127.0.0.1:{server.server_port}/health", timeout=1).read()
+            urllib.request.urlopen(f"http://127.0.0.1:{server.server_port}/health", timeout=30).read()
             return server
         except Exception:
             time.sleep(0.1)

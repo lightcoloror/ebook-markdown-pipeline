@@ -1,0 +1,22 @@
+{
+  "schema_version": "benchmark-samples-v1",
+  "description": "Template for a fixed local quality regression sample set. Replace paths with local files; do not commit personal file paths.",
+  "samples": [
+    {"id": "epub-01", "path": "D:\\samples\\ebooks\\sample-01.epub", "category": "ebook_epub"},
+    {"id": "azw3-01", "path": "D:\\samples\\ebooks\\sample-01.azw3", "category": "ebook_azw3"},
+    {"id": "mobi-01", "path": "D:\\samples\\ebooks\\sample-01.mobi", "category": "ebook_mobi"},
+    {"id": "fb2-01", "path": "D:\\samples\\ebooks\\sample-01.fb2", "category": "ebook_fb2"},
+    {"id": "txt-01", "path": "D:\\samples\\docs\\sample-01.txt", "category": "text_doc"},
+    {"id": "rtf-01", "path": "D:\\samples\\docs\\sample-01.rtf", "category": "ebook_rtf"},
+    {"id": "odt-01", "path": "D:\\samples\\docs\\sample-01.odt", "category": "ebook_odt"},
+    {"id": "pdf-text-01", "path": "D:\\samples\\pdf\\text-layer-01.pdf", "category": "pdf_text_layer"},
+    {"id": "pdf-scan-01", "path": "D:\\samples\\pdf\\scanned-01.pdf", "category": "scanned_pdf"},
+    {"id": "pdf-two-column-01", "path": "D:\\samples\\pdf\\two-column-01.pdf", "category": "pdf_two_column"},
+    {"id": "pdf-table-01", "path": "D:\\samples\\pdf\\table-heavy-01.pdf", "category": "pdf_table"},
+    {"id": "pdf-long-01", "path": "D:\\samples\\pdf\\long-01.pdf", "category": "pdf_long"},
+    {"id": "screenshots-01", "path": "D:\\samples\\images\\screenshots-01", "category": "image_set"},
+    {"id": "screenshots-duplicates-01", "path": "D:\\samples\\images\\screenshots-duplicates-01", "category": "image_set_duplicates"},
+    {"id": "web-archive-01", "path": "D:\\samples\\web-archives\\archive-with-screenshot", "category": "web_archive"},
+    {"id": "web-archive-no-shot-01", "path": "D:\\samples\\web-archives\\archive-no-screenshot", "category": "web_archive"}
+  ]
+}

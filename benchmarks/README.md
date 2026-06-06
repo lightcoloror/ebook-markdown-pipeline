@@ -12,6 +12,8 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\discover_benchmark_sampl
   --limit 50
 ```
 
+For a fixed quality regression set, copy `benchmarks/sample-set-manifest.example.json` to a local manifest such as `benchmarks/samples.local.json`, replace paths with local files, and keep that local manifest uncommitted.
+
 Run a benchmark:
 
 ```powershell
@@ -28,6 +30,7 @@ Each run writes:
 - `benchmark-results.partial.json`: incrementally updated after each sample, so interrupted long runs still preserve completed evidence.
 - `benchmark-summary.md`: human review table with status, quality, runtime, sample category, and failure reason.
 - `benchmark-summary.partial.md`: readable partial summary for interrupted runs.
+- `quality-regression-summary.json/md`: aggregated metrics for success, headings, page-heading ratio, text volume, repeated noise, fallback count, and review/poor count.
 - `docling-decision.md`: evidence-based recommendation for whether Docling should become default for document-like formats. Missing dependencies or weak real-sample success keep Docling optional.
 
 Use `--sample-timeout` to mark one stuck sample as `timeout` and continue the rest of the run. On Windows, the runner terminates the timed-out process tree so MinerU/Marker children do not linger as orphan processes.
