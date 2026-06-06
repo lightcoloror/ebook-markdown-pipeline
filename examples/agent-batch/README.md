@@ -49,7 +49,22 @@ Outputs:
 
 - `agent-batch-results.json`
 - `agent-batch-summary.md`
+- `run_summary.md`
 - partial versions after each completed manifest job
+
+Rerun only failed or review items from a previous run:
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\agent_batch_http.py `
+  --token local-token `
+  --manifest D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\batch_manifest.example.json `
+  --previous-results D:\agent-batch-output\run-001\agent-batch-results.json `
+  --select failed-or-review `
+  --rerun-mode recommended `
+  --output D:\agent-batch-output\run-002
+```
+
+`--select` supports `all`, `failed`, `review`, and `failed-or-review`. `--rerun-mode recommended` applies machine-readable rerun hints when prior reports expose them; otherwise it falls back to the manifest arguments.
 
 ## Web Archive Jobs
 

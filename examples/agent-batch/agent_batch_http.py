@@ -36,6 +36,8 @@ READABLE_TYPES = {
 ALLOWED_INTENTS = {"auto", "convert", "locate", "rebuild"}
 ALLOWED_OUTPUT_FORMATS = {"markdown", "html", "text"}
 ALLOWED_OCR = {"auto", "always", "never"}
+SELECT_MODES = {"all", "failed", "review", "failed-or-review"}
+RERUN_MODES = {"as-manifest", "recommended"}
 
 
 def main() -> int:
@@ -51,12 +53,16 @@ def main() -> int:
     parser.add_argument("--artifact-max-lines", type=int, default=120)
     parser.add_argument("--dry-run", action="store_true", help="validate and render the batch plan without calling HTTP tools")
     parser.add_argument("--validate-only", action="store_true", help="alias for --dry-run")
+    parser.add_argument("--select", choices=sorted(SELECT_MODES), default="all", help="Run all jobs or select jobs from --previous-results.")
+    parser.add_argument("--rerun-mode", choices=sorted(RERUN_MODES), default="as-manifest", help="Use manifest arguments or recommended rerun arguments when available.")
+    parser.add_argument("--previous-results", type=Path, help="Prior agent-batch-results.json used by --select failed/review/failed-or-review.")
     args = parser.parse_args()
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8-sig"))
     args.output.mkdir(parents=True, exist_ok=True)
+    previous_payload = load_previous_results(args.previous_results)
 
-    validation = validate_manifest(manifest)
+    validation = validate_manifest(manifest, previous_payload=previous_payload, select=args.select)
     if args.dry_run or args.validate_only or validation["errors"]:
         plan_payload = write_plan(args.output, args.manifest, manifest, validation)
         print(json.dumps(plan_payload["summary"], ensure_ascii=False, indent=2))
@@ -64,8 +70,9 @@ def main() -> int:
 
     started = time.monotonic()
     results = []
-    for index, job in enumerate(manifest.get("jobs", []), start=1):
-        results.append(run_manifest_job(args, manifest.get("defaults", {}), job, index))
+    jobs_to_run = select_jobs(manifest.get("jobs", []), previous_payload, args.select)
+    for index, job in enumerate(jobs_to_run, start=1):
+        results.append(run_manifest_job(args, manifest.get("defaults", {}), job, index, previous_payload=previous_payload))
         write_reports(args.output, args.manifest, started, results, partial=True)
 
     payload = write_reports(args.output, args.manifest, started, results, partial=False)
@@ -73,7 +80,7 @@ def main() -> int:
     return 0 if payload["summary"]["hard_failed"] == 0 else 3
 
 
-def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+def validate_manifest(manifest: dict[str, Any], *, previous_payload: dict[str, Any] | None = None, select: str = "all") -> dict[str, Any]:
     errors: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     defaults = manifest.get("defaults", {})
@@ -85,6 +92,8 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(jobs, list) or not jobs:
         errors.append({"scope": "jobs", "message": "jobs must be a non-empty array"})
         jobs = []
+    if select != "all" and not previous_payload:
+        errors.append({"scope": "previous_results", "message": "--previous-results is required when --select is not all"})
 
     seen_ids: set[str] = set()
     normalized_jobs = []
@@ -137,10 +146,18 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
         "errors": errors,
         "warnings": warnings,
         "normalized_jobs": normalized_jobs,
+        "selected_job_ids": [str(job.get("id") or f"job-{index}") for index, job in enumerate(select_jobs(jobs, previous_payload, select), start=1)],
     }
 
 
-def run_manifest_job(args: argparse.Namespace, defaults: dict[str, Any], job: dict[str, Any], index: int) -> dict[str, Any]:
+def run_manifest_job(
+    args: argparse.Namespace,
+    defaults: dict[str, Any],
+    job: dict[str, Any],
+    index: int,
+    *,
+    previous_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     started = time.monotonic()
     job_id = str(job.get("id") or f"job-{index}")
     material_args = {**defaults, **job}
@@ -153,6 +170,7 @@ def run_manifest_job(args: argparse.Namespace, defaults: dict[str, Any], job: di
         "started_at": timestamp(),
     }
     try:
+        material_args = apply_recommended_rerun(job_id, material_args, previous_payload, args.rerun_mode)
         routed = call_tool(args, "process_material", material_args)
         runtime_job_id = routed.get("job_id")
         if not runtime_job_id:
@@ -267,6 +285,7 @@ def finish(base: dict[str, Any], started: float, status: str, **extra: Any) -> d
 
 def write_reports(output: Path, manifest: Path, started: float, results: list[dict[str, Any]], *, partial: bool) -> dict[str, Any]:
     suffix = ".partial" if partial else ""
+    output.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema_version": "agent-batch-v1",
         "manifest": str(manifest),
@@ -278,10 +297,12 @@ def write_reports(output: Path, manifest: Path, started: float, results: list[di
     }
     (output / f"agent-batch-results{suffix}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     (output / f"agent-batch-summary{suffix}.md").write_text(render_markdown(payload), encoding="utf-8")
+    (output / f"run_summary{suffix}.md").write_text(render_run_summary(payload), encoding="utf-8")
     return payload
 
 
 def write_plan(output: Path, manifest: Path, raw_manifest: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
+    output.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema_version": "agent-batch-plan-v1",
         "manifest": str(manifest),
@@ -298,6 +319,90 @@ def write_plan(output: Path, manifest: Path, raw_manifest: dict[str, Any], valid
     (output / "agent-batch-plan.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     (output / "agent-batch-plan.md").write_text(render_plan_markdown(payload), encoding="utf-8")
     return payload
+
+
+def load_previous_results(path: Path | None) -> dict[str, Any] | None:
+    if not path:
+        return None
+    return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def select_jobs(jobs: list[Any], previous_payload: dict[str, Any] | None, select: str) -> list[dict[str, Any]]:
+    normalized = [job for job in jobs if isinstance(job, dict)]
+    if select == "all":
+        return normalized
+    previous_by_id = previous_results_by_id(previous_payload)
+    selected = []
+    for index, job in enumerate(normalized, start=1):
+        job_id = str(job.get("id") or f"job-{index}")
+        previous = previous_by_id.get(job_id)
+        if not previous:
+            continue
+        status = str(previous.get("status") or "")
+        if select == "failed" and is_hard_failed_status(status):
+            selected.append(job)
+        elif select == "review" and status == "review":
+            selected.append(job)
+        elif select == "failed-or-review" and (status == "review" or is_hard_failed_status(status)):
+            selected.append(job)
+    return selected
+
+
+def previous_results_by_id(previous_payload: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    if not previous_payload:
+        return {}
+    return {str(item.get("id")): item for item in previous_payload.get("results") or [] if isinstance(item, dict) and item.get("id")}
+
+
+def is_hard_failed_status(status: str) -> bool:
+    return status in {"failed", "timeout", "unsupported", "no_job"}
+
+
+def apply_recommended_rerun(job_id: str, material_args: dict[str, Any], previous_payload: dict[str, Any] | None, rerun_mode: str) -> dict[str, Any]:
+    if rerun_mode != "recommended":
+        return material_args
+    previous = previous_results_by_id(previous_payload).get(job_id)
+    if not previous:
+        return material_args
+    recommended = extract_recommended_arguments(previous)
+    if not recommended:
+        return material_args
+    merged = dict(material_args)
+    merged.update(recommended)
+    return merged
+
+
+def extract_recommended_arguments(previous: dict[str, Any]) -> dict[str, Any]:
+    for action in iter_next_actions(previous):
+        pipeline = action.get("pipeline") or action.get("pdf_pipeline_mode")
+        if action.get("action") == "rerun" and pipeline:
+            return {"pdf_pipeline_mode": str(pipeline)}
+        if action.get("action") == "compare_pdf_pipelines":
+            return {"pdf_pipeline_mode": "auto"}
+    suggested = str(previous.get("suggested_action") or "")
+    if "pymupdf" in suggested.lower():
+        return {"pdf_pipeline_mode": "pymupdf4llm"}
+    return {}
+
+
+def iter_next_actions(payload: dict[str, Any]):
+    for path in [
+        ("result", "next_actions"),
+        ("job", "next_actions"),
+        ("routed", "next_actions"),
+    ]:
+        current: Any = payload
+        for key in path:
+            current = current.get(key) if isinstance(current, dict) else None
+        if isinstance(current, list):
+            for item in current:
+                if isinstance(item, dict):
+                    yield item
+    quality_items = (((payload.get("job") or {}).get("quality_summary") or {}).get("review_items") or [])
+    for item in quality_items:
+        for action in item.get("next_actions") or []:
+            if isinstance(action, dict):
+                yield action
 
 
 def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -348,6 +453,53 @@ def render_markdown(payload: dict[str, Any]) -> str:
             f"{cell(item.get('output'))} | {quality.get('review_count', '')} | {cell(str(failure)[:220])} |"
         )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def render_run_summary(payload: dict[str, Any]) -> str:
+    summary = payload["summary"]
+    lines = [
+        "# Run Summary",
+        "",
+        f"- Created: {payload['created_at']}",
+        f"- Manifest: `{payload['manifest']}`",
+        f"- Total: {summary.get('total', 0)}",
+        f"- OK: {summary.get('ok', 0)}",
+        f"- Review: {summary.get('review', 0)}",
+        f"- Hard failed: {summary.get('hard_failed', 0)}",
+        f"- Artifact reads: {summary.get('artifact_reads', 0)}",
+        "",
+        "| Status | ID | Route | Input | Output | Artifacts | Next |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in payload["results"]:
+        routed = item.get("routed") or {}
+        route = routed.get("route") or ""
+        artifact_paths = [str(artifact.get("path") or "") for artifact in item.get("artifacts") or [] if artifact.get("path")]
+        next_action = summarize_next_action(item)
+        lines.append(
+            f"| {cell(item.get('status'))} | {cell(item.get('id'))} | {cell(route)} | "
+            f"{cell(item.get('input'))} | {cell(item.get('output'))} | {cell('; '.join(artifact_paths[:3]))} | {cell(next_action)} |"
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def summarize_next_action(item: dict[str, Any]) -> str:
+    if item.get("failure_reason"):
+        return str(item["failure_reason"])
+    quality = ((item.get("job") or {}).get("quality_summary") or {})
+    review_items = quality.get("review_items") or []
+    if review_items:
+        first = review_items[0]
+        reasons = "; ".join(str(reason) for reason in first.get("quality_reasons") or [])
+        suggested = str(first.get("suggested_action") or "")
+        return f"{suggested}: {reasons}".strip(": ")
+    result = item.get("result") or {}
+    warnings = result.get("warnings") or []
+    if warnings:
+        return "; ".join(str(warning) for warning in warnings[:2])
+    if item.get("status") == "review":
+        return "Review generated artifacts before accepting."
+    return ""
 
 
 def render_plan_markdown(payload: dict[str, Any]) -> str:
