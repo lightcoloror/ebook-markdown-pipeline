@@ -19,6 +19,7 @@ def main() -> int:
             "test_agent_smoke_suite.py",
             "smoke summary fields",
             "agent-smoke-summary.json/md",
+            "per-test rerun commands",
             "--fail-fast",
         ],
         "docs/TOOL_CONTRACT.md": [
@@ -51,6 +52,7 @@ def main() -> int:
             "test_agent_smoke_suite.py",
             "summary 报告结构",
             "agent-smoke-summary.json/md",
+            "逐条重跑命令",
             "--fail-fast",
             "test_agent_contract.py",
             "inspect_agent_batch_results",

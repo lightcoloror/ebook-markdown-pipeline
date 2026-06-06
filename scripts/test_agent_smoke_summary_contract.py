@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from test_agent_smoke_suite import build_summary, render_markdown, tail_text
+import json
+import tempfile
+from pathlib import Path
+
+from test_agent_smoke_suite import build_summary, render_markdown, tail_text, write_reports
 
 
 REQUIRED_SUMMARY_FIELDS = {
@@ -15,12 +19,14 @@ REQUIRED_SUMMARY_FIELDS = {
     "planned_total",
     "elapsed_seconds",
     "results",
+    "next_actions",
 }
 
 
 def main() -> int:
     assert_passed_summary_contract()
     assert_fail_fast_summary_contract()
+    assert_report_artifact_contract()
     assert_tail_contract()
     print("Agent smoke summary contract test passed.")
     return 0
@@ -57,6 +63,8 @@ def assert_passed_summary_contract() -> None:
     for key, value in expected.items():
         if payload.get(key) != value:
             raise AssertionError(f"Unexpected {key}: {payload}")
+    if payload["next_actions"] != []:
+        raise AssertionError(f"Passed smoke summary should not request follow-up actions: {payload}")
     markdown = render_markdown(payload)
     for needle in ["# Agent Smoke Suite", "- Status: passed", "- Planned total: 1", "| ok | `scripts/test_ok.py` | 0.123 |"]:
         if needle not in markdown:
@@ -86,10 +94,48 @@ def assert_fail_fast_summary_contract() -> None:
         raise AssertionError(f"Expected stopped fail-fast summary: {payload}")
     if payload["passed"] != 0 or payload["failed"] != 1 or payload["total"] != 1 or payload["planned_total"] != 3:
         raise AssertionError(f"Unexpected failed summary counts: {payload}")
+    actions = {item.get("action"): item for item in payload.get("next_actions") or []}
+    if actions.get("inspect_failed_smoke_tests", {}).get("failed_tests") != ["scripts/test_failed.py"]:
+        raise AssertionError(f"Expected failed test inspection action: {payload}")
+    rerun = actions.get("rerun_failed_smoke_tests", {})
+    if rerun.get("commands") != [["python", "-B", "scripts/test_failed.py"]]:
+        raise AssertionError(f"Expected per-test rerun command: {payload}")
     markdown = render_markdown(payload)
     for needle in ["- Fail fast: True", "- Stopped early: True", "## Failures", "boom"]:
         if needle not in markdown:
             raise AssertionError(f"Failed markdown report missing {needle!r}: {markdown}")
+
+
+def assert_report_artifact_contract() -> None:
+    payload = build_summary(
+        [
+            {
+                "test": "scripts/test_ok.py",
+                "returncode": 0,
+                "elapsed_seconds": 0.1,
+                "stdout_tail": "",
+                "stderr_tail": "",
+            }
+        ],
+        elapsed=0.2,
+        full=False,
+        fail_fast=False,
+        planned_total=1,
+    )
+    with tempfile.TemporaryDirectory(prefix="ebook-agent-smoke-summary-") as tmp:
+        output = Path(tmp)
+        write_reports(output, payload)
+        summary_json = output / "agent-smoke-summary.json"
+        summary_md = output / "agent-smoke-summary.md"
+        if not summary_json.exists() or not summary_md.exists():
+            raise AssertionError("Expected JSON and Markdown smoke reports")
+        persisted = json.loads(summary_json.read_text(encoding="utf-8"))
+        artifact_types = {item.get("type") for item in persisted.get("artifacts") or []}
+        if artifact_types != {"agent_smoke_summary_json", "agent_smoke_summary_markdown"}:
+            raise AssertionError(f"Expected persisted smoke artifacts: {persisted}")
+        action_names = [item.get("action") for item in persisted.get("next_actions") or []]
+        if action_names[:2] != ["read_smoke_summary_markdown", "read_smoke_summary_json"]:
+            raise AssertionError(f"Expected read-report actions first: {persisted}")
 
 
 def assert_tail_contract() -> None:

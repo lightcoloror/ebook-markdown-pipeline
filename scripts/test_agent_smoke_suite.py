@@ -94,6 +94,7 @@ def build_summary(results: list[dict], *, elapsed: float, full: bool, fail_fast:
         "planned_total": planned_total,
         "elapsed_seconds": round(elapsed, 3),
         "results": results,
+        "next_actions": smoke_next_actions(results),
     }
 
 
@@ -111,9 +112,54 @@ def write_reports(output: Path, payload: dict) -> None:
     output.mkdir(parents=True, exist_ok=True)
     json_path = output / "agent-smoke-summary.json"
     md_path = output / "agent-smoke-summary.md"
+    payload = with_report_artifacts(payload, json_path=json_path, md_path=md_path)
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     md_path.write_text(render_markdown(payload), encoding="utf-8")
     print(f"Wrote agent smoke reports: {json_path}; {md_path}")
+
+
+def smoke_next_actions(results: list[dict]) -> list[dict]:
+    failures = [item for item in results if item["returncode"] != 0]
+    if not failures:
+        return []
+    failed_tests = [item["test"] for item in failures]
+    return [
+        {
+            "action": "inspect_failed_smoke_tests",
+            "failed_tests": failed_tests,
+            "reason": "One or more agent smoke tests failed; inspect stdout_tail/stderr_tail before rerunning.",
+        },
+        {
+            "action": "rerun_failed_smoke_tests",
+            "commands": [["python", "-B", test] for test in failed_tests],
+            "reason": "Rerun each failed smoke test directly after inspecting the failure tail.",
+        },
+    ]
+
+
+def with_report_artifacts(payload: dict, *, json_path: Path, md_path: Path) -> dict:
+    enriched = dict(payload)
+    existing_actions = list(enriched.get("next_actions") or [])
+    enriched["artifacts"] = [
+        {"type": "agent_smoke_summary_json", "path": str(json_path)},
+        {"type": "agent_smoke_summary_markdown", "path": str(md_path)},
+    ]
+    enriched["next_actions"] = [
+        {
+            "action": "read_smoke_summary_markdown",
+            "path": str(md_path),
+            "artifact_type": "markdown",
+            "reason": "Use the Markdown report for a quick handoff-readable overview.",
+        },
+        {
+            "action": "read_smoke_summary_json",
+            "path": str(json_path),
+            "artifact_type": "agent_smoke_summary_json",
+            "reason": "Use the JSON report for machine-readable status and failure tails.",
+        },
+        *existing_actions,
+    ]
+    return enriched
 
 
 def render_markdown(payload: dict) -> str:
