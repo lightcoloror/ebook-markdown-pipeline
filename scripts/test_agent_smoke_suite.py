@@ -26,6 +26,7 @@ FULL_TESTS = FAST_TESTS + ["scripts/test_agent_contract.py"]
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the agent-facing smoke test suite.")
     parser.add_argument("--full", action="store_true", help="Also run the slower full agent contract test.")
+    parser.add_argument("--fail-fast", action="store_true", help="Stop after the first failing smoke test.")
     parser.add_argument("--output", type=Path, help="Optional directory for agent-smoke-summary.json/md.")
     args = parser.parse_args()
 
@@ -33,9 +34,18 @@ def main() -> int:
     results = []
     started = time.monotonic()
     for test in tests:
-        results.append(run_test(test))
+        result = run_test(test)
+        results.append(result)
+        if args.fail_fast and result["returncode"] != 0:
+            break
     failures = [item for item in results if item["returncode"] != 0]
-    payload = build_summary(results, elapsed=time.monotonic() - started, full=bool(args.full))
+    payload = build_summary(
+        results,
+        elapsed=time.monotonic() - started,
+        full=bool(args.full),
+        fail_fast=bool(args.fail_fast),
+        planned_total=len(tests),
+    )
     print_summary(payload)
     if args.output:
         write_reports(args.output, payload)
@@ -67,16 +77,20 @@ def run_test(relative: str) -> dict:
     }
 
 
-def build_summary(results: list[dict], *, elapsed: float, full: bool) -> dict:
+def build_summary(results: list[dict], *, elapsed: float, full: bool, fail_fast: bool, planned_total: int) -> dict:
     passed = sum(1 for item in results if item["returncode"] == 0)
     failed = len(results) - passed
+    stopped_early = len(results) < planned_total
     return {
         "schema_version": "agent-smoke-suite-v1",
         "mode": "full" if full else "fast",
         "status": "passed" if failed == 0 else "failed",
+        "fail_fast": fail_fast,
+        "stopped_early": stopped_early,
         "passed": passed,
         "failed": failed,
         "total": len(results),
+        "planned_total": planned_total,
         "elapsed_seconds": round(elapsed, 3),
         "results": results,
     }
@@ -107,9 +121,12 @@ def render_markdown(payload: dict) -> str:
         "",
         f"- Mode: {payload['mode']}",
         f"- Status: {payload['status']}",
+        f"- Fail fast: {payload['fail_fast']}",
+        f"- Stopped early: {payload['stopped_early']}",
         f"- Passed: {payload['passed']}",
         f"- Failed: {payload['failed']}",
         f"- Total: {payload['total']}",
+        f"- Planned total: {payload['planned_total']}",
         f"- Elapsed seconds: {payload['elapsed_seconds']}",
         "",
         "| Status | Test | Seconds |",

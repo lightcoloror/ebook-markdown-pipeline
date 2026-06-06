@@ -55,6 +55,8 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_agent_smoke_suite.p
 
 Pass `--output <dir>` to persist `agent-smoke-summary.json/md` as handoff evidence for another session or agent.
 
+Use `--fail-fast` for local debugging when the first failure is enough; omit it when you want a complete handoff report.
+
 Use `--full` before releases or broad contract changes to include the slower full agent contract test.
 
 ## Batch Templates
