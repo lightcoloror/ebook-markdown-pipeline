@@ -48,12 +48,14 @@ def main() -> int:
             "inspect_agent_batch_results",
             "list_agent_batch_results",
             "cli_agent_batch_handoff.py",
+            "http_agent_batch_handoff.py",
             "完整 agent contract",
         ],
         "examples/agent-calls/README.md": [
             "Agent Batch Handoff",
             "cli_agent_batch_handoff.py list",
             "cli_agent_batch_handoff.py inspect",
+            "http_agent_batch_handoff.py",
         ],
     }
     for relative, needles in required.items():

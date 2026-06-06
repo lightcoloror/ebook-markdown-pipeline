@@ -49,7 +49,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\cli_process
 
 ## Agent Batch Handoff
 
-When taking over an existing batch without starting MCP or HTTP, list recent batch results under an output root:
+When taking over an existing batch without starting MCP or HTTP, use the local CLI-style helper to list recent batch results under an output root:
 
 ```powershell
 python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\cli_agent_batch_handoff.py list `
@@ -62,6 +62,14 @@ Inspect a known `agent-batch-results.json`:
 ```powershell
 python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\cli_agent_batch_handoff.py inspect `
   D:\agent-batch-output\run-002\agent-batch-results.json
+```
+
+Docker-hosted agents can use the same handoff tools through the HTTP bridge:
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\http_agent_batch_handoff.py `
+  --url http://host.docker.internal:9241 `
+  list D:\agent-batch-output
 ```
 
 ## Query Mode
