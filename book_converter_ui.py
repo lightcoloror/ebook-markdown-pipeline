@@ -276,10 +276,12 @@ class BookConverterUI:
         self.health_button = ttk.Button(buttons, text="检查环境 / Health", command=self.health_check)
         self.cleanup_button = ttk.Button(buttons, text="清理残留 / Cleanup", command=self.cleanup_mineru_processes)
         self.start_button = ttk.Button(buttons, text="开始 / Start", command=self.start_convert)
+        self.run_recommended_button = ttk.Button(buttons, text="按推荐执行 / Run Rec", command=self.run_recommended_actions)
         self.advanced_button = ttk.Button(buttons, text="高级 / Advanced", command=self.open_advanced_tools)
         toolbar_items = [
             self.scan_button,
             self.start_button,
+            self.run_recommended_button,
             self.health_button,
             self.cleanup_button,
             ttk.Button(buttons, text="选中输出 / Output", command=self.open_selected_output),
@@ -1438,6 +1440,7 @@ class BookConverterUI:
             self.tree.delete(item)
         plans = analyze_sources(sources, input_path, output_path, options)
         for plan in plans:
+            action = self.recommended_action_for_plan(plan)
             self.tree.insert(
                 "",
                 "end",
@@ -1446,7 +1449,7 @@ class BookConverterUI:
                     plan.detected_format,
                     plan.pipeline,
                     "",
-                    "",
+                    action,
                     plan.note,
                     plan.output_format,
                     plan.output,
@@ -1454,6 +1457,57 @@ class BookConverterUI:
             )
         self.apply_manual_review_records()
         self.apply_review_filter()
+
+    def recommended_action_for_plan(self, plan) -> str:
+        output = Path(str(plan.output or ""))
+        if output.exists():
+            return "跳过或续跑 / Skip or Resume"
+        if str(plan.detected_format).upper() == "PDF" and "mineru" in str(plan.pipeline).lower():
+            return "直接转换，长任务 / Convert, long task"
+        return "直接转换 / Convert"
+
+    def run_recommended_actions(self) -> None:
+        if self.worker and self.worker.is_alive():
+            messagebox.showinfo("忙碌 / Busy", "已有任务正在运行。/ A task is already running.")
+            return
+        selected = self.selected_tree_values() if self.tree.selection() else None
+        if selected:
+            quality = selected.get("quality", "").lower()
+            action = selected.get("action", "").lower()
+            if any(token in quality for token in ("review", "poor", "failed")) or any(token in action for token in ("rerun", "重跑", "compare", "对比")):
+                self.execute_selected_suggestion()
+                return
+        planned_rows = [self.tree_row_values(item_id) for item_id in self.tree.get_children("")]
+        convertible = [
+            Path(row["source"])
+            for row in planned_rows
+            if row.get("source")
+            and Path(row["source"]).exists()
+            and ("直接转换" in row.get("action", "") or "Convert" in row.get("action", ""))
+        ]
+        if convertible:
+            self.selected_input_files = convertible
+            self.input_var.set(self.format_selected_files(convertible))
+            self.overwrite_var.set(False)
+            self.write_log(f"按推荐执行：转换 {len(convertible)} 个未处理文件。/ Run recommended: converting {len(convertible)} planned file(s).")
+            self.start_convert()
+            return
+        review_rows = [
+            row
+            for row in planned_rows
+            if any(token in row.get("quality", "").lower() for token in ("review", "poor", "failed"))
+        ]
+        if review_rows:
+            messagebox.showinfo(
+                "请选择复查项 / Select review item",
+                "请先选中一个 review/poor/failed 行，再点击按推荐执行。/ Select one review/poor/failed row first.",
+            )
+            return
+        messagebox.showinfo("没有推荐动作 / No action", "当前没有可自动执行的安全推荐动作。/ No safe recommended action is available.")
+
+    def tree_row_values(self, item_id: str) -> dict[str, str]:
+        values = self.tree.item(item_id, "values")
+        return dict(zip(("source", "format", "pipeline", "quality", "action", "note", "output_format", "output"), values))
 
     def start_convert(self) -> None:
         if self.worker and self.worker.is_alive():
