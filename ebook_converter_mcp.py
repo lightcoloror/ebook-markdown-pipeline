@@ -1221,6 +1221,7 @@ def inspect_agent_batch_results(arguments: dict[str, Any]) -> dict[str, Any]:
     review_items = agent_batch_review_items(results, max_review_items)
     next_actions = [item for item in payload.get("next_actions") or [] if isinstance(item, dict)]
     artifacts = agent_batch_artifacts(path, payload)
+    attention = agent_batch_attention_summary(payload)
     return {
         "schema_version": "agent-batch-inspection-v1",
         "path": str(path),
@@ -1231,6 +1232,7 @@ def inspect_agent_batch_results(arguments: dict[str, Any]) -> dict[str, Any]:
         "summary": payload.get("summary") or {},
         "selection": payload.get("selection") or {},
         "artifact_summary": payload.get("artifact_summary") or {},
+        "attention": attention,
         "quality_comparison": payload.get("quality_comparison") or {},
         "next_actions": next_actions,
         "recommended_rerun": first_agent_batch_rerun_action(next_actions),
@@ -1261,6 +1263,7 @@ def list_agent_batch_results(arguments: dict[str, Any]) -> dict[str, Any]:
                 "summary": inspected.get("summary") or {},
                 "selection": inspected.get("selection") or {},
                 "artifact_summary": inspected.get("artifact_summary") or {},
+                "attention": inspected.get("attention") or {},
                 "quality_comparison": inspected.get("quality_comparison") or {},
                 "recommended_rerun": inspected.get("recommended_rerun") or {},
                 "human_summary": inspected.get("human_summary") or "",
@@ -1387,9 +1390,39 @@ def first_agent_batch_rerun_action(actions: list[dict[str, Any]]) -> dict[str, A
     return {}
 
 
+def agent_batch_attention_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    summary = payload.get("summary") or {}
+    artifact_summary = payload.get("artifact_summary") or {}
+    comparison = payload.get("quality_comparison") or {}
+    reasons: list[str] = []
+    if payload.get("partial"):
+        reasons.append("partial_run")
+    if int(summary.get("hard_failed") or summary.get("failed") or 0) > 0:
+        reasons.append("hard_failed_jobs")
+    if int(summary.get("review") or 0) > 0:
+        reasons.append("review_jobs")
+    if int(summary.get("review_count") or 0) > 0:
+        reasons.append("review_items")
+    if int(artifact_summary.get("failed") or 0) > 0:
+        reasons.append("artifact_read_failures")
+    if comparison.get("status") == "failed":
+        reasons.append("quality_regression")
+    return {
+        "needs_attention": bool(reasons),
+        "reasons": reasons,
+        "hard_failed": int(summary.get("hard_failed") or summary.get("failed") or 0),
+        "review_jobs": int(summary.get("review") or 0),
+        "review_items": int(summary.get("review_count") or 0),
+        "artifact_failures": int(artifact_summary.get("failed") or 0),
+        "quality_comparison": comparison.get("status") or "",
+        "partial": bool(payload.get("partial")),
+    }
+
+
 def agent_batch_human_summary(payload: dict[str, Any], next_actions: list[dict[str, Any]]) -> str:
     summary = payload.get("summary") or {}
     comparison = payload.get("quality_comparison") or {}
+    attention = agent_batch_attention_summary(payload)
     parts = [
         f"total={summary.get('total', 0)}",
         f"ok={summary.get('ok', 0)}",
@@ -1401,6 +1434,8 @@ def agent_batch_human_summary(payload: dict[str, Any], next_actions: list[dict[s
     rerun = first_agent_batch_rerun_action(next_actions)
     if rerun:
         parts.append("recommended_rerun=failed-or-review")
+    if attention.get("needs_attention"):
+        parts.append(f"attention={','.join(attention.get('reasons') or [])}")
     return "; ".join(parts)
 
 

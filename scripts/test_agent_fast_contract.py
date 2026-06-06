@@ -161,6 +161,9 @@ def assert_agent_batch_results_inspection(tmpdir: Path) -> None:
         raise AssertionError(f"Expected quality comparison status: {inspected}")
     if inspected.get("selection", {}).get("select") != "failed-or-review" or inspected.get("artifact_summary", {}).get("failed") != 1:
         raise AssertionError(f"Expected selection and artifact summary passthrough: {inspected}")
+    attention_reasons = set(inspected.get("attention", {}).get("reasons") or [])
+    if not inspected.get("attention", {}).get("needs_attention") or not {"review_jobs", "artifact_read_failures", "quality_regression"}.issubset(attention_reasons):
+        raise AssertionError(f"Expected attention summary for review/artifact/regression signals: {inspected}")
     if inspected.get("recommended_rerun", {}).get("action") != "rerun_failed_or_review":
         raise AssertionError(f"Expected recommended rerun action: {inspected}")
     if not inspected.get("review_items") or inspected["review_items"][0].get("quality_level") != "poor":
@@ -186,6 +189,8 @@ def assert_agent_batch_results_listing(tmpdir: Path) -> None:
         raise AssertionError(f"Expected newest batch first: {listed}")
     if listed["items"][0].get("selection", {}).get("selected_count") != 2 or listed["items"][0].get("artifact_summary", {}).get("ok") != 1:
         raise AssertionError(f"Expected selection and artifact summary in listed batch: {listed}")
+    if not listed["items"][0].get("attention", {}).get("needs_attention"):
+        raise AssertionError(f"Expected attention summary in listed batch: {listed}")
     action_names = {item.get("action") for item in listed.get("next_actions") or []}
     if "inspect_latest_agent_batch" not in action_names or "rerun_failed_or_review" not in action_names:
         raise AssertionError(f"Expected list next actions for latest failed batch: {listed}")
