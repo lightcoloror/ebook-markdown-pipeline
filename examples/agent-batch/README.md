@@ -66,6 +66,8 @@ Outputs:
 
 The router detects `rebuild_input/manifest.json`, calls `process_web_archive`, and reads `visual_check/` artifacts directly. This route is synchronous and may return `status=review` when the archive has no screenshot or OCR output yet. Treat `review` as “artifact generated but needs human/agent inspection,” not as a transport failure.
 
+The batch runner exits successfully when jobs are only `ok` or `review`. Use `summary.hard_failed` for real failures such as `failed`, `timeout`, `unsupported`, or `no_job`.
+
 ## Agent Rules
 
 - Prefer this batch runner when the agent needs repeatable multi-file processing.

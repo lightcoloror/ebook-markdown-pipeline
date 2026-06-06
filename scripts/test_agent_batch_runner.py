@@ -77,8 +77,8 @@ def main() -> int:
         if len(artifacts) != 2 or not all(item.get("status") == "ok" for item in artifacts):
             raise AssertionError(f"Expected readable synchronous artifacts: {result}")
         summary = runner.summarize([result])
-        if summary.get("failed") != 1 or summary.get("artifact_reads") != 2:
-            raise AssertionError(f"Expected review status to remain non-ok but artifact-readable: {summary}")
+        if summary.get("review") != 1 or summary.get("failed") != 0 or summary.get("hard_failed") != 0 or summary.get("artifact_reads") != 2:
+            raise AssertionError(f"Expected review status to be non-failed but artifact-readable: {summary}")
 
     print("Agent batch runner smoke test passed.")
     return 0

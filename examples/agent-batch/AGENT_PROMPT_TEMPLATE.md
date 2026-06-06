@@ -29,7 +29,7 @@ For every real manifest job:
 
 Return:
 
-- Batch status: total, ok, failed, unsupported, timeout.
+- Batch status: total, ok, review, failed, hard_failed, unsupported, timeout.
 - Output directory for each job.
 - Review count and top review reasons.
 - Artifact paths for summary, review checklist, and main Markdown output.
@@ -37,4 +37,4 @@ Return:
 
 ## Quality Rule
 
-Prefer stable completion plus explicit review artifacts over silent high-quality assumptions. If the output is `review` or `poor`, preserve the artifact paths and recommend human review or multi-pipeline PDF comparison.
+Prefer stable completion plus explicit review artifacts over silent high-quality assumptions. If the output is `review` or `poor`, preserve the artifact paths and recommend human review or multi-pipeline PDF comparison. Treat `review` as completed-with-review, not as a transport or tool failure.

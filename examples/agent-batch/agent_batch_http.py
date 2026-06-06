@@ -70,7 +70,7 @@ def main() -> int:
 
     payload = write_reports(args.output, args.manifest, started, results, partial=False)
     print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
-    return 0 if payload["summary"]["failed"] == 0 else 3
+    return 0 if payload["summary"]["hard_failed"] == 0 else 3
 
 
 def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -310,10 +310,17 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
         review_count += int(quality.get("review_count") or 0)
         artifact_reads += sum(1 for artifact in item.get("artifacts", []) if artifact.get("status") == "ok")
     total = len(results)
+    hard_failed_statuses = {"failed", "timeout", "unsupported", "no_job"}
+    hard_failed = sum(count for status, count in counts.items() if status in hard_failed_statuses)
+    review_jobs = counts.get("review", 0)
     return {
         "total": total,
         "ok": counts.get("ok", 0),
-        "failed": total - counts.get("ok", 0),
+        "review": review_jobs,
+        "failed": hard_failed,
+        "hard_failed": hard_failed,
+        "completed_with_review": review_jobs,
+        "other": total - counts.get("ok", 0) - review_jobs - hard_failed,
         "status_counts": counts,
         "review_count": review_count,
         "artifact_reads": artifact_reads,
