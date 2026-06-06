@@ -25,7 +25,7 @@ For every real manifest job:
 5. If `quality_summary.review_count > 0`, report the review reasons and suggested actions. Do not claim the output is final without mentioning the review queue.
 6. If status is `failed`, read `errors`, `events`, and any available report/log artifact. Return a concise failure reason and retry only if the failure is retryable or caused by timeout/fallback settings.
 7. If a previous batch result is available, pass it as `--baseline-results`, inspect `benchmark-quality-comparison.md`, and follow top-level `next_actions` in `agent-batch-results.json` before saying the new run improved or remained stable. If `rerun_failed_or_review` is present, use its `command_args` or `powershell_command` instead of inventing rerun arguments.
-8. When taking over a previous batch, call `inspect_agent_batch_results` on `agent-batch-results.json` first, then follow its `recommended_rerun`, `review_items`, and `artifacts`.
+8. When taking over a previous batch, call `list_agent_batch_results` if the exact results path is unknown; then call `inspect_agent_batch_results` on `agent-batch-results.json` and follow its `recommended_rerun`, `review_items`, and `artifacts`.
 
 ## Output To User
 

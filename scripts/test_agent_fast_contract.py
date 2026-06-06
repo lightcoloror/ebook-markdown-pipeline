@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
+import time
 from pathlib import Path
 
 import fitz
@@ -74,6 +76,7 @@ def main() -> int:
         assert_quality_summary_next_actions(tmpdir)
         assert_quality_comparison_artifact_read(tmpdir)
         assert_agent_batch_results_inspection(tmpdir)
+        assert_agent_batch_results_listing(tmpdir)
 
     print("Agent fast contract test passed.")
     return 0
@@ -164,6 +167,76 @@ def assert_agent_batch_results_inspection(tmpdir: Path) -> None:
     readable = call_tool("read_artifact", {"path": str(results_path), "artifact_type": "agent_batch_results"})
     if (readable.get("json") or {}).get("schema_version") != "agent-batch-v1":
         raise AssertionError(f"Expected readable agent batch JSON artifact: {readable}")
+
+
+def assert_agent_batch_results_listing(tmpdir: Path) -> None:
+    first = write_agent_batch_result_fixture(tmpdir / "runs" / "run-001", status="passed", review=0)
+    second = write_agent_batch_result_fixture(tmpdir / "runs" / "run-002", status="failed", review=1)
+    now = time.time()
+    os.utime(first, (now - 100, now - 100))
+    os.utime(second, (now, now))
+    listed = call_tool("list_agent_batch_results", {"root": str(tmpdir / "runs"), "max_results": 5, "max_depth": 2})
+    if listed.get("schema_version") != "agent-batch-list-v1" or listed.get("count") != 2:
+        raise AssertionError(f"Expected two listed agent batches: {listed}")
+    if Path(listed["items"][0].get("path", "")).resolve() != second.resolve():
+        raise AssertionError(f"Expected newest batch first: {listed}")
+    action_names = {item.get("action") for item in listed.get("next_actions") or []}
+    if "inspect_latest_agent_batch" not in action_names or "rerun_failed_or_review" not in action_names:
+        raise AssertionError(f"Expected list next actions for latest failed batch: {listed}")
+
+
+def write_agent_batch_result_fixture(batch_dir: Path, *, status: str, review: int) -> Path:
+    batch_dir.mkdir(parents=True)
+    comparison_md = batch_dir / "benchmark-quality-comparison.md"
+    comparison_json = batch_dir / "benchmark-quality-comparison.json"
+    run_summary = batch_dir / "run_summary.md"
+    comparison_md.write_text(f"# Quality Comparison\n\n{status}", encoding="utf-8")
+    comparison_json.write_text(
+        json.dumps({"schema_version": "benchmark-quality-comparison-v1", "summary": {"status": status}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    run_summary.write_text("# Run Summary\n", encoding="utf-8")
+    results_path = batch_dir / "agent-batch-results.json"
+    next_actions = [
+        {
+            "action": "read_quality_comparison",
+            "tool": "read_artifact",
+            "arguments": {"path": str(comparison_md), "artifact_type": "markdown"},
+        }
+    ]
+    if status == "failed":
+        next_actions.append(
+            {
+                "action": "rerun_failed_or_review",
+                "select": "failed-or-review",
+                "rerun_mode": "recommended",
+                "powershell_command": "python runner.py --select failed-or-review --rerun-mode recommended",
+            }
+        )
+    results_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "agent-batch-v1",
+                "manifest": str(batch_dir / "manifest.json"),
+                "created_at": "now",
+                "duration_seconds": 1.2,
+                "partial": False,
+                "summary": {"total": 2, "ok": 2 - review, "review": review, "hard_failed": 0},
+                "quality_comparison": {
+                    "status": status,
+                    "markdown": str(comparison_md),
+                    "json": str(comparison_json),
+                    "summary": {"status": status},
+                },
+                "next_actions": next_actions,
+                "results": [],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return results_path
 
 
 if __name__ == "__main__":

@@ -54,6 +54,7 @@ def main() -> int:
                 "read_pdf_tool_log",
                 "read_artifact",
                 "inspect_agent_batch_results",
+                "list_agent_batch_results",
                 "build_location_index",
                 "start_location_index",
                 "query_location_index",

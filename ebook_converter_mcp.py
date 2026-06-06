@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import queue
 import sys
 import threading
@@ -387,6 +388,20 @@ def tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "list_agent_batch_results",
+            "description": "Find recent agent-batch-results.json files under a directory and summarize each handoff.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "root": {"type": "string"},
+                    "max_results": {"type": "integer", "default": 10},
+                    "max_depth": {"type": "integer", "default": 3},
+                    "max_review_items": {"type": "integer", "default": 3},
+                },
+                "required": ["root"],
+            },
+        },
+        {
             "name": "build_location_index",
             "description": "Build a page/image-level searchable index for PDFs and image files.",
             "inputSchema": {
@@ -528,6 +543,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return read_artifact(arguments)
     if name == "inspect_agent_batch_results":
         return inspect_agent_batch_results(arguments)
+    if name == "list_agent_batch_results":
+        return list_agent_batch_results(arguments)
     if name == "build_location_index":
         return build_location_index_tool(arguments)
     if name == "start_location_index":
@@ -1218,6 +1235,80 @@ def inspect_agent_batch_results(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def list_agent_batch_results(arguments: dict[str, Any]) -> dict[str, Any]:
+    root = Path(arguments["root"])
+    max_results = clamp_int(arguments.get("max_results"), default=10, minimum=1, maximum=100)
+    max_depth = clamp_int(arguments.get("max_depth"), default=3, minimum=0, maximum=10)
+    max_review_items = clamp_int(arguments.get("max_review_items"), default=3, minimum=0, maximum=20)
+    if not root.exists() or not root.is_dir():
+        return {"error": True, "message": f"Agent batch root not found or not a directory: {root}", "root": str(root)}
+
+    candidates = find_agent_batch_result_paths(root, max_depth=max_depth)
+    candidates = sorted(candidates, key=lambda item: item.stat().st_mtime, reverse=True)[:max_results]
+    items = []
+    for path in candidates:
+        inspected = inspect_agent_batch_results({"path": str(path), "max_review_items": max_review_items})
+        items.append(
+            {
+                "path": str(path),
+                "modified_at": timestamp_from_epoch(path.stat().st_mtime),
+                "error": inspected.get("error", False),
+                "summary": inspected.get("summary") or {},
+                "quality_comparison": inspected.get("quality_comparison") or {},
+                "recommended_rerun": inspected.get("recommended_rerun") or {},
+                "human_summary": inspected.get("human_summary") or "",
+                "review_items": inspected.get("review_items") or [],
+                "artifacts": inspected.get("artifacts") or [],
+            }
+        )
+    return {
+        "schema_version": "agent-batch-list-v1",
+        "root": str(root),
+        "max_depth": max_depth,
+        "count": len(items),
+        "items": items,
+        "next_actions": list_agent_batch_next_actions(items),
+    }
+
+
+def find_agent_batch_result_paths(root: Path, *, max_depth: int) -> list[Path]:
+    root = root.resolve()
+    found: list[Path] = []
+    for current, dirs, files in os.walk(root):
+        current_path = Path(current)
+        try:
+            relative = current_path.relative_to(root)
+        except ValueError:
+            dirs[:] = []
+            continue
+        depth = 0 if str(relative) == "." else len(relative.parts)
+        if depth >= max_depth:
+            dirs[:] = []
+        if "agent-batch-results.json" in files:
+            found.append(current_path / "agent-batch-results.json")
+    return found
+
+
+def list_agent_batch_next_actions(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not items:
+        return []
+    newest = items[0]
+    actions = [
+        {
+            "action": "inspect_latest_agent_batch",
+            "tool": "inspect_agent_batch_results",
+            "arguments": {"path": newest.get("path")},
+        }
+    ]
+    if newest.get("recommended_rerun"):
+        actions.append(newest["recommended_rerun"])
+    return actions
+
+
+def timestamp_from_epoch(epoch: float) -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(epoch))
+
+
 def agent_batch_review_items(results: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     review_items: list[dict[str, Any]] = []
     for item in results:
@@ -1268,9 +1359,18 @@ def agent_batch_artifacts(results_path: Path, payload: dict[str, Any]) -> list[d
         candidate = comparison.get(key)
         if candidate and Path(candidate).exists():
             item = artifact(artifact_type, Path(candidate), label=f"Quality comparison {key}", media_type=media_type)
-            if not any(existing.get("path") == item.get("path") and existing.get("type") == item.get("type") for existing in artifacts):
+            if not any(same_artifact(existing, item) for existing in artifacts):
                 artifacts.append(item)
     return artifacts
+
+
+def same_artifact(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if left.get("type") != right.get("type"):
+        return False
+    try:
+        return Path(str(left.get("path"))).resolve() == Path(str(right.get("path"))).resolve()
+    except OSError:
+        return str(left.get("path")) == str(right.get("path"))
 
 
 def first_agent_batch_rerun_action(actions: list[dict[str, Any]]) -> dict[str, Any]:

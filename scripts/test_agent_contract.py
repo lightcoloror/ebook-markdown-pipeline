@@ -28,6 +28,7 @@ REQUIRED_TOOLS = {
     "get_job_status",
     "read_artifact",
     "inspect_agent_batch_results",
+    "list_agent_batch_results",
     "inspect_document",
     "scan_books",
     "health_check",

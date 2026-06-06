@@ -156,7 +156,7 @@ The runner writes:
 
 When baseline comparison is enabled, `agent-batch-results.json` also includes top-level `next_actions`. Agents should first read `read_quality_comparison` / `read_quality_comparison_json`; if `rerun_failed_or_review` is present, use its `command_args` or `powershell_command` to rerun with `--select failed-or-review --rerun-mode recommended` and keep the prior results as the baseline. `run_summary.md` mirrors this as a copyable recommended rerun command.
 
-Agents taking over an existing batch should call `inspect_agent_batch_results` on `agent-batch-results.json` before inventing paths or parsing the whole file themselves. It returns summary counts, quality comparison status, top-level `next_actions`, `recommended_rerun`, extracted review items, and artifact paths for `run_summary.md` / quality comparison reports.
+Agents taking over an existing batch should call `inspect_agent_batch_results` on `agent-batch-results.json` before inventing paths or parsing the whole file themselves. If the exact results path is unknown, call `list_agent_batch_results` on the output root first and inspect the newest or most relevant item. These tools return summary counts, quality comparison status, top-level `next_actions`, `recommended_rerun`, extracted review items, and artifact paths for `run_summary.md` / quality comparison reports.
 
 For this comparison, agent-batch `review` means completed-with-review rather than transport failure. It contributes to completion success but increases the review/poor quality rate, so agents should report it as usable output that still needs inspection.
 
