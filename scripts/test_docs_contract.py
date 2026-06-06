@@ -32,6 +32,11 @@ def main() -> int:
             "top-level `next_actions`",
             "Quality comparison status",
         ],
+        "README.md": [
+            "test_agent_fast_contract.py",
+            "test_agent_contract.py",
+            "完整 agent contract",
+        ],
     }
     for relative, needles in required.items():
         text = (PROJECT_DIR / relative).read_text(encoding="utf-8")
