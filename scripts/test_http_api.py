@@ -56,6 +56,25 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     if not isinstance(health.get("pipeline_capabilities"), dict) or health.get("risk_status") not in {"ok", "degraded", "missing_dependencies"}:
         raise RuntimeError(f"Health response is missing capability/risk summary: {health}")
 
+    contract = request_json(f"{url.rstrip('/')}/contract", headers=headers)
+    if contract.get("schema_version") != "ebook-http-contract-v1" or contract.get("transport") != "http":
+        raise RuntimeError(f"HTTP contract response has wrong schema: {contract}")
+    if contract.get("entrypoints")[:3] != ["process_material", "get_job_status", "read_artifact"]:
+        raise RuntimeError(f"HTTP contract entrypoints are wrong: {contract}")
+    if not contract.get("supports_async_jobs") or not contract.get("supports_artifacts"):
+        raise RuntimeError(f"HTTP contract missing capability flags: {contract}")
+    if contract.get("tool_count", 0) < 10 or not isinstance(contract.get("tools"), list):
+        raise RuntimeError(f"HTTP contract missing tool schemas: {contract}")
+    contract_tool_names = {item.get("name") for item in contract.get("tools") or []}
+    if not {"process_material", "read_artifact", "build_agent_handoff_bundle"}.issubset(contract_tool_names):
+        raise RuntimeError(f"HTTP contract missing key tools: {contract}")
+    docs = contract.get("docs") or {}
+    if not docs.get("tool_contract") or not docs.get("agent_integration"):
+        raise RuntimeError(f"HTTP contract missing docs pointers: {contract}")
+    error_contract = contract.get("error_contract") or {}
+    if error_contract.get("schema_version") != health.get("schema_version") or error_contract.get("transport") != "http":
+        raise RuntimeError(f"HTTP contract missing error contract: {contract}")
+
     tools = request_json(f"{url.rstrip('/')}/tools", headers=headers)
     tool_names = {item["name"] for item in tools.get("tools", [])}
     required = {

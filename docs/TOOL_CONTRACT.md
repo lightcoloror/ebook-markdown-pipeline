@@ -186,6 +186,23 @@ For this comparison, agent-batch `review` means completed-with-review rather tha
 
 ## Environment Capabilities
 
+HTTP `/contract` returns the stable transport contract for HTTP-native agents:
+
+```json
+{
+  "schema_version": "ebook-http-contract-v1",
+  "transport": "http",
+  "artifact_schema_version": "artifact-schema-v1",
+  "entrypoints": ["process_material", "get_job_status", "read_artifact"],
+  "supports_async_jobs": true,
+  "supports_artifacts": true,
+  "tools": [],
+  "docs": {}
+}
+```
+
+Agents should read `/contract` before `/tools` when they need the preferred entrypoints, docs pointers, artifact schema version, and error contract in one response.
+
 HTTP `/health` returns the transport contract plus lightweight operating status:
 
 ```json

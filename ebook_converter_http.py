@@ -93,6 +93,9 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
             if self.path == "/tools":
                 self.write_json({"tools": tool_schemas()})
                 return
+            if self.path == "/contract":
+                self.write_json(http_contract_payload(http_config, bind_host=bind_host, bind_port=bind_port))
+                return
             self.write_error("not_found", f"Not found: {self.path}", status=404, retryable=False)
 
         def do_POST(self) -> None:  # noqa: N802
@@ -174,6 +177,55 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
             print(f"{self.address_string()} - {format % args}", file=sys.stderr)
 
     return Handler
+
+
+def http_contract_payload(config: HttpConfig | None = None, *, bind_host: str | None = None, bind_port: int | None = None) -> dict[str, Any]:
+    http_config = config or load_http_config()
+    tools = tool_schemas()
+    return {
+        "schema_version": "ebook-http-contract-v1",
+        "server": SERVER_NAME,
+        "version": SERVER_VERSION,
+        "transport": "http",
+        "artifact_schema_version": SCHEMA_VERSION,
+        "entrypoints": ["process_material", "get_job_status", "read_artifact"],
+        "specialist_tools": [
+            "health_check",
+            "inspect_document",
+            "scan_books",
+            "inspect_agent_batch_results",
+            "list_agent_batch_results",
+            "build_agent_handoff_bundle",
+        ],
+        "supports_async_jobs": True,
+        "supports_artifacts": True,
+        "http_config": {
+            "scheme": http_config.scheme,
+            "host": http_config.host,
+            "port": http_config.port,
+            "docker_host": http_config.docker_host,
+            "local_url": http_config.local_url,
+            "docker_url": http_config.docker_url,
+            "config_path": str(http_config.source),
+            "bind_host": bind_host or http_config.host,
+            "bind_port": bind_port or http_config.port,
+        },
+        "tool_count": len(tools),
+        "tools": tools,
+        "docs": {
+            "tool_contract": str(Path(__file__).resolve().parent / "docs" / "TOOL_CONTRACT.md"),
+            "agent_integration": str(Path(__file__).resolve().parent / "docs" / "AGENT_INTEGRATION.md"),
+            "agent_call_examples": str(Path(__file__).resolve().parent / "examples" / "agent-calls" / "README.md"),
+        },
+        "error_contract": {
+            "ok": False,
+            "error": True,
+            "code": "invalid_request",
+            "retryable": False,
+            "transport": "http",
+            "schema_version": SCHEMA_VERSION,
+        },
+    }
 
 
 def safe_capability_summary() -> dict[str, Any]:
