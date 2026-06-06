@@ -91,6 +91,8 @@ def main() -> int:
             raise AssertionError(f"Expected batch contract in report payload: {report_payload}")
         if "handoff_next_actions" not in report_payload.get("contract", {}).get("capabilities", []):
             raise AssertionError(f"Expected handoff capability in batch contract: {report_payload}")
+        if report_payload.get("contract_validation", {}).get("ok") is not True:
+            raise AssertionError(f"Expected self-validating batch report contract: {report_payload}")
         if report_payload.get("artifact_summary", {}).get("failed") != 1:
             raise AssertionError(f"Expected artifact_summary in report payload: {report_payload}")
         report_action_names = {item.get("action") for item in report_payload.get("next_actions") or []}
@@ -236,6 +238,8 @@ def main() -> int:
         )
         if plan_payload.get("contract", {}).get("payload_schema_version") != "agent-batch-plan-v1":
             raise AssertionError(f"Expected batch plan contract: {plan_payload}")
+        if plan_payload.get("contract_validation", {}).get("ok") is not True:
+            raise AssertionError(f"Expected self-validating batch plan contract: {plan_payload}")
         plan_text = (root / "plans" / "agent-batch-plan.md").read_text(encoding="utf-8")
         if plan_payload.get("selection", {}).get("selected_count") != 1 or "Selected jobs: 1/2: archive" not in plan_text:
             raise AssertionError(f"Expected selected job count in plan markdown: {plan_payload}")

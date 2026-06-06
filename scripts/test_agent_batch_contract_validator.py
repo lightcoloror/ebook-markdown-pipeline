@@ -33,6 +33,8 @@ def main() -> int:
             "artifacts": [],
         }
         report = runner.write_reports(root / "reports", root / "manifest.json", 0.0, [result], partial=False)
+        if report.get("contract_validation", {}).get("ok") is not True:
+            raise AssertionError(f"Expected report to include self-validation: {report}")
         validation = validator.validate_payload(report, root / "reports" / "agent-batch-results.json")
         if not validation.get("ok") or validation.get("payload_kind") != "results":
             raise AssertionError(f"Expected valid agent batch results contract: {validation}")
@@ -43,6 +45,8 @@ def main() -> int:
             {"jobs": [{"id": "ok", "input": "input.txt", "output": "out"}]},
             runner.validate_manifest({"jobs": [{"id": "ok", "input": "input.txt", "output": "out"}]}),
         )
+        if plan.get("contract_validation", {}).get("ok") is not True:
+            raise AssertionError(f"Expected plan to include self-validation: {plan}")
         plan_validation = validator.validate_payload(plan, root / "plan" / "agent-batch-plan.json")
         if not plan_validation.get("ok") or plan_validation.get("payload_kind") != "plan":
             raise AssertionError(f"Expected valid agent batch plan contract: {plan_validation}")

@@ -380,6 +380,7 @@ def write_reports(
         "results": results,
     }
     payload["next_actions"] = batch_handoff_next_actions(payload, output=output, suffix=suffix)
+    payload["contract_validation"] = validate_agent_batch_contract_payload(payload)
     (output / f"agent-batch-results{suffix}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     (output / f"agent-batch-summary{suffix}.md").write_text(render_markdown(payload), encoding="utf-8")
     (output / f"run_summary{suffix}.md").write_text(render_run_summary(payload), encoding="utf-8")
@@ -394,9 +395,52 @@ def write_reports(
                 suggested_output=output.with_name(output.name + "-recommended-rerun"),
             ),
         ]
+        payload["contract_validation"] = validate_agent_batch_contract_payload(payload)
         (output / "agent-batch-results.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         (output / "run_summary.md").write_text(render_run_summary(payload), encoding="utf-8")
     return payload
+
+
+def validate_agent_batch_contract_payload(payload: dict[str, Any], path: Path | None = None) -> dict[str, Any]:
+    schema_version = payload.get("schema_version")
+    errors: list[str] = []
+    if schema_version == AGENT_BATCH_SCHEMA_VERSION:
+        required = {"schema_version", "contract", "manifest", "created_at", "summary", "selection", "artifact_summary", "next_actions", "results"}
+        payload_kind = "results"
+    elif schema_version == AGENT_BATCH_PLAN_SCHEMA_VERSION:
+        required = {"schema_version", "contract", "manifest", "created_at", "summary", "selection", "validation"}
+        payload_kind = "plan"
+    else:
+        required = set()
+        payload_kind = "unknown"
+        errors.append(f"unsupported schema_version: {schema_version!r}")
+
+    missing = sorted(field for field in required if field not in payload)
+    if missing:
+        errors.append(f"missing required fields: {', '.join(missing)}")
+
+    contract = payload.get("contract") or {}
+    if contract.get("schema_version") != AGENT_BATCH_CONTRACT_VERSION:
+        errors.append(f"contract.schema_version must be {AGENT_BATCH_CONTRACT_VERSION}")
+    if contract.get("payload_schema_version") != schema_version:
+        errors.append("contract.payload_schema_version must match payload schema_version")
+    capabilities = set(contract.get("capabilities") or [])
+    missing_capabilities = sorted(set(AGENT_BATCH_CONTRACT_CAPABILITIES) - capabilities)
+    if missing_capabilities:
+        errors.append(f"missing capabilities: {', '.join(missing_capabilities)}")
+    declared_required = set(contract.get("required_fields") or [])
+    missing_declared = sorted(required - declared_required)
+    if missing_declared:
+        errors.append(f"contract.required_fields missing: {', '.join(missing_declared)}")
+
+    return {
+        "ok": not errors,
+        "path": str(path) if path else "",
+        "schema_version": schema_version,
+        "payload_kind": payload_kind,
+        "contract_schema_version": contract.get("schema_version"),
+        "errors": errors,
+    }
 
 
 def batch_handoff_next_actions(payload: dict[str, Any], *, output: Path, suffix: str = "") -> list[dict[str, Any]]:
@@ -554,6 +598,7 @@ def write_plan(
         "defaults": raw_manifest.get("defaults", {}),
         "previous_results": str(previous_results_path) if previous_results_path else "",
     }
+    payload["contract_validation"] = validate_agent_batch_contract_payload(payload)
     (output / "agent-batch-plan.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     (output / "agent-batch-plan.md").write_text(render_plan_markdown(payload), encoding="utf-8")
     return payload

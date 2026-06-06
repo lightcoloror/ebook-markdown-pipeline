@@ -162,6 +162,8 @@ Both files include a `contract` block with `schema_version=agent-batch-contract-
 
 Use `scripts/validate_agent_batch_contract.py <path> --json` to validate `agent-batch-plan.json` or `agent-batch-results.json` before relying on a handoff artifact from another run or older session.
 
+Freshly generated plan/results payloads include `contract_validation` with `ok`, `payload_kind`, and validation errors. Treat `contract_validation.ok=false` as a handoff contract failure even if conversion outputs exist.
+
 `agent-batch-results.json` includes `artifact_summary` with total/ok/failed artifact read counts, `type_counts`, and `failed_artifacts`. Agents should inspect this before assuming all referenced artifacts were readable.
 
 Real and partial batch results include top-level `next_actions` for handoff. Baseline comparisons may append quality-comparison actions, but agents should first follow `read_run_summary` and `inspect_agent_batch_results`, then handle conditional `inspect_failed_artifacts` and `inspect_review_items`.
