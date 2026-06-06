@@ -38,6 +38,7 @@ Use these tools:
 - `query_location_index`: search the lightweight location index and return source plus page/image.
 - `start_location_index`: launch location indexing as a background job.
 - `start_image_book_rebuild`: reconstruct Markdown from unordered or duplicate screenshots as a background job.
+- `process-web-archive.cmd`: prepare `visual_check/` outputs for a `web-content-fetcher` archive; it first tries screenshot OCR through `image_book_rebuilder` and falls back to a pending visual contract if OCR is unavailable.
 
 ## CLI Fallback
 
@@ -53,6 +54,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py INPUT OUT
 - Use `pdf_pipeline_mode=auto` by default.
 - If the user only needs to know which PDF page or image contains information, use the location index tools instead of full Markdown conversion.
 - If the input is a large folder of screenshots, use image-book reconstruction rather than plain OCR.
+- If the input is a `web-content-fetcher` archive folder, first run `wcf archive rebuild <archive> --with-visual-check`, then run `D:\used-by-codex\ebook_markdown_pipeline\process-web-archive.cmd <archive>`, then rerun `wcf archive rebuild` so final human/agent files absorb OCR text, visual blocks, and review warnings.
 - Do not force Marker on long PDFs unless the user explicitly asks.
 - For long jobs, start conversion and poll status instead of blocking indefinitely.
 - Prefer returned `artifacts` and `next_actions` over guessing output paths.
