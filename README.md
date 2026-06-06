@@ -106,6 +106,7 @@ MCP 工具包括：
 - `read_artifact`：按 artifact 类型安全读取 Markdown、JSON、日志、报告等输出。
 - `inspect_agent_batch_results`：读取 `agent-batch-results.json`，返回批处理摘要、质量对比状态、推荐重跑动作和关键 artifact。
 - `list_agent_batch_results`：从输出根目录发现最近的 `agent-batch-results.json`，方便新会话接手历史批次。
+- `build_agent_handoff_bundle`：为已有 `agent-batch-results.json` 生成轻量 `agent-handoff-bundle.json/md`，方便其他 agent 接手。
 - `read_report`：读取转换 report。
 - `read_pdf_tool_log`：读取 Marker/MinerU 日志尾部。
 

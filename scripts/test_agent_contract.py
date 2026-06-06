@@ -29,6 +29,7 @@ REQUIRED_TOOLS = {
     "read_artifact",
     "inspect_agent_batch_results",
     "list_agent_batch_results",
+    "build_agent_handoff_bundle",
     "inspect_document",
     "scan_books",
     "health_check",

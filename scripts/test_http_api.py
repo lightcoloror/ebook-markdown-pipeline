@@ -48,7 +48,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     if not health.get("supports_async_jobs") or not health.get("supports_artifacts"):
         raise RuntimeError(f"Health response is missing capability flags: {health}")
     health_tool_names = set(health.get("tools", []))
-    if not {"read_artifact", "inspect_agent_batch_results", "list_agent_batch_results"}.issubset(health_tool_names):
+    if not {"read_artifact", "inspect_agent_batch_results", "list_agent_batch_results", "build_agent_handoff_bundle"}.issubset(health_tool_names):
         raise RuntimeError(f"Health response is missing tool names: {health}")
     http_config = health.get("http_config") or {}
     if not http_config.get("config_path") or not http_config.get("local_url") or not http_config.get("docker_url"):
@@ -66,6 +66,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         "read_artifact",
         "inspect_agent_batch_results",
         "list_agent_batch_results",
+        "build_agent_handoff_bundle",
         "start_location_index",
         "export_location_review_pack",
         "start_image_book_rebuild",

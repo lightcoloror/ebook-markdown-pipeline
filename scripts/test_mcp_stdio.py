@@ -55,6 +55,7 @@ def main() -> int:
                 "read_artifact",
                 "inspect_agent_batch_results",
                 "list_agent_batch_results",
+                "build_agent_handoff_bundle",
                 "build_location_index",
                 "start_location_index",
                 "query_location_index",

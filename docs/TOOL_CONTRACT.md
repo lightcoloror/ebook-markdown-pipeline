@@ -168,7 +168,7 @@ The Markdown summaries mirror this as `Contract validation: ok` or `failed`, so 
 
 When `contract_validation.ok=false`, batch results and `inspect_agent_batch_results` expose `inspect_contract_validation` in `next_actions`; agents should inspect those errors before trusting other handoff fields.
 
-Use `scripts/build_agent_handoff_bundle.py --batch-results <agent-batch-results.json> --output <dir>` to produce `agent-handoff-bundle.json/md`, a compact handoff index containing contract validation, attention, selection, artifact summary, next actions, artifacts, and review items.
+Use the MCP/HTTP tool `build_agent_handoff_bundle` or the CLI wrapper `scripts/build_agent_handoff_bundle.py --batch-results <agent-batch-results.json> --output <dir>` to produce `agent-handoff-bundle.json/md`, a compact handoff index containing contract validation, attention, selection, artifact summary, next actions, artifacts, and review items. The tool returns `agent_handoff_bundle_json` and `agent_handoff_bundle_markdown` artifacts that agents can read through `read_artifact`.
 
 `agent-batch-results.json` includes `artifact_summary` with total/ok/failed artifact read counts, `type_counts`, and `failed_artifacts`. Agents should inspect this before assuming all referenced artifacts were readable.
 

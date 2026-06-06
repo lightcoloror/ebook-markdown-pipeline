@@ -72,6 +72,14 @@ python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\http_agent_
   list D:\agent-batch-output
 ```
 
+When another agent needs a compact handoff package instead of the full batch JSON, call the MCP/HTTP tool `build_agent_handoff_bundle` or the local wrapper:
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\build_agent_handoff_bundle.py `
+  --batch-results D:\agent-batch-output\run-002\agent-batch-results.json `
+  --output D:\agent-batch-output\run-002\handoff
+```
+
 ## Query Mode
 
 If you only need to locate a keyword in PDFs/images:

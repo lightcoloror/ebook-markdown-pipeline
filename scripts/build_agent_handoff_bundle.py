@@ -4,14 +4,16 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR))
 
-from ebook_converter_mcp import inspect_agent_batch_results, list_agent_batch_results  # noqa: E402
-from validate_agent_batch_contract import validate_payload  # noqa: E402
+from ebook_converter_mcp import (  # noqa: E402
+    build_agent_handoff_bundle_payload,
+    newest_agent_batch_results,
+    render_agent_handoff_bundle_markdown,
+)
 
 
 def main() -> int:
@@ -36,73 +38,15 @@ def main() -> int:
 
 
 def newest_batch_results(root: Path | None) -> Path | None:
-    if not root:
-        return None
-    listed = list_agent_batch_results({"root": str(root), "max_results": 1})
-    items = listed.get("items") or []
-    if not items:
-        return None
-    return Path(items[0]["path"])
+    return newest_agent_batch_results(str(root) if root else None)
 
 
-def build_bundle(batch_results: Path, *, max_review_items: int = 10) -> dict[str, Any]:
-    raw = json.loads(batch_results.read_text(encoding="utf-8-sig"))
-    validation = validate_payload(raw, batch_results)
-    inspection = inspect_agent_batch_results({"path": str(batch_results), "max_review_items": max_review_items})
-    bundle = {
-        "schema_version": "agent-handoff-bundle-v1",
-        "source": str(batch_results),
-        "contract_validation": validation,
-        "inspection": inspection,
-        "attention": inspection.get("attention") or {},
-        "summary": inspection.get("summary") or {},
-        "selection": inspection.get("selection") or {},
-        "artifact_summary": inspection.get("artifact_summary") or {},
-        "next_actions": inspection.get("next_actions") or [],
-        "artifacts": inspection.get("artifacts") or [],
-        "review_items": inspection.get("review_items") or [],
-    }
-    bundle["handoff_ready"] = bool(validation.get("ok")) and not bool((inspection.get("attention") or {}).get("needs_attention"))
-    return bundle
+def build_bundle(batch_results: Path, *, max_review_items: int = 10) -> dict[str, object]:
+    return build_agent_handoff_bundle_payload(batch_results, max_review_items=max_review_items)
 
 
-def render_bundle_markdown(payload: dict[str, Any]) -> str:
-    validation = payload.get("contract_validation") or {}
-    attention = payload.get("attention") or {}
-    summary = payload.get("summary") or {}
-    selection = payload.get("selection") or {}
-    artifact_summary = payload.get("artifact_summary") or {}
-    lines = [
-        "# Agent Handoff Bundle",
-        "",
-        f"- Source: `{payload.get('source', '')}`",
-        f"- Handoff ready: {payload.get('handoff_ready')}",
-        f"- Contract validation: {'ok' if validation.get('ok') else 'failed'}",
-        f"- Needs attention: {attention.get('needs_attention', False)}",
-        f"- Attention reasons: {', '.join(attention.get('reasons') or []) or '(none)'}",
-        f"- Select: {selection.get('select', '')}",
-        f"- Selected jobs: {selection.get('selected_count', 0)}/{selection.get('manifest_job_count', 0)}",
-        f"- Total: {summary.get('total', 0)}",
-        f"- OK: {summary.get('ok', 0)}",
-        f"- Review: {summary.get('review', 0)}",
-        f"- Hard failed: {summary.get('hard_failed', 0)}",
-        f"- Artifact failures: {artifact_summary.get('failed', 0)}",
-        "",
-        "## Next Actions",
-        "",
-    ]
-    actions = payload.get("next_actions") or []
-    if actions:
-        for action in actions:
-            lines.append(f"- `{action.get('action') or action.get('tool')}`")
-    else:
-        lines.append("- (none)")
-    review_items = payload.get("review_items") or []
-    if review_items:
-        lines.extend(["", "## Review Items", ""])
-        for item in review_items[:10]:
-            lines.append(f"- `{item.get('id')}` {item.get('quality_level', '')}: {item.get('suggested_action', '')}")
-    return "\n".join(lines).rstrip() + "\n"
+def render_bundle_markdown(payload: dict[str, object]) -> str:
+    return render_agent_handoff_bundle_markdown(payload)
 
 
 if __name__ == "__main__":

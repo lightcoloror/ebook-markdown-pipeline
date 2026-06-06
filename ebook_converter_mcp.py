@@ -46,9 +46,19 @@ for stream in (sys.stdin, sys.stdout, sys.stderr):
 JOBS: dict[str, dict[str, Any]] = {}
 JOBS_LOCK = threading.Lock()
 JSON_STDOUT = sys.stdout
+AGENT_BATCH_CONTRACT_CAPABILITIES = {
+    "selection_summary",
+    "artifact_summary",
+    "handoff_next_actions",
+    "attention_summary",
+    "legacy_action_synthesis",
+    "quality_comparison",
+    "recommended_rerun",
+}
 JSON_ARTIFACT_TYPES = {
     "json",
     "agent_batch_results",
+    "agent_handoff_bundle_json",
     "agent_smoke_summary_json",
     "conversion_report",
     "summary_json",
@@ -68,6 +78,8 @@ JSON_ARTIFACT_TYPES = {
 }
 READABLE_ARTIFACT_TYPES = {
     "markdown",
+    "agent_handoff_bundle_markdown",
+    "agent_handoff_bundle_json",
     "agent_batch_run_summary",
     "agent_batch_summary",
     "agent_batch_results",
@@ -405,6 +417,20 @@ def tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "build_agent_handoff_bundle",
+            "description": "Build a lightweight agent-handoff-bundle.json/md index for a prior agent batch result.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "batch_results": {"type": "string"},
+                    "root": {"type": "string"},
+                    "output": {"type": "string"},
+                    "max_review_items": {"type": "integer", "default": 10},
+                },
+                "required": ["output"],
+            },
+        },
+        {
             "name": "build_location_index",
             "description": "Build a page/image-level searchable index for PDFs and image files.",
             "inputSchema": {
@@ -548,6 +574,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return inspect_agent_batch_results(arguments)
     if name == "list_agent_batch_results":
         return list_agent_batch_results(arguments)
+    if name == "build_agent_handoff_bundle":
+        return build_agent_handoff_bundle(arguments)
     if name == "build_location_index":
         return build_location_index_tool(arguments)
     if name == "start_location_index":
@@ -1285,6 +1313,154 @@ def list_agent_batch_results(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_agent_handoff_bundle(arguments: dict[str, Any]) -> dict[str, Any]:
+    output = Path(arguments["output"])
+    max_review_items = clamp_int(arguments.get("max_review_items"), default=10, minimum=1, maximum=100)
+    batch_results = Path(arguments["batch_results"]) if arguments.get("batch_results") else newest_agent_batch_results(arguments.get("root"))
+    if not batch_results:
+        return {"error": True, "message": "batch_results or root with an agent-batch-results.json is required"}
+    if not batch_results.exists() or not batch_results.is_file():
+        return {"error": True, "message": f"Agent batch results file not found: {batch_results}", "path": str(batch_results)}
+    output.mkdir(parents=True, exist_ok=True)
+    bundle = build_agent_handoff_bundle_payload(batch_results, max_review_items=max_review_items)
+    json_path = output / "agent-handoff-bundle.json"
+    md_path = output / "agent-handoff-bundle.md"
+    json_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
+    md_path.write_text(render_agent_handoff_bundle_markdown(bundle), encoding="utf-8")
+    artifacts = [
+        artifact("agent_handoff_bundle_json", json_path, label="Agent handoff bundle JSON", media_type="application/json"),
+        artifact("agent_handoff_bundle_markdown", md_path, label="Agent handoff bundle Markdown", media_type="text/markdown"),
+    ]
+    return {
+        "schema_version": "agent-handoff-bundle-tool-v1",
+        "status": "ok",
+        "source": str(batch_results),
+        "output": str(output),
+        "bundle": bundle,
+        "artifacts": artifacts,
+        "next_actions": artifact_next_actions(artifacts),
+    }
+
+
+def newest_agent_batch_results(root: str | None) -> Path | None:
+    if not root:
+        return None
+    listed = list_agent_batch_results({"root": root, "max_results": 1})
+    items = listed.get("items") or []
+    if not items:
+        return None
+    return Path(items[0]["path"])
+
+
+def build_agent_handoff_bundle_payload(batch_results: Path, *, max_review_items: int = 10) -> dict[str, Any]:
+    try:
+        raw = json.loads(batch_results.read_text(encoding="utf-8-sig"))
+    except json.JSONDecodeError as exc:
+        return {
+            "schema_version": "agent-handoff-bundle-v1",
+            "source": str(batch_results),
+            "handoff_ready": False,
+            "contract_validation": {"ok": False, "errors": [f"invalid JSON: {exc}"]},
+            "next_actions": [],
+        }
+    validation = validate_agent_batch_contract_payload(raw, batch_results)
+    inspection = inspect_agent_batch_results({"path": str(batch_results), "max_review_items": max_review_items})
+    attention = inspection.get("attention") or {}
+    bundle = {
+        "schema_version": "agent-handoff-bundle-v1",
+        "source": str(batch_results),
+        "contract_validation": validation,
+        "inspection": inspection,
+        "attention": attention,
+        "summary": inspection.get("summary") or {},
+        "selection": inspection.get("selection") or {},
+        "artifact_summary": inspection.get("artifact_summary") or {},
+        "next_actions": inspection.get("next_actions") or [],
+        "artifacts": inspection.get("artifacts") or [],
+        "review_items": inspection.get("review_items") or [],
+    }
+    bundle["handoff_ready"] = bool(validation.get("ok")) and not bool(attention.get("needs_attention"))
+    return bundle
+
+
+def validate_agent_batch_contract_payload(payload: dict[str, Any], path: Path | None = None) -> dict[str, Any]:
+    schema_version = payload.get("schema_version")
+    errors: list[str] = []
+    if schema_version == "agent-batch-v1":
+        required = {"schema_version", "contract", "manifest", "created_at", "summary", "selection", "artifact_summary", "next_actions", "results"}
+        payload_kind = "results"
+    elif schema_version == "agent-batch-plan-v1":
+        required = {"schema_version", "contract", "manifest", "created_at", "summary", "selection", "validation"}
+        payload_kind = "plan"
+    else:
+        required = set()
+        payload_kind = "unknown"
+        errors.append(f"unsupported schema_version: {schema_version!r}")
+    missing = sorted(field for field in required if field not in payload)
+    if missing:
+        errors.append(f"missing required fields: {', '.join(missing)}")
+    contract = payload.get("contract") or {}
+    if contract.get("schema_version") != "agent-batch-contract-v1":
+        errors.append("contract.schema_version must be agent-batch-contract-v1")
+    if contract.get("payload_schema_version") != schema_version:
+        errors.append("contract.payload_schema_version must match payload schema_version")
+    capabilities = set(contract.get("capabilities") or [])
+    missing_capabilities = sorted(AGENT_BATCH_CONTRACT_CAPABILITIES - capabilities)
+    if missing_capabilities:
+        errors.append(f"missing capabilities: {', '.join(missing_capabilities)}")
+    declared_required = set(contract.get("required_fields") or [])
+    missing_declared = sorted(required - declared_required)
+    if missing_declared:
+        errors.append(f"contract.required_fields missing: {', '.join(missing_declared)}")
+    return {
+        "ok": not errors,
+        "path": str(path) if path else "",
+        "schema_version": schema_version,
+        "payload_kind": payload_kind,
+        "contract_schema_version": contract.get("schema_version"),
+        "errors": errors,
+    }
+
+
+def render_agent_handoff_bundle_markdown(payload: dict[str, Any]) -> str:
+    validation = payload.get("contract_validation") or {}
+    attention = payload.get("attention") or {}
+    summary = payload.get("summary") or {}
+    selection = payload.get("selection") or {}
+    artifact_summary = payload.get("artifact_summary") or {}
+    lines = [
+        "# Agent Handoff Bundle",
+        "",
+        f"- Source: `{payload.get('source', '')}`",
+        f"- Handoff ready: {payload.get('handoff_ready')}",
+        f"- Contract validation: {'ok' if validation.get('ok') else 'failed'}",
+        f"- Needs attention: {attention.get('needs_attention', False)}",
+        f"- Attention reasons: {', '.join(attention.get('reasons') or []) or '(none)'}",
+        f"- Select: {selection.get('select', '')}",
+        f"- Selected jobs: {selection.get('selected_count', 0)}/{selection.get('manifest_job_count', 0)}",
+        f"- Total: {summary.get('total', 0)}",
+        f"- OK: {summary.get('ok', 0)}",
+        f"- Review: {summary.get('review', 0)}",
+        f"- Hard failed: {summary.get('hard_failed', 0)}",
+        f"- Artifact failures: {artifact_summary.get('failed', 0)}",
+        "",
+        "## Next Actions",
+        "",
+    ]
+    actions = payload.get("next_actions") or []
+    if actions:
+        for action in actions:
+            lines.append(f"- `{action.get('action') or action.get('tool')}`")
+    else:
+        lines.append("- (none)")
+    review_items = payload.get("review_items") or []
+    if review_items:
+        lines.extend(["", "## Review Items", ""])
+        for item in review_items[:10]:
+            lines.append(f"- `{item.get('id')}` {item.get('quality_level', '')}: {item.get('suggested_action', '')}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def find_agent_batch_result_paths(root: Path, *, max_depth: int) -> list[Path]:
     root = root.resolve()
     found: list[Path] = []
@@ -1518,6 +1694,8 @@ def infer_artifact_type(path: Path) -> str:
     suffix = path.suffix.lower()
     name = path.name.lower()
     if suffix in {".md", ".markdown"}:
+        if "agent-handoff-bundle" in name:
+            return "agent_handoff_bundle_markdown"
         if "agent-smoke-summary" in name:
             return "agent_smoke_summary_markdown"
         return "markdown"
@@ -1526,6 +1704,8 @@ def infer_artifact_type(path: Path) -> str:
             return "location_index_jsonl"
         return "pages_jsonl"
     if suffix == ".json":
+        if "agent-handoff-bundle" in name:
+            return "agent_handoff_bundle_json"
         if "agent-smoke-summary" in name:
             return "agent_smoke_summary_json"
         if "agent-batch-results" in name:

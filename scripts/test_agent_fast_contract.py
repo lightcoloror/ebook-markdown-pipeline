@@ -76,6 +76,7 @@ def main() -> int:
         assert_quality_summary_next_actions(tmpdir)
         assert_quality_comparison_artifact_read(tmpdir)
         assert_agent_batch_results_inspection(tmpdir)
+        assert_agent_handoff_bundle_tool(tmpdir)
         assert_agent_batch_results_listing(tmpdir)
         assert_agent_batch_contract_validation_action(tmpdir)
 
@@ -100,7 +101,7 @@ def assert_agent_batch_results_inspection(tmpdir: Path) -> None:
         json.dumps(
             {
                 "schema_version": "agent-batch-v1",
-                "contract": {"schema_version": "agent-batch-contract-v1", "capabilities": ["attention_summary", "handoff_next_actions"]},
+                "contract": agent_batch_contract(),
                 "contract_validation": {"ok": True, "payload_kind": "results", "errors": []},
                 "manifest": str(tmpdir / "manifest.json"),
                 "created_at": "now",
@@ -185,6 +186,33 @@ def assert_agent_batch_results_inspection(tmpdir: Path) -> None:
     readable = call_tool("read_artifact", {"path": str(results_path), "artifact_type": "agent_batch_results"})
     if (readable.get("json") or {}).get("schema_version") != "agent-batch-v1":
         raise AssertionError(f"Expected readable agent batch JSON artifact: {readable}")
+
+
+def assert_agent_handoff_bundle_tool(tmpdir: Path) -> None:
+    results_path = write_agent_batch_result_fixture(tmpdir / "handoff-source", status="failed", review=1)
+    output_dir = tmpdir / "handoff-bundle"
+    generated = call_tool(
+        "build_agent_handoff_bundle",
+        {"batch_results": str(results_path), "output": str(output_dir), "max_review_items": 5},
+    )
+    if generated.get("schema_version") != "agent-handoff-bundle-tool-v1" or generated.get("status") != "ok":
+        raise AssertionError(f"Expected handoff bundle tool success: {generated}")
+    bundle = generated.get("bundle") or {}
+    if bundle.get("schema_version") != "agent-handoff-bundle-v1" or bundle.get("contract_validation", {}).get("ok") is not True:
+        raise AssertionError(f"Expected valid handoff bundle payload: {generated}")
+    artifact_types = {item.get("type") for item in generated.get("artifacts") or []}
+    if not {"agent_handoff_bundle_json", "agent_handoff_bundle_markdown"}.issubset(artifact_types):
+        raise AssertionError(f"Expected handoff bundle artifacts: {generated}")
+    readable_action_types = {((item.get("arguments") or {}).get("artifact_type")) for item in generated.get("next_actions") or [] if item.get("tool") == "read_artifact"}
+    if "agent_handoff_bundle_json" not in readable_action_types:
+        raise AssertionError(f"Expected readable handoff bundle next action: {generated}")
+    json_artifact = next(item for item in generated["artifacts"] if item.get("type") == "agent_handoff_bundle_json")
+    readable = call_tool("read_artifact", {"path": json_artifact["path"], "artifact_type": json_artifact["type"]})
+    if (readable.get("json") or {}).get("schema_version") != "agent-handoff-bundle-v1":
+        raise AssertionError(f"Expected readable handoff bundle JSON artifact: {readable}")
+    newest_generated = call_tool("build_agent_handoff_bundle", {"root": str(tmpdir), "output": str(tmpdir / "handoff-bundle-newest")})
+    if Path(newest_generated.get("source", "")).name != "agent-batch-results.json":
+        raise AssertionError(f"Expected root-based handoff bundle discovery: {newest_generated}")
 
 
 def assert_agent_batch_results_listing(tmpdir: Path) -> None:
@@ -275,7 +303,7 @@ def write_agent_batch_result_fixture(batch_dir: Path, *, status: str, review: in
         json.dumps(
             {
                 "schema_version": "agent-batch-v1",
-                "contract": {"schema_version": "agent-batch-contract-v1", "capabilities": ["attention_summary", "handoff_next_actions"]},
+                "contract": agent_batch_contract(),
                 "contract_validation": {"ok": True, "payload_kind": "results", "errors": []},
                 "manifest": str(batch_dir / "manifest.json"),
                 "created_at": "now",
@@ -299,6 +327,35 @@ def write_agent_batch_result_fixture(batch_dir: Path, *, status: str, review: in
         encoding="utf-8",
     )
     return results_path
+
+
+def agent_batch_contract() -> dict[str, object]:
+    return {
+        "name": "ebook-markdown-pipeline-agent-batch",
+        "schema_version": "agent-batch-contract-v1",
+        "payload_schema_version": "agent-batch-v1",
+        "runner": "test_agent_fast_contract.py",
+        "capabilities": [
+            "selection_summary",
+            "artifact_summary",
+            "handoff_next_actions",
+            "attention_summary",
+            "legacy_action_synthesis",
+            "quality_comparison",
+            "recommended_rerun",
+        ],
+        "required_fields": [
+            "schema_version",
+            "contract",
+            "manifest",
+            "created_at",
+            "summary",
+            "selection",
+            "artifact_summary",
+            "next_actions",
+            "results",
+        ],
+    }
 
 
 if __name__ == "__main__":
