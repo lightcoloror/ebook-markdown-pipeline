@@ -78,7 +78,7 @@ Container-side health check:
 curl -H "Authorization: Bearer replace-with-a-local-token" "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/health"
 ```
 
-The health response includes `schema_version`, `tool_count`, `tools`, `supports_async_jobs`, and `supports_artifacts`. Agents should use it for capability discovery before making tool calls.
+The health response includes `schema_version`, `tool_count`, `tools`, `supports_async_jobs`, `supports_artifacts`, `http_config`, `pipeline_capabilities`, and `risk_status`. Agents should use it for capability discovery before making tool calls and should read `http_config.config_path` instead of guessing ports.
 
 Container-side tool call:
 

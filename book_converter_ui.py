@@ -48,6 +48,7 @@ try:
         suggested_command_value,
         write_batch_summary,
     )
+    from ebook_markdown_pipeline.recommendations import recommended_action_for_plan as plan_recommended_action  # noqa: E402
 except ModuleNotFoundError:
     from document_locator import (  # noqa: E402
         IMAGE_EXTENSIONS,
@@ -73,6 +74,7 @@ except ModuleNotFoundError:
         suggested_command_value,
         write_batch_summary,
     )
+    from recommendations import recommended_action_for_plan as plan_recommended_action  # noqa: E402
 
 
 class BookConverterUI:
@@ -1459,12 +1461,7 @@ class BookConverterUI:
         self.apply_review_filter()
 
     def recommended_action_for_plan(self, plan) -> str:
-        output = Path(str(plan.output or ""))
-        if output.exists():
-            return "跳过或续跑 / Skip or Resume"
-        if str(plan.detected_format).upper() == "PDF" and "mineru" in str(plan.pipeline).lower():
-            return "直接转换，长任务 / Convert, long task"
-        return "直接转换 / Convert"
+        return plan_recommended_action(plan)
 
     def run_recommended_actions(self) -> None:
         if self.worker and self.worker.is_alive():

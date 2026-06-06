@@ -142,6 +142,34 @@ Review checklist JSON entries also include machine-readable `next_actions`. Thes
 
 ## Environment Capabilities
 
+HTTP `/health` returns the transport contract plus lightweight operating status:
+
+```json
+{
+  "ok": true,
+  "transport": "http",
+  "http_config": {
+    "config_path": "D:\\used-by-codex\\ebook_markdown_pipeline\\config\\http.env",
+    "local_url": "http://127.0.0.1:9241",
+    "docker_url": "http://host.docker.internal:9241",
+    "bind_host": "127.0.0.1",
+    "bind_port": 9241
+  },
+  "pipeline_capabilities": {
+    "ready": ["structured_ebooks", "pdf_fast_text"],
+    "degraded": [],
+    "missing": ["docling_documents"]
+  },
+  "risk_status": "missing_dependencies"
+}
+```
+
+Use `risk_status` as a quick preflight:
+
+- `ok`: core dependencies are available.
+- `degraded`: usable, but some capability is slower or limited.
+- `missing_dependencies`: at least one optional or required capability is missing; inspect `pipeline_capabilities` before choosing a route.
+
 `health_check` returns both raw dependency `checks` and a capability matrix:
 
 ```json
