@@ -96,8 +96,11 @@ def main() -> int:
         if report_payload.get("artifact_summary", {}).get("failed") != 1:
             raise AssertionError(f"Expected artifact_summary in report payload: {report_payload}")
         report_action_names = {item.get("action") for item in report_payload.get("next_actions") or []}
-        if not {"read_run_summary", "inspect_agent_batch_results", "inspect_failed_artifacts", "inspect_review_items"}.issubset(report_action_names):
+        if not {"read_run_summary", "inspect_agent_batch_results", "build_agent_handoff_bundle", "inspect_failed_artifacts", "inspect_review_items"}.issubset(report_action_names):
             raise AssertionError(f"Expected handoff next actions in report payload: {report_payload}")
+        handoff_action = next((item for item in report_payload.get("next_actions") or [] if item.get("action") == "build_agent_handoff_bundle"), {})
+        if (handoff_action.get("arguments") or {}).get("output") != str(root / "reports" / "handoff"):
+            raise AssertionError(f"Expected version-safe handoff output directory: {report_payload}")
         if not (root / "reports" / "run_summary.md").exists():
             raise AssertionError(f"Expected run_summary.md to be written: {report_payload}")
         run_summary_text = (root / "reports" / "run_summary.md").read_text(encoding="utf-8")

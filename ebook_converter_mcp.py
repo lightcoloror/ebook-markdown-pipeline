@@ -1515,6 +1515,14 @@ def agent_batch_next_actions(path: Path, payload: dict[str, Any]) -> list[dict[s
                 "reason": "Read the human-facing batch handoff summary before inspecting individual jobs.",
             }
         )
+    add_once(
+        {
+            "action": "build_agent_handoff_bundle",
+            "tool": "build_agent_handoff_bundle",
+            "arguments": {"batch_results": str(path), "output": str(path.parent / ("handoff.partial" if payload.get("partial") else "handoff"))},
+            "reason": "Create a compact agent-handoff-bundle.json/md package for another session or agent.",
+        }
+    )
 
     attention = agent_batch_attention_summary(payload)
     artifact_summary = payload.get("artifact_summary") or {}

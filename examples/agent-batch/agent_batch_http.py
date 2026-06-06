@@ -448,6 +448,7 @@ def validate_agent_batch_contract_payload(payload: dict[str, Any], path: Path | 
 def batch_handoff_next_actions(payload: dict[str, Any], *, output: Path, suffix: str = "") -> list[dict[str, Any]]:
     results_path = output / f"agent-batch-results{suffix}.json"
     run_summary_path = output / f"run_summary{suffix}.md"
+    handoff_output = output / ("handoff.partial" if suffix else "handoff")
     actions: list[dict[str, Any]] = [
         {
             "action": "read_run_summary",
@@ -458,6 +459,12 @@ def batch_handoff_next_actions(payload: dict[str, Any], *, output: Path, suffix:
             "action": "inspect_agent_batch_results",
             "tool": "inspect_agent_batch_results",
             "arguments": {"path": str(results_path)},
+        },
+        {
+            "action": "build_agent_handoff_bundle",
+            "tool": "build_agent_handoff_bundle",
+            "arguments": {"batch_results": str(results_path), "output": str(handoff_output)},
+            "reason": "Create a compact agent-handoff-bundle.json/md package for another session or agent.",
         },
     ]
     artifact_summary = payload.get("artifact_summary") or {}

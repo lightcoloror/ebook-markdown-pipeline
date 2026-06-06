@@ -26,6 +26,7 @@ For every real manifest job:
 6. If status is `failed`, read `errors`, `events`, and any available report/log artifact. Return a concise failure reason and retry only if the failure is retryable or caused by timeout/fallback settings.
 7. If a previous batch result is available, pass it as `--baseline-results`, inspect `benchmark-quality-comparison.md`, and follow top-level `next_actions` in `agent-batch-results.json` before saying the new run improved or remained stable. If `rerun_failed_or_review` is present, use its `command_args` or `powershell_command` instead of inventing rerun arguments.
 8. When taking over a previous batch, call `list_agent_batch_results` if the exact results path is unknown; then call `inspect_agent_batch_results` on `agent-batch-results.json` and follow its `recommended_rerun`, `review_items`, and `artifacts`.
+9. If `build_agent_handoff_bundle` appears in top-level `next_actions`, call it before handing the run to another session or Docker agent so the next agent can read the compact `agent-handoff-bundle.json/md` package.
 
 ## Output To User
 

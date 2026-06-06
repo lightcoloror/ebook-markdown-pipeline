@@ -87,7 +87,7 @@ Use the MCP/HTTP tool `build_agent_handoff_bundle` or the CLI wrapper `scripts/b
 
 Real batch results also include `artifact_summary` with total/ok/failed read counts, artifact type counts, and failed artifact read records. Check it before drilling into each job's `artifacts`.
 
-Top-level `next_actions` are always present in real or partial batch results. They include `read_run_summary`, `inspect_agent_batch_results`, and conditional `inspect_failed_artifacts` / `inspect_review_items` actions before any quality-comparison actions.
+Top-level `next_actions` are always present in real or partial batch results. They include `read_run_summary`, `inspect_agent_batch_results`, `build_agent_handoff_bundle`, and conditional `inspect_failed_artifacts` / `inspect_review_items` actions before any quality-comparison actions.
 
 When taking over a previous batch, call `inspect_agent_batch_results` with the prior `agent-batch-results.json`. If the path is unknown, call `list_agent_batch_results` on the likely output root first. These tools return the summary, quality comparison status, `recommended_rerun`, review items, and artifact paths without requiring the agent to parse the whole JSON by hand.
 
