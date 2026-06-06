@@ -279,7 +279,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_agent_smoke_suite.p
 
 其中包含 `test_agent_batch_contract_validator.py` 和 `test_agent_handoff_bundle.py`，用于校验 agent batch handoff 的 contract metadata 和接手索引。
 
-需要留下可交接证据时加 `--output D:\agent-smoke-report`，会写入 `agent-smoke-summary.json/md`。JSON 报告包含 `artifacts` 和 `next_actions`，失败时会列出失败测试和逐条重跑命令。
+需要留下可交接证据时加 `--output D:\agent-smoke-report`，会写入 `agent-smoke-summary.json/md`。JSON 报告包含 `contract`、`contract_validation`、`artifacts` 和 `next_actions`，失败时会列出失败测试和逐条重跑命令。
 
 本地快速定位问题时可加 `--fail-fast`，失败后会停止后续测试；默认会继续跑完以保留完整证据。
 

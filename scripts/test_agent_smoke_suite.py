@@ -24,6 +24,16 @@ FAST_TESTS = [
     "scripts/test_docs_contract.py",
 ]
 FULL_TESTS = FAST_TESTS + ["scripts/test_agent_contract.py"]
+AGENT_SMOKE_SCHEMA_VERSION = "agent-smoke-suite-v1"
+AGENT_SMOKE_CONTRACT_VERSION = "agent-smoke-suite-contract-v1"
+AGENT_SMOKE_CONTRACT_CAPABILITIES = [
+    "mode_summary",
+    "fail_fast_summary",
+    "per_test_results",
+    "failure_tails",
+    "readable_artifacts",
+    "rerun_failed_tests",
+]
 
 
 def main() -> int:
@@ -84,8 +94,9 @@ def build_summary(results: list[dict], *, elapsed: float, full: bool, fail_fast:
     passed = sum(1 for item in results if item["returncode"] == 0)
     failed = len(results) - passed
     stopped_early = len(results) < planned_total
-    return {
-        "schema_version": "agent-smoke-suite-v1",
+    payload = {
+        "schema_version": AGENT_SMOKE_SCHEMA_VERSION,
+        "contract": agent_smoke_contract(),
         "mode": "full" if full else "fast",
         "status": "passed" if failed == 0 else "failed",
         "fail_fast": fail_fast,
@@ -98,6 +109,8 @@ def build_summary(results: list[dict], *, elapsed: float, full: bool, fail_fast:
         "results": results,
         "next_actions": smoke_next_actions(results),
     }
+    payload["contract_validation"] = validate_agent_smoke_contract(payload)
+    return payload
 
 
 def print_summary(payload: dict) -> None:
@@ -139,9 +152,76 @@ def smoke_next_actions(results: list[dict]) -> list[dict]:
     ]
 
 
+def agent_smoke_contract() -> dict:
+    return {
+        "name": "ebook-markdown-pipeline-agent-smoke-suite",
+        "schema_version": AGENT_SMOKE_CONTRACT_VERSION,
+        "payload_schema_version": AGENT_SMOKE_SCHEMA_VERSION,
+        "runner": str(Path(__file__).resolve()),
+        "capabilities": AGENT_SMOKE_CONTRACT_CAPABILITIES,
+        "required_fields": [
+            "schema_version",
+            "contract",
+            "mode",
+            "status",
+            "fail_fast",
+            "stopped_early",
+            "passed",
+            "failed",
+            "total",
+            "planned_total",
+            "elapsed_seconds",
+            "results",
+            "next_actions",
+        ],
+    }
+
+
+def validate_agent_smoke_contract(payload: dict) -> dict:
+    errors: list[str] = []
+    required = {
+        "schema_version",
+        "contract",
+        "mode",
+        "status",
+        "fail_fast",
+        "stopped_early",
+        "passed",
+        "failed",
+        "total",
+        "planned_total",
+        "elapsed_seconds",
+        "results",
+        "next_actions",
+    }
+    missing = sorted(field for field in required if field not in payload)
+    if missing:
+        errors.append(f"missing required fields: {', '.join(missing)}")
+    if payload.get("schema_version") != AGENT_SMOKE_SCHEMA_VERSION:
+        errors.append(f"schema_version must be {AGENT_SMOKE_SCHEMA_VERSION}")
+    contract = payload.get("contract") or {}
+    if contract.get("schema_version") != AGENT_SMOKE_CONTRACT_VERSION:
+        errors.append(f"contract.schema_version must be {AGENT_SMOKE_CONTRACT_VERSION}")
+    if contract.get("payload_schema_version") != payload.get("schema_version"):
+        errors.append("contract.payload_schema_version must match payload schema_version")
+    missing_capabilities = sorted(set(AGENT_SMOKE_CONTRACT_CAPABILITIES) - set(contract.get("capabilities") or []))
+    if missing_capabilities:
+        errors.append(f"missing capabilities: {', '.join(missing_capabilities)}")
+    missing_declared = sorted(required - set(contract.get("required_fields") or []))
+    if missing_declared:
+        errors.append(f"contract.required_fields missing: {', '.join(missing_declared)}")
+    return {
+        "ok": not errors,
+        "schema_version": payload.get("schema_version"),
+        "contract_schema_version": contract.get("schema_version"),
+        "errors": errors,
+    }
+
+
 def with_report_artifacts(payload: dict, *, json_path: Path, md_path: Path) -> dict:
     enriched = dict(payload)
     existing_actions = list(enriched.get("next_actions") or [])
+    enriched["contract_validation"] = validate_agent_smoke_contract(enriched)
     enriched["artifacts"] = [
         {"type": "agent_smoke_summary_json", "path": str(json_path)},
         {"type": "agent_smoke_summary_markdown", "path": str(md_path)},
@@ -165,11 +245,13 @@ def with_report_artifacts(payload: dict, *, json_path: Path, md_path: Path) -> d
 
 
 def render_markdown(payload: dict) -> str:
+    contract_validation = payload.get("contract_validation") or validate_agent_smoke_contract(payload)
     lines = [
         "# Agent Smoke Suite",
         "",
         f"- Mode: {payload['mode']}",
         f"- Status: {payload['status']}",
+        f"- Contract validation: {'ok' if contract_validation.get('ok') else 'failed'}",
         f"- Fail fast: {payload['fail_fast']}",
         f"- Stopped early: {payload['stopped_early']}",
         f"- Passed: {payload['passed']}",

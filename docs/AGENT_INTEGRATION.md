@@ -53,7 +53,7 @@ For routine agent-facing changes, run the fast smoke suite. It covers MCP/HTTP, 
 python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_agent_smoke_suite.py
 ```
 
-Pass `--output <dir>` to persist `agent-smoke-summary.json/md` as handoff evidence for another session or agent. The JSON report includes `artifacts` and `next_actions`; failed runs include failed test names and per-test rerun commands.
+Pass `--output <dir>` to persist `agent-smoke-summary.json/md` as handoff evidence for another session or agent. The JSON report includes `contract`, `contract_validation`, `artifacts`, and `next_actions`; failed runs include failed test names and per-test rerun commands.
 
 Use `--fail-fast` for local debugging when the first failure is enough; omit it when you want a complete handoff report.
 

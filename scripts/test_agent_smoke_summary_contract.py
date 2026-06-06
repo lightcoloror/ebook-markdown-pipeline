@@ -9,11 +9,13 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR))
 
 from ebook_converter_mcp import infer_artifact_type, read_artifact
-from test_agent_smoke_suite import build_summary, render_markdown, tail_text, write_reports
+from test_agent_smoke_suite import build_summary, render_markdown, tail_text, validate_agent_smoke_contract, write_reports
 
 
 REQUIRED_SUMMARY_FIELDS = {
     "schema_version",
+    "contract",
+    "contract_validation",
     "mode",
     "status",
     "fail_fast",
@@ -70,8 +72,12 @@ def assert_passed_summary_contract() -> None:
             raise AssertionError(f"Unexpected {key}: {payload}")
     if payload["next_actions"] != []:
         raise AssertionError(f"Passed smoke summary should not request follow-up actions: {payload}")
+    if payload.get("contract", {}).get("schema_version") != "agent-smoke-suite-contract-v1":
+        raise AssertionError(f"Expected smoke summary contract: {payload}")
+    if payload.get("contract_validation", {}).get("ok") is not True:
+        raise AssertionError(f"Expected self-validating smoke summary: {payload}")
     markdown = render_markdown(payload)
-    for needle in ["# Agent Smoke Suite", "- Status: passed", "- Planned total: 1", "| ok | `scripts/test_ok.py` | 0.123 |"]:
+    for needle in ["# Agent Smoke Suite", "- Status: passed", "- Contract validation: ok", "- Planned total: 1", "| ok | `scripts/test_ok.py` | 0.123 |"]:
         if needle not in markdown:
             raise AssertionError(f"Markdown report missing {needle!r}: {markdown}")
 
@@ -102,6 +108,8 @@ def assert_fail_fast_summary_contract() -> None:
     actions = {item.get("action"): item for item in payload.get("next_actions") or []}
     if actions.get("inspect_failed_smoke_tests", {}).get("failed_tests") != ["scripts/test_failed.py"]:
         raise AssertionError(f"Expected failed test inspection action: {payload}")
+    if payload.get("contract_validation", {}).get("ok") is not True:
+        raise AssertionError(f"Expected failed smoke summary to still self-validate: {payload}")
     rerun = actions.get("rerun_failed_smoke_tests", {})
     if rerun.get("commands") != [["python", "-B", "scripts/test_failed.py"]]:
         raise AssertionError(f"Expected per-test rerun command: {payload}")
@@ -135,6 +143,8 @@ def assert_report_artifact_contract() -> None:
         if not summary_json.exists() or not summary_md.exists():
             raise AssertionError("Expected JSON and Markdown smoke reports")
         persisted = json.loads(summary_json.read_text(encoding="utf-8"))
+        if persisted.get("contract_validation", {}).get("ok") is not True:
+            raise AssertionError(f"Expected persisted smoke report contract validation: {persisted}")
         artifact_types = {item.get("type") for item in persisted.get("artifacts") or []}
         if artifact_types != {"agent_smoke_summary_json", "agent_smoke_summary_markdown"}:
             raise AssertionError(f"Expected persisted smoke artifacts: {persisted}")
@@ -151,6 +161,11 @@ def assert_report_artifact_contract() -> None:
         readable_md = read_artifact({"path": str(summary_md), "artifact_type": "agent_smoke_summary_markdown"})
         if readable_md.get("artifact_type") != "agent_smoke_summary_markdown" or "# Agent Smoke Suite" not in readable_md.get("text", ""):
             raise AssertionError(f"Expected readable smoke Markdown artifact: {readable_md}")
+        broken = dict(persisted)
+        broken.pop("results", None)
+        validation = validate_agent_smoke_contract(broken)
+        if validation.get("ok") is not False or not validation.get("errors"):
+            raise AssertionError(f"Expected broken smoke summary contract to fail: {validation}")
 
 
 def assert_tail_contract() -> None:
