@@ -99,6 +99,7 @@ def assert_agent_batch_results_inspection(tmpdir: Path) -> None:
         json.dumps(
             {
                 "schema_version": "agent-batch-v1",
+                "contract": {"schema_version": "agent-batch-contract-v1", "capabilities": ["attention_summary", "handoff_next_actions"]},
                 "manifest": str(tmpdir / "manifest.json"),
                 "created_at": "now",
                 "duration_seconds": 1.2,
@@ -157,6 +158,8 @@ def assert_agent_batch_results_inspection(tmpdir: Path) -> None:
     inspected = call_tool("inspect_agent_batch_results", {"path": str(results_path)})
     if inspected.get("schema_version") != "agent-batch-inspection-v1" or inspected.get("summary", {}).get("review") != 1:
         raise AssertionError(f"Expected agent batch inspection summary: {inspected}")
+    if inspected.get("contract", {}).get("schema_version") != "agent-batch-contract-v1":
+        raise AssertionError(f"Expected contract passthrough in agent batch inspection: {inspected}")
     if inspected.get("quality_comparison", {}).get("status") != "failed":
         raise AssertionError(f"Expected quality comparison status: {inspected}")
     if inspected.get("selection", {}).get("select") != "failed-or-review" or inspected.get("artifact_summary", {}).get("failed") != 1:
@@ -193,6 +196,8 @@ def assert_agent_batch_results_listing(tmpdir: Path) -> None:
         raise AssertionError(f"Expected newest batch first: {listed}")
     if listed["items"][0].get("selection", {}).get("selected_count") != 2 or listed["items"][0].get("artifact_summary", {}).get("ok") != 1:
         raise AssertionError(f"Expected selection and artifact summary in listed batch: {listed}")
+    if listed["items"][0].get("contract", {}).get("schema_version") != "agent-batch-contract-v1":
+        raise AssertionError(f"Expected contract in listed batch: {listed}")
     if not listed["items"][0].get("attention", {}).get("needs_attention"):
         raise AssertionError(f"Expected attention summary in listed batch: {listed}")
     action_names = {item.get("action") for item in listed.get("next_actions") or []}
@@ -232,6 +237,7 @@ def write_agent_batch_result_fixture(batch_dir: Path, *, status: str, review: in
         json.dumps(
             {
                 "schema_version": "agent-batch-v1",
+                "contract": {"schema_version": "agent-batch-contract-v1", "capabilities": ["attention_summary", "handoff_next_actions"]},
                 "manifest": str(batch_dir / "manifest.json"),
                 "created_at": "now",
                 "duration_seconds": 1.2,

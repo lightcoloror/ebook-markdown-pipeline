@@ -73,6 +73,8 @@ When rerunning or optimizing a batch, pass the prior `agent-batch-results.json` 
 
 Every dry-run plan and real batch result includes a `selection` block with `select`, `rerun_mode`, `previous_results`, `selected_job_ids`, `selected_count`, and `manifest_job_count`. Use it before claiming a run covered the whole manifest or only a targeted failed/review rerun.
 
+Every dry-run plan and real batch result also includes `contract`, with `schema_version=agent-batch-contract-v1`, `payload_schema_version`, `capabilities`, and `required_fields`. Agents should read `contract.capabilities` before assuming support for newer handoff fields.
+
 Real batch results also include `artifact_summary` with total/ok/failed read counts, artifact type counts, and failed artifact read records. Check it before drilling into each job's `artifacts`.
 
 Top-level `next_actions` are always present in real or partial batch results. They include `read_run_summary`, `inspect_agent_batch_results`, and conditional `inspect_failed_artifacts` / `inspect_review_items` actions before any quality-comparison actions.

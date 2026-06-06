@@ -158,6 +158,8 @@ When baseline comparison is enabled, `agent-batch-results.json` also includes to
 
 `agent-batch-plan.json` and `agent-batch-results.json` include a `selection` block: `select`, `rerun_mode`, `previous_results`, `selected_job_ids`, `selected_count`, `manifest_job_count`, and `selection_ratio`. Agents should use this block to distinguish full runs from targeted reruns.
 
+Both files include a `contract` block with `schema_version=agent-batch-contract-v1`, `payload_schema_version`, `runner`, `capabilities`, and `required_fields`. Use `contract.capabilities` to detect handoff support such as `selection_summary`, `artifact_summary`, `handoff_next_actions`, `attention_summary`, and `legacy_action_synthesis`.
+
 `agent-batch-results.json` includes `artifact_summary` with total/ok/failed artifact read counts, `type_counts`, and `failed_artifacts`. Agents should inspect this before assuming all referenced artifacts were readable.
 
 Real and partial batch results include top-level `next_actions` for handoff. Baseline comparisons may append quality-comparison actions, but agents should first follow `read_run_summary` and `inspect_agent_batch_results`, then handle conditional `inspect_failed_artifacts` and `inspect_review_items`.

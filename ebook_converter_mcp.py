@@ -1225,6 +1225,7 @@ def inspect_agent_batch_results(arguments: dict[str, Any]) -> dict[str, Any]:
     return {
         "schema_version": "agent-batch-inspection-v1",
         "path": str(path),
+        "contract": payload.get("contract") or {},
         "manifest": payload.get("manifest"),
         "created_at": payload.get("created_at"),
         "duration_seconds": payload.get("duration_seconds"),
@@ -1260,6 +1261,7 @@ def list_agent_batch_results(arguments: dict[str, Any]) -> dict[str, Any]:
                 "path": str(path),
                 "modified_at": timestamp_from_epoch(path.stat().st_mtime),
                 "error": inspected.get("error", False),
+                "contract": inspected.get("contract") or {},
                 "summary": inspected.get("summary") or {},
                 "selection": inspected.get("selection") or {},
                 "artifact_summary": inspected.get("artifact_summary") or {},

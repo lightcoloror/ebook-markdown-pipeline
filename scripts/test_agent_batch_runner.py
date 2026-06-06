@@ -87,6 +87,10 @@ def main() -> int:
         if artifact_summary.get("ok") != 2 or artifact_summary.get("failed") != 1 or artifact_summary.get("type_counts", {}).get("markdown") != 2:
             raise AssertionError(f"Expected top-level artifact read summary: {artifact_summary}")
         report_payload = runner.write_reports(root / "reports", root / "manifest.json", 0.0, [result], partial=False)
+        if report_payload.get("contract", {}).get("schema_version") != "agent-batch-contract-v1":
+            raise AssertionError(f"Expected batch contract in report payload: {report_payload}")
+        if "handoff_next_actions" not in report_payload.get("contract", {}).get("capabilities", []):
+            raise AssertionError(f"Expected handoff capability in batch contract: {report_payload}")
         if report_payload.get("artifact_summary", {}).get("failed") != 1:
             raise AssertionError(f"Expected artifact_summary in report payload: {report_payload}")
         report_action_names = {item.get("action") for item in report_payload.get("next_actions") or []}
@@ -230,6 +234,8 @@ def main() -> int:
                 select="review",
             ),
         )
+        if plan_payload.get("contract", {}).get("payload_schema_version") != "agent-batch-plan-v1":
+            raise AssertionError(f"Expected batch plan contract: {plan_payload}")
         plan_text = (root / "plans" / "agent-batch-plan.md").read_text(encoding="utf-8")
         if plan_payload.get("selection", {}).get("selected_count") != 1 or "Selected jobs: 1/2: archive" not in plan_text:
             raise AssertionError(f"Expected selected job count in plan markdown: {plan_payload}")

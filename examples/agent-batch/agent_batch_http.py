@@ -45,6 +45,18 @@ ALLOWED_OUTPUT_FORMATS = {"markdown", "html", "text"}
 ALLOWED_OCR = {"auto", "always", "never"}
 SELECT_MODES = {"all", "failed", "review", "failed-or-review"}
 RERUN_MODES = {"as-manifest", "recommended"}
+AGENT_BATCH_SCHEMA_VERSION = "agent-batch-v1"
+AGENT_BATCH_PLAN_SCHEMA_VERSION = "agent-batch-plan-v1"
+AGENT_BATCH_CONTRACT_VERSION = "agent-batch-contract-v1"
+AGENT_BATCH_CONTRACT_CAPABILITIES = [
+    "selection_summary",
+    "artifact_summary",
+    "handoff_next_actions",
+    "attention_summary",
+    "legacy_action_synthesis",
+    "quality_comparison",
+    "recommended_rerun",
+]
 
 
 def main() -> int:
@@ -301,6 +313,27 @@ def synchronous_status(result: dict[str, Any]) -> str:
     return "ok" if result.get("artifacts") else "failed"
 
 
+def agent_batch_contract(*, plan: bool = False) -> dict[str, Any]:
+    required_fields = [
+        "schema_version",
+        "contract",
+        "manifest",
+        "created_at",
+        "summary",
+        "selection",
+    ]
+    if not plan:
+        required_fields.extend(["artifact_summary", "next_actions", "results"])
+    return {
+        "name": "ebook-markdown-pipeline-agent-batch",
+        "schema_version": AGENT_BATCH_CONTRACT_VERSION,
+        "payload_schema_version": AGENT_BATCH_PLAN_SCHEMA_VERSION if plan else AGENT_BATCH_SCHEMA_VERSION,
+        "runner": str(Path(__file__).resolve()),
+        "capabilities": AGENT_BATCH_CONTRACT_CAPABILITIES,
+        "required_fields": required_fields,
+    }
+
+
 def finish(base: dict[str, Any], started: float, status: str, **extra: Any) -> dict[str, Any]:
     result = {
         **base,
@@ -325,7 +358,8 @@ def write_reports(
     suffix = ".partial" if partial else ""
     output.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": "agent-batch-v1",
+        "schema_version": AGENT_BATCH_SCHEMA_VERSION,
+        "contract": agent_batch_contract(),
         "manifest": str(manifest),
         "created_at": timestamp(),
         "duration_seconds": round(time.monotonic() - started, 3),
@@ -496,7 +530,8 @@ def write_plan(
 ) -> dict[str, Any]:
     output.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": "agent-batch-plan-v1",
+        "schema_version": AGENT_BATCH_PLAN_SCHEMA_VERSION,
+        "contract": agent_batch_contract(plan=True),
         "manifest": str(manifest),
         "created_at": timestamp(),
         "summary": {
