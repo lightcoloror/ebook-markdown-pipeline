@@ -81,6 +81,8 @@ Freshly generated agent batch plans/results also include `contract_validation`; 
 
 `agent-batch-summary.md`, `run_summary.md`, and `agent-batch-plan.md` also show `Contract validation: ok` or `failed` near the top for quick human/agent review.
 
+If contract validation fails, generated or inspected batch results expose `inspect_contract_validation` in `next_actions` with the validation errors.
+
 Real batch results also include `artifact_summary` with total/ok/failed read counts, artifact type counts, and failed artifact read records. Check it before drilling into each job's `artifacts`.
 
 Top-level `next_actions` are always present in real or partial batch results. They include `read_run_summary`, `inspect_agent_batch_results`, and conditional `inspect_failed_artifacts` / `inspect_review_items` actions before any quality-comparison actions.

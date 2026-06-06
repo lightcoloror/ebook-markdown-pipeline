@@ -1360,6 +1360,15 @@ def agent_batch_next_actions(path: Path, payload: dict[str, Any]) -> list[dict[s
                 "reason": "Some jobs completed with review signals; inspect review items before accepting outputs.",
             }
         )
+    contract_validation = payload.get("contract_validation") or {}
+    if contract_validation.get("ok") is False:
+        add_once(
+            {
+                "action": "inspect_contract_validation",
+                "contract_validation": contract_validation,
+                "reason": "The agent batch handoff contract did not validate; inspect errors before trusting handoff fields.",
+            }
+        )
 
     comparison = payload.get("quality_comparison") or {}
     if comparison.get("markdown"):

@@ -56,6 +56,10 @@ def main() -> int:
         broken_validation = validator.validate_payload(broken)
         if broken_validation.get("ok") or not broken_validation.get("errors"):
             raise AssertionError(f"Expected broken contract validation to fail: {broken_validation}")
+        broken["contract_validation"] = broken_validation
+        actions = runner.ensure_contract_validation_next_action([], broken)
+        if len(actions) != 1 or actions[0].get("action") != "inspect_contract_validation":
+            raise AssertionError(f"Expected inspect_contract_validation action for broken contract: {actions}")
 
     print("Agent batch contract validator smoke test passed.")
     return 0

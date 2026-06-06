@@ -381,6 +381,7 @@ def write_reports(
     }
     payload["next_actions"] = batch_handoff_next_actions(payload, output=output, suffix=suffix)
     payload["contract_validation"] = validate_agent_batch_contract_payload(payload)
+    payload["next_actions"] = ensure_contract_validation_next_action(payload["next_actions"], payload)
     (output / f"agent-batch-results{suffix}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     (output / f"agent-batch-summary{suffix}.md").write_text(render_markdown(payload), encoding="utf-8")
     (output / f"run_summary{suffix}.md").write_text(render_run_summary(payload), encoding="utf-8")
@@ -396,6 +397,7 @@ def write_reports(
             ),
         ]
         payload["contract_validation"] = validate_agent_batch_contract_payload(payload)
+        payload["next_actions"] = ensure_contract_validation_next_action(payload["next_actions"], payload)
         (output / "agent-batch-results.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         (output / "run_summary.md").write_text(render_run_summary(payload), encoding="utf-8")
     return payload
@@ -478,7 +480,26 @@ def batch_handoff_next_actions(payload: dict[str, Any], *, output: Path, suffix:
                 "reason": "Some jobs completed with review signals; inspect review items before accepting outputs.",
             }
         )
+    contract_validation = payload.get("contract_validation") or {}
+    if contract_validation and contract_validation.get("ok") is False:
+        actions = ensure_contract_validation_next_action(actions, payload)
     return actions
+
+
+def ensure_contract_validation_next_action(actions: list[dict[str, Any]], payload: dict[str, Any]) -> list[dict[str, Any]]:
+    contract_validation = payload.get("contract_validation") or {}
+    if contract_validation.get("ok") is not False:
+        return actions
+    if any(action.get("action") == "inspect_contract_validation" for action in actions):
+        return actions
+    return [
+        *actions,
+        {
+            "action": "inspect_contract_validation",
+            "contract_validation": contract_validation,
+            "reason": "The agent batch handoff contract did not validate; inspect errors before trusting handoff fields.",
+        },
+    ]
 
 
 def write_quality_comparison(output: Path, baseline_results: Path, candidate_results: Path) -> dict[str, Any]:

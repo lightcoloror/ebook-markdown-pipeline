@@ -77,6 +77,7 @@ def main() -> int:
         assert_quality_comparison_artifact_read(tmpdir)
         assert_agent_batch_results_inspection(tmpdir)
         assert_agent_batch_results_listing(tmpdir)
+        assert_agent_batch_contract_validation_action(tmpdir)
 
     print("Agent fast contract test passed.")
     return 0
@@ -208,6 +209,38 @@ def assert_agent_batch_results_listing(tmpdir: Path) -> None:
     action_names = {item.get("action") for item in listed.get("next_actions") or []}
     if "inspect_latest_agent_batch" not in action_names or "rerun_failed_or_review" not in action_names:
         raise AssertionError(f"Expected list next actions for latest failed batch: {listed}")
+
+
+def assert_agent_batch_contract_validation_action(tmpdir: Path) -> None:
+    batch_dir = tmpdir / "bad-contract"
+    batch_dir.mkdir()
+    results_path = batch_dir / "agent-batch-results.json"
+    (batch_dir / "run_summary.md").write_text("# Run Summary\n", encoding="utf-8")
+    results_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "agent-batch-v1",
+                "contract": {"schema_version": "wrong"},
+                "contract_validation": {"ok": False, "payload_kind": "results", "errors": ["contract.schema_version must be agent-batch-contract-v1"]},
+                "manifest": str(batch_dir / "manifest.json"),
+                "created_at": "now",
+                "duration_seconds": 1.2,
+                "partial": False,
+                "summary": {"total": 1, "ok": 1, "review": 0, "hard_failed": 0},
+                "selection": {"select": "all", "selected_count": 1, "manifest_job_count": 1},
+                "artifact_summary": {"total": 0, "ok": 0, "failed": 0, "type_counts": {}, "failed_artifacts": []},
+                "next_actions": [],
+                "results": [],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    inspected = call_tool("inspect_agent_batch_results", {"path": str(results_path)})
+    action_names = {item.get("action") for item in inspected.get("next_actions") or []}
+    if "inspect_contract_validation" not in action_names:
+        raise AssertionError(f"Expected synthesized contract validation action: {inspected}")
 
 
 def write_agent_batch_result_fixture(batch_dir: Path, *, status: str, review: int) -> Path:
