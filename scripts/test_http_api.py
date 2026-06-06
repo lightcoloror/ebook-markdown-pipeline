@@ -2,27 +2,47 @@ from __future__ import annotations
 
 import argparse
 import json
+import threading
+import time
 import urllib.error
 import urllib.request
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
+from ebook_markdown_pipeline.ebook_converter_http import build_handler  # noqa: E402
 from ebook_markdown_pipeline.http_config import default_http_url  # noqa: E402
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-test the ebook converter HTTP bridge.")
-    parser.add_argument("--url", default=default_http_url())
+    parser.add_argument("--url", default="", help=f"Existing bridge URL. If omitted, start an in-process server. Config default: {default_http_url()}")
     parser.add_argument("--token", default="")
     parser.add_argument("--input", default=str(Path(__file__).resolve().parents[1] / "requirements.txt"))
     parser.add_argument("--output", default=str(Path(__file__).resolve().parents[1] / "_http_api_test_output"))
     args = parser.parse_args()
 
+    server: ThreadingHTTPServer | None = None
+    url = args.url
+    if not url:
+        server = start_local_server(args.token)
+        url = f"http://127.0.0.1:{server.server_port}"
+
+    try:
+        run_http_smoke(url, args)
+    finally:
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+    return 0
+
+
+def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     headers = {"Authorization": f"Bearer {args.token}"} if args.token else {}
-    health = request_json(f"{args.url.rstrip('/')}/health", headers=headers)
+    health = request_json(f"{url.rstrip('/')}/health", headers=headers)
     if not health.get("ok"):
         raise RuntimeError(f"Health check failed: {health}")
     if not health.get("supports_async_jobs") or not health.get("supports_artifacts"):
@@ -30,7 +50,7 @@ def main() -> int:
     if "read_artifact" not in set(health.get("tools", [])):
         raise RuntimeError(f"Health response is missing tool names: {health}")
 
-    tools = request_json(f"{args.url.rstrip('/')}/tools", headers=headers)
+    tools = request_json(f"{url.rstrip('/')}/tools", headers=headers)
     tool_names = {item["name"] for item in tools.get("tools", [])}
     required = {
         "scan_books",
@@ -48,7 +68,7 @@ def main() -> int:
         raise RuntimeError(f"Missing tools: {sorted(missing_tools)}")
 
     scan = request_json(
-        f"{args.url.rstrip('/')}/call",
+        f"{url.rstrip('/')}/call",
         method="POST",
         headers=headers,
         payload={
@@ -63,7 +83,7 @@ def main() -> int:
     if scan.get("error"):
         raise RuntimeError(scan)
     inspected = request_json(
-        f"{args.url.rstrip('/')}/call",
+        f"{url.rstrip('/')}/call",
         method="POST",
         headers=headers,
         payload={
@@ -77,7 +97,7 @@ def main() -> int:
     if inspected.get("error"):
         raise RuntimeError(inspected)
     invalid = request_json(
-        f"{args.url.rstrip('/')}/call",
+        f"{url.rstrip('/')}/call",
         method="POST",
         headers=headers,
         payload={"name": "missing_tool_for_contract_test", "arguments": {}},
@@ -92,11 +112,28 @@ def main() -> int:
                 "scan_count": scan.get("count"),
                 "inspect_status": inspected.get("status"),
                 "tool_count": len(tool_names),
+                "url": url,
             },
             ensure_ascii=False,
         )
     )
-    return 0
+
+
+def start_local_server(token: str) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), build_handler(token))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_port}/health"
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        try:
+            request_json(url, headers={"Authorization": f"Bearer {token}"} if token else {})
+            return server
+        except Exception:
+            time.sleep(0.1)
+    server.shutdown()
+    server.server_close()
+    raise RuntimeError("In-process HTTP server did not become healthy.")
 
 
 def request_json(
