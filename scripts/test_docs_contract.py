@@ -16,6 +16,7 @@ def main() -> int:
             "inspect_agent_batch_results",
             "list_agent_batch_results",
             "--fail-on-regression",
+            "test_agent_smoke_suite.py",
         ],
         "docs/TOOL_CONTRACT.md": [
             "Batch Quality Baselines",
@@ -44,6 +45,7 @@ def main() -> int:
         ],
         "README.md": [
             "test_agent_fast_contract.py",
+            "test_agent_smoke_suite.py",
             "test_agent_contract.py",
             "inspect_agent_batch_results",
             "list_agent_batch_results",

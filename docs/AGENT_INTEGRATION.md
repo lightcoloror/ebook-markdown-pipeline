@@ -47,6 +47,14 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_mcp_stdio.py
 
 Use `--convert` if you also want to test a tiny real TXT conversion.
 
+For routine agent-facing changes, run the fast smoke suite:
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_agent_smoke_suite.py
+```
+
+Use `--full` before releases or broad contract changes to include the slower full agent contract test.
+
 ## Batch Templates
 
 Repeatable agent batch templates live in `examples/agent-batch/`:

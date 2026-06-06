@@ -270,6 +270,12 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_docs_contract.py
 python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_agent_fast_contract.py
 ```
 
+运行 agent-facing 快速 smoke 套件，覆盖 MCP/HTTP、本地 CLI、批处理 handoff 和文档契约：
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_agent_smoke_suite.py
+```
+
 完整 agent contract 测试包含 HTTP、环境快照、PDF outline、web archive 等慢路径，适合发布前或大改后运行：
 
 ```powershell
