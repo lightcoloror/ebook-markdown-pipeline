@@ -48,7 +48,11 @@ try:
         suggested_command_value,
         write_batch_summary,
     )
-    from ebook_markdown_pipeline.recommendations import recommended_action_for_plan as plan_recommended_action  # noqa: E402
+    from ebook_markdown_pipeline.recommendations import (  # noqa: E402
+        normalize_pdf_pipeline,
+        pipeline_from_suggestion_text,
+        recommended_action_for_plan as plan_recommended_action,
+    )
 except ModuleNotFoundError:
     from document_locator import (  # noqa: E402
         IMAGE_EXTENSIONS,
@@ -74,7 +78,11 @@ except ModuleNotFoundError:
         suggested_command_value,
         write_batch_summary,
     )
-    from recommendations import recommended_action_for_plan as plan_recommended_action  # noqa: E402
+    from recommendations import (  # noqa: E402
+        normalize_pdf_pipeline,
+        pipeline_from_suggestion_text,
+        recommended_action_for_plan as plan_recommended_action,
+    )
 
 
 class BookConverterUI:
@@ -1474,7 +1482,8 @@ class BookConverterUI:
             if any(token in quality for token in ("review", "poor", "failed")) or any(token in action for token in ("rerun", "重跑", "compare", "对比")):
                 self.execute_selected_suggestion()
                 return
-        planned_rows = [self.tree_row_values(item_id) for item_id in self.tree.get_children("")]
+        planned_items = [(item_id, self.tree_row_values(item_id)) for item_id in self.tree.get_children("")]
+        planned_rows = [row for _item_id, row in planned_items]
         convertible = [
             Path(row["source"])
             for row in planned_rows
@@ -1490,17 +1499,64 @@ class BookConverterUI:
             self.start_convert()
             return
         review_rows = [
-            row
-            for row in planned_rows
+            (item_id, row)
+            for item_id, row in planned_items
             if any(token in row.get("quality", "").lower() for token in ("review", "poor", "failed"))
         ]
         if review_rows:
-            messagebox.showinfo(
-                "请选择复查项 / Select review item",
-                "请先选中一个 review/poor/failed 行，再点击按推荐执行。/ Select one review/poor/failed row first.",
+            if self.run_safe_batch_review_rerun(review_rows):
+                return
+            first_item, first_row = review_rows[0]
+            self.tree.selection_set(first_item)
+            self.tree.focus(first_item)
+            self.tree.see(first_item)
+            self.write_log(
+                "按推荐执行：自动选中第一条复查项并执行建议。/ "
+                f"Run recommended: selected first review item: {first_row.get('source', '')}"
             )
+            self.execute_selected_suggestion()
             return
         messagebox.showinfo("没有推荐动作 / No action", "当前没有可自动执行的安全推荐动作。/ No safe recommended action is available.")
+
+    def run_safe_batch_review_rerun(self, review_rows: list[tuple[str, dict[str, str]]]) -> bool:
+        candidates = []
+        for _item_id, row in review_rows:
+            source = Path(row.get("source", ""))
+            if source.suffix.lower() != ".pdf" or not source.exists():
+                continue
+            pipeline = self.recommended_rerun_pipeline_for_row(row)
+            if pipeline and pipeline != "auto":
+                candidates.append((source, pipeline))
+        if len(candidates) < 2:
+            return False
+        pipelines = {pipeline for _source, pipeline in candidates}
+        if len(pipelines) != 1:
+            self.write_log(
+                "按推荐执行：复查项推荐了多个不同管道，已改为逐条处理以避免误跑。/ "
+                f"Run recommended: multiple pipelines found: {', '.join(sorted(pipelines))}"
+            )
+            return False
+        pipeline = next(iter(pipelines))
+        self.rerun_sources_versioned([source for source, _pipeline in candidates], pipeline)
+        return True
+
+    def recommended_rerun_pipeline_for_row(self, row: dict[str, str]) -> str:
+        report_payload = self.selected_report_payload(row)
+        next_actions = self.next_actions_from_report_payload(report_payload) if report_payload else []
+        for next_action in self.prioritize_next_actions(next_actions):
+            name = str(next_action.get("action") or next_action.get("tool") or "")
+            if name == "compare_pdf_pipelines":
+                return "auto"
+            if name == "rerun":
+                pipeline = normalize_pdf_pipeline(str(next_action.get("pipeline") or next_action.get("pdf_pipeline_mode") or ""))
+                if pipeline:
+                    return pipeline
+        if report_payload:
+            for item in (((report_payload.get("quality_summary") or {}).get("review_items")) or []):
+                pipeline = pipeline_from_suggestion_text(str(item.get("suggested_action") or ""))
+                if pipeline:
+                    return pipeline
+        return normalize_pdf_pipeline(row.get("pipeline", ""))
 
     def tree_row_values(self, item_id: str) -> dict[str, str]:
         values = self.tree.item(item_id, "values")
@@ -2471,19 +2527,31 @@ class BookConverterUI:
             if candidate in pipeline:
                 self.pdf_mode_var.set(candidate)
                 break
-        original_output = Path(self.output_var.get().strip()) if self.output_var.get().strip() else source.parent
-        rerun_output = self.normalize_rerun_output_root(original_output, source)
+        recommended_pipeline = self.recommended_rerun_pipeline_for_row(selected)
+        if recommended_pipeline and recommended_pipeline != "auto":
+            self.pdf_mode_var.set(recommended_pipeline)
+        self.rerun_sources_versioned([source], self.pdf_mode_var.get())
+
+    def rerun_sources_versioned(self, sources: list[Path], pipeline: str) -> None:
+        sources = [source for source in sources if source.exists()]
+        if not sources:
+            messagebox.showwarning("文件不存在 / File not found", "没有可重跑的源文件。/ No source files are available.")
+            return
+        original_output = Path(self.output_var.get().strip()) if self.output_var.get().strip() else sources[0].parent
+        rerun_output = self.normalize_rerun_output_root(original_output, sources[0])
         suffix = f"-{time.strftime('%Y%m%d-%H%M%S')}"
-        self.selected_input_files = [source]
-        self.input_var.set(str(source))
+        self.selected_input_files = sources
+        self.input_var.set(self.format_selected_files(sources))
         self.output_var.set(str(rerun_output))
         self.one_shot_output_name_suffix = suffix
         self.output_manually_selected = True
         self.overwrite_var.set(False)
         self.resume_var.set(False)
+        if pipeline:
+            self.pdf_mode_var.set(pipeline)
         self.write_log(
             "安全推荐重跑 / Safe recommended rerun: "
-            f"{self.pdf_mode_var.get()} -> {source}; output_dir={rerun_output}; filename_suffix={suffix}"
+            f"{self.pdf_mode_var.get()} -> {len(sources)} file(s); output_dir={rerun_output}; filename_suffix={suffix}"
         )
         self.write_log("原主输出不会被覆盖；重跑结果会在原输出目录中追加时间后缀。/ Main output will not be overwritten.")
         self.current_stage_var.set(f"版本化文件名 / Versioned filename suffix: {suffix}")

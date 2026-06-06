@@ -9,7 +9,11 @@ from types import SimpleNamespace
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR.parent))
 
-from ebook_markdown_pipeline.recommendations import recommended_action_for_plan  # noqa: E402
+from ebook_markdown_pipeline.recommendations import (  # noqa: E402
+    normalize_pdf_pipeline,
+    pipeline_from_suggestion_text,
+    recommended_action_for_plan,
+)
 
 
 def main() -> int:
@@ -23,6 +27,14 @@ def main() -> int:
             raise AssertionError("MinerU PDF should warn as long task.")
         if "Convert" not in recommended_action_for_plan(SimpleNamespace(output=str(root / "new.md"), detected_format="TXT", pipeline="pandoc")):
             raise AssertionError("New ordinary file should recommend conversion.")
+        if normalize_pdf_pipeline("Umi-OCR") != "umi":
+            raise AssertionError("Umi-OCR should normalize to umi.")
+        if normalize_pdf_pipeline("pymupdf") != "pymupdf4llm":
+            raise AssertionError("pymupdf should normalize to pymupdf4llm.")
+        if pipeline_from_suggestion_text("建议用 Umi-OCR 重跑疑难页") != "umi":
+            raise AssertionError("Chinese Umi-OCR suggestion should be detected.")
+        if pipeline_from_suggestion_text("PDF对比建议重跑 / Compare with MinerU") != "auto":
+            raise AssertionError("Compare suggestion should keep pipeline auto.")
     print("Recommendation smoke test passed.")
     return 0
 

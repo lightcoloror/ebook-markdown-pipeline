@@ -12,6 +12,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2].parent))
 from ebook_markdown_pipeline.http_config import default_http_url  # noqa: E402
+from ebook_markdown_pipeline.recommendations import normalize_pdf_pipeline, pipeline_from_suggestion_text  # noqa: E402
 
 
 READABLE_TYPES = {
@@ -38,18 +39,6 @@ ALLOWED_OUTPUT_FORMATS = {"markdown", "html", "text"}
 ALLOWED_OCR = {"auto", "always", "never"}
 SELECT_MODES = {"all", "failed", "review", "failed-or-review"}
 RERUN_MODES = {"as-manifest", "recommended"}
-PDF_PIPELINES = {"auto", "fast", "pymupdf4llm", "mineru", "marker", "umi", "docling"}
-PIPELINE_TEXT_ALIASES = [
-    ("pymupdf4llm", "pymupdf4llm"),
-    ("pymupdf", "pymupdf4llm"),
-    ("mineru", "mineru"),
-    ("marker", "marker"),
-    ("umi-ocr", "umi"),
-    ("umi_ocr", "umi"),
-    ("umi ocr", "umi"),
-    ("umi", "umi"),
-    ("docling", "docling"),
-]
 
 
 def main() -> int:
@@ -416,29 +405,10 @@ def extract_recommended_arguments(previous: dict[str, Any]) -> dict[str, Any]:
         if action.get("action") == "compare_pdf_pipelines":
             return {"pdf_pipeline_mode": "auto"}
     for suggested in iter_suggested_actions(previous):
-        pipeline = pipeline_from_text(suggested)
+        pipeline = pipeline_from_suggestion_text(suggested)
         if pipeline:
             return {"pdf_pipeline_mode": pipeline}
     return {}
-
-
-def normalize_pdf_pipeline(value: str) -> str:
-    normalized = value.strip().lower().replace("_", "-")
-    if normalized == "umi-ocr":
-        return "umi"
-    if normalized == "pymupdf":
-        return "pymupdf4llm"
-    return normalized if normalized in PDF_PIPELINES else ""
-
-
-def pipeline_from_text(value: str) -> str:
-    text = value.lower()
-    if "compare" in text or "对比" in text:
-        return "auto"
-    for needle, pipeline in PIPELINE_TEXT_ALIASES:
-        if needle in text:
-            return pipeline
-    return ""
 
 
 def iter_next_actions(payload: dict[str, Any]):

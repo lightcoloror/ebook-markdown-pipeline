@@ -263,7 +263,7 @@ powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipelin
 
 该 smoke 会生成 txt、fb2、rtf、epub、odt、azw3、mobi、azw、pdf 小样本，启动本项目 HTTP bridge，并从 `openclaw-openclaw-gateway-1` 和 `hermes-agent` 容器内通过 `host.docker.internal` 调用 `/health`、`/call scan_books`、多轮 `/call start_conversion`、`/call get_job_status` 和 `/call read_artifact`。报告写入 `docker-agent-smoke.json/md`。
 
-转换完成后，HTTP/MCP job 会在 `get_job_status` 中返回 `quality_summary`。Agent 应优先检查 `review_count` 和 `review_items`，再按 `next_actions` 读取 `summary_report`、`review_report` 和代表性 Markdown。桌面 UI 的文件列表也会在转换完成后显示 `质量 / Quality` 和 `建议 / Action` 两列，可点击列头按质量排序；`review / poor / failed` 会有颜色提示，双击行或点击 `执行建议 / Do Action` 会打开报告、复查清单、复制失败原因或启动 PDF 多管道对比。
+转换完成后，HTTP/MCP job 会在 `get_job_status` 中返回 `quality_summary`。Agent 应优先检查 `review_count` 和 `review_items`，再按 `next_actions` 读取 `summary_report`、`review_report` 和代表性 Markdown。桌面 UI 的文件列表也会在转换完成后显示 `质量 / Quality` 和 `建议 / Action` 两列，可点击列头按质量排序；`review / poor / failed` 会有颜色提示，双击行或点击 `执行建议 / Do Action` 会打开报告、复查清单、复制失败原因或启动 PDF 多管道对比。`按推荐执行 / Run Rec` 会先批量转换安全的新文件；如果当前列表只有复查项，它会在所有可重跑 PDF 推荐同一管道时做版本化批量重跑，否则自动选中第一条复查项并执行对应建议。
 
 UI 复查工作台还支持 `只看复查 / Review only`、`上一条 / Prev`、`下一条 / Next`、`原文件 / Source`、`标记验收 / Accept`、`人工评分 / Score` 和 `人工记录 / Manual`。人工验收结果会写入输出目录的 `.reports/manual-review.json` 和 `.reports/manual-review.md`，重新扫描或转换完成后会自动回填到表格，用于后续校准质量评分规则。
 

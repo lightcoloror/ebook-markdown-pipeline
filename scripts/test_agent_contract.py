@@ -496,6 +496,9 @@ def assert_http_contract(input_path: Path, output_path: Path) -> None:
         )
         if ok.get("ok") is not True or not isinstance(ok.get("result"), dict) or ok.get("route") != "start_location_index":
             raise AssertionError(f"HTTP ok envelope failed: {ok}")
+        http_job = http_poll_job(base, str(ok.get("job_id")))
+        if http_job.get("status") != "done":
+            raise AssertionError(f"HTTP async job did not finish: {http_job}")
 
         invalid = http_json(base + "/call", payload={"name": "missing_contract_tool", "arguments": {}}, allow_http_error=True)
         assert_fields("HTTP error", invalid, ERROR_FIELDS)
@@ -503,6 +506,19 @@ def assert_http_contract(input_path: Path, output_path: Path) -> None:
             raise AssertionError(f"HTTP error contract failed: {invalid}")
     finally:
         server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def http_poll_job(base: str, job_id: str, *, timeout: float = 20) -> dict[str, Any]:
+    deadline = time.time() + timeout
+    final: dict[str, Any] | None = None
+    while time.time() < deadline:
+        final = http_json(base + "/call", payload={"name": "get_job_status", "arguments": {"job_id": job_id}})
+        if final.get("status") != "running":
+            return final
+        time.sleep(0.1)
+    raise TimeoutError(f"Timed out waiting for HTTP job {job_id}: {final}")
 
 
 def http_json(url: str, payload: dict[str, Any] | None = None, *, allow_http_error: bool = False) -> dict[str, Any]:
