@@ -31,6 +31,7 @@ from ebook_markdown_pipeline.document_locator import build_location_index, expor
 from ebook_markdown_pipeline.document_inspector import inspect_document  # noqa: E402
 from ebook_markdown_pipeline.environment_report import compare_environment_lock, export_environment_report  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book, rebuild_image_book_from_order  # noqa: E402
+from ebook_markdown_pipeline.process_web_archive import process_web_archive as process_web_archive_core  # noqa: E402
 
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -56,6 +57,10 @@ JSON_ARTIFACT_TYPES = {
     "environment_lock",
     "environment_lock_compare",
     "environment_lock_compare_json",
+    "visual_check_json",
+    "visual_blocks_json",
+    "table_candidates_json",
+    "image_positions_json",
 }
 READABLE_ARTIFACT_TYPES = {
     "markdown",
@@ -78,6 +83,10 @@ READABLE_ARTIFACT_TYPES = {
     "environment_lock",
     "environment_lock_compare",
     "environment_lock_compare_json",
+    "visual_check_json",
+    "visual_blocks_json",
+    "table_candidates_json",
+    "image_positions_json",
     "requirements_lock",
     "tool_log",
 }
@@ -250,7 +259,7 @@ def tool_schemas() -> list[dict[str, Any]]:
         },
         {
             "name": "process_material",
-            "description": "High-level router for agents. Inspects input and starts the right background job for conversion, location indexing, or image-book rebuilding.",
+            "description": "High-level router for agents. Inspects input and starts the right job for conversion, location indexing, image-book rebuilding, or web archive visual checking.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -273,6 +282,19 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "mineru_segment_pages": {"type": "integer"},
                 },
                 "required": ["input", "output"],
+            },
+        },
+        {
+            "name": "process_web_archive",
+            "description": "Prepare visual_check artifacts for a web-content-fetcher archive folder without replacing the source archive.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"},
+                    "output": {"type": "string"},
+                    "format": {"type": "string", "enum": ["json", "summary"], "default": "json"},
+                },
+                "required": ["input"],
             },
         },
         {
@@ -473,6 +495,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return inspect_document_tool(arguments)
     if name == "process_material":
         return process_material(arguments)
+    if name == "process_web_archive":
+        return process_web_archive_tool(arguments)
     if name == "start_conversion":
         return start_conversion(arguments)
     if name == "get_job_status":
@@ -709,6 +733,9 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
             {"after_job_status": "done", "tool": "read_artifact", "artifact_type": output_format},
             {"after_job_status": "done", "tool": "read_artifact", "artifact_type": "review_report"},
         ]
+    elif route == "process_web_archive":
+        delegated = process_web_archive_tool({"input": str(input_path)})
+        next_actions = artifact_next_actions(delegated.get("artifacts", []))
     else:
         return {
             "status": "unsupported",
@@ -752,6 +779,8 @@ def choose_material_route(inspection: dict[str, Any], *, intent: str, query: str
             return "start_location_index"
         if documents:
             return "start_conversion"
+    if kind == "web_archive":
+        return "process_web_archive"
     if kind == "image":
         return "start_location_index"
     if kind in {"pdf", "pandoc", "calibre", "docling"}:
@@ -1151,6 +1180,14 @@ def infer_artifact_type(path: Path) -> str:
             return "environment_lock_compare_json"
         if "environment-lock" in name:
             return "environment_lock"
+        if "visual_check_result" in name:
+            return "visual_check_json"
+        if "visual_blocks" in name:
+            return "visual_blocks_json"
+        if "table_candidates" in name:
+            return "table_candidates_json"
+        if "image_positions" in name:
+            return "image_positions_json"
         if "report" in name:
             return "conversion_report"
         if "cluster" in name:
@@ -1270,6 +1307,30 @@ def artifact_next_actions(artifacts: list[dict[str, Any]]) -> list[dict[str, Any
         if artifact_type in READABLE_ARTIFACT_TYPES and path:
             actions.append({"tool": "read_artifact", "arguments": {"path": path, "artifact_type": artifact_type}})
     return actions[:4]
+
+
+def process_web_archive_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    input_path = Path(arguments["input"])
+    output_value = str(arguments.get("output") or "")
+    result = process_web_archive_core(str(input_path), output_value)
+    layout_ocr_path = result.get("layout_ocr_path") or ""
+    visual_blocks_path = result.get("visual_blocks_path") or ""
+    table_candidates_path = result.get("table_candidates_path") or ""
+    image_positions_path = result.get("image_positions_path") or ""
+    visual_check_result_path = str(Path(result["output_dir"]) / "visual_check_result.json")
+    artifacts = [
+        artifact("visual_check_json", visual_check_result_path, label="Visual check result", media_type="application/json"),
+        artifact("markdown", layout_ocr_path, label="Visual OCR Markdown", media_type="text/markdown"),
+        artifact("visual_blocks_json", visual_blocks_path, label="Visual blocks JSON", media_type="application/json"),
+        artifact("table_candidates_json", table_candidates_path, label="Table candidates JSON", media_type="application/json"),
+        artifact("image_positions_json", image_positions_path, label="Image positions JSON", media_type="application/json"),
+    ]
+    artifacts = [item for item in artifacts if item.get("path") and Path(str(item["path"])).exists()]
+    return {
+        **result,
+        "artifacts": artifacts,
+        "next_actions": artifact_next_actions(artifacts),
+    }
 
 
 def rebuild_image_book_tool(arguments: dict[str, Any]) -> dict[str, Any]:

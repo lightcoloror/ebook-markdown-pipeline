@@ -107,6 +107,20 @@ High-level router for unknown inputs. It calls lightweight inspection, chooses t
 
 Use this as the default entry point for agents.
 
+For `web-content-fetcher` archive folders, `process_material` routes to `process_web_archive` and returns `visual_check/` artifacts directly. It does not start a background job in that route.
+
+### `process_web_archive`
+
+Prepares visual-check artifacts for a `web-content-fetcher` archive folder:
+
+- `visual_check/layout_ocr.md`
+- `visual_check/visual_blocks.json`
+- `visual_check/table_candidates.json`
+- `visual_check/image_positions.json`
+- `visual_check/visual_check_result.json`
+
+Use it after `web-content-fetcher archive rebuild --with-visual-check` has generated `rebuild_input/manifest.json`. After this tool writes `visual_check/`, rerun `web-content-fetcher archive rebuild` so the final archive outputs can absorb OCR text, layout warnings, table candidates, and image-position evidence.
+
 ### `scan_books`
 
 Scans input files or folders and returns planned conversion pipelines.

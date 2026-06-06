@@ -24,6 +24,7 @@ from ebook_markdown_pipeline.ebook_converter_mcp import call_tool, conversion_qu
 
 REQUIRED_TOOLS = {
     "process_material",
+    "process_web_archive",
     "get_job_status",
     "read_artifact",
     "inspect_document",
@@ -115,6 +116,7 @@ def main() -> int:
         assert_pdf_outline_inspection(tmpdir)
         assert_conversion_report_pdf_outline(tmpdir)
         assert_review_decisions_report(tmpdir)
+        assert_web_archive_route(tmpdir)
 
         assert_quality_summary_next_actions(tmpdir)
 
@@ -431,6 +433,43 @@ def assert_review_decisions_report(tmpdir: Path) -> None:
     report_artifact = call_tool("read_artifact", {"path": str(poor.report), "artifact_type": "conversion_report"})
     if (report_artifact.get("json") or {}).get("source") != poor.source:
         raise AssertionError(f"Expected parsed conversion_report artifact: {report_artifact}")
+
+
+def assert_web_archive_route(tmpdir: Path) -> None:
+    archive = tmpdir / "web-archive"
+    rebuild_input = archive / "rebuild_input"
+    rebuild_input.mkdir(parents=True)
+    source_md = archive / "source.md"
+    source_md.write_text(
+        "# Source\n\n| Name | Value |\n|---|---|\n| A | 1 |\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (rebuild_input / "manifest.json").write_text(
+        json.dumps({"inputs": {"source_markdown": str(source_md)}, "image_assets": []}, ensure_ascii=False),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    inspection = call_tool("inspect_document", {"input": str(archive)})
+    if inspection.get("kind") != "web_archive" or inspection.get("recommendation") != "process_web_archive_visual_check":
+        raise AssertionError(f"Expected web archive inspection: {inspection}")
+
+    routed = call_tool("process_material", {"input": str(archive), "output": str(tmpdir / "ignored-output")})
+    if routed.get("route") != "process_web_archive" or routed.get("status") != "routed":
+        raise AssertionError(f"Expected process_material to route web archive: {routed}")
+    delegated = routed.get("delegated") or {}
+    if delegated.get("status") != "pending_visual_engine":
+        raise AssertionError(f"Expected pending visual-check contract without screenshot: {routed}")
+    artifact_types = {item.get("type") for item in delegated.get("artifacts") or []}
+    if not {"visual_check_json", "markdown", "table_candidates_json"}.issubset(artifact_types):
+        raise AssertionError(f"Expected web archive visual artifacts: {delegated}")
+    visual_check = archive / "visual_check" / "visual_check_result.json"
+    if not visual_check.exists():
+        raise AssertionError(f"Expected visual_check_result.json under archive: {routed}")
+    readable = call_tool("read_artifact", {"path": str(visual_check), "artifact_type": "visual_check_json"})
+    if (readable.get("json") or {}).get("schema_version") != 1:
+        raise AssertionError(f"Expected parsed visual_check_json artifact: {readable}")
 
 
 def assert_http_contract(input_path: Path, output_path: Path) -> None:

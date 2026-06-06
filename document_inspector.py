@@ -49,6 +49,8 @@ def inspect_document(
     sample_pages: int = 8,
 ) -> dict[str, Any]:
     if input_path.is_dir():
+        if is_web_content_archive(input_path):
+            return inspect_web_content_archive(input_path)
         return inspect_directory(input_path, recursive=recursive, include_hidden=include_hidden, sample_pages=sample_pages)
     if not input_path.exists():
         return {
@@ -59,6 +61,57 @@ def inspect_document(
             "warnings": [f"Input does not exist: {input_path}"],
         }
     return inspect_file(input_path, sample_pages=sample_pages)
+
+
+def is_web_content_archive(input_path: Path) -> bool:
+    manifest_path = input_path / "rebuild_input" / "manifest.json"
+    if not manifest_path.is_file():
+        return False
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    inputs = payload.get("inputs") if isinstance(payload, dict) else None
+    return isinstance(inputs, dict) and any(key in inputs for key in {"source_html", "source_markdown", "screenshot"})
+
+
+def inspect_web_content_archive(input_path: Path) -> dict[str, Any]:
+    manifest_path = input_path / "rebuild_input" / "manifest.json"
+    payload = {}
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+    inputs = payload.get("inputs") if isinstance(payload, dict) else {}
+    image_assets = payload.get("image_assets") if isinstance(payload, dict) else []
+    screenshot = str((inputs or {}).get("screenshot") or "")
+    warnings = []
+    if not screenshot:
+        warnings.append("Archive manifest has no screenshot; visual OCR/layout check will create a pending contract.")
+    return {
+        "status": "ok",
+        "input": str(input_path),
+        "kind": "web_archive",
+        "extension": "",
+        "manifest": str(manifest_path),
+        "counts": {
+            "image_assets": len(image_assets) if isinstance(image_assets, list) else 0,
+            "has_screenshot": bool(screenshot),
+            "has_source_html": bool((inputs or {}).get("source_html")),
+            "has_source_markdown": bool((inputs or {}).get("source_markdown")),
+        },
+        "recommendation": "process_web_archive_visual_check",
+        "structure_strategy": {
+            "mode": "web_archive_visual_check",
+            "confidence": "medium" if screenshot else "low",
+            "reason": "Use web-content-fetcher as the source-of-truth archive and add visual OCR/layout/table/image-position evidence under visual_check/.",
+        },
+        "next_actions": [
+            {"tool": "process_web_archive", "why": "prepare visual_check artifacts for archive rebuild"},
+            {"tool": "read_artifact", "artifact_type": "visual_check_json", "why": "inspect warnings and generated visual-check artifact paths"},
+        ],
+        "warnings": warnings,
+    }
 
 
 def inspect_directory(

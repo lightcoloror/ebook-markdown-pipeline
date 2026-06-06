@@ -38,6 +38,7 @@ Routing rules:
 - PDFs route to `start_conversion` with a PDF pipeline selected from preflight signals.
 - Image folders below `image_book_threshold` route to `start_location_index`.
 - Image folders at or above `image_book_threshold` route to `start_image_book_rebuild`.
+- `web-content-fetcher` archive folders with `rebuild_input/manifest.json` route to `process_web_archive`.
 - Any input with `query` routes to `start_location_index`, then returns a `next_actions` entry for `query_location_index`.
 - Unsupported or missing inputs return `status=unsupported` and do not start a job.
 
@@ -64,6 +65,8 @@ The following tools are long-running by design:
 - `start_location_index`
 - `start_image_book_rebuild`
 - `process_material` when it starts any of the above
+
+`process_web_archive` is synchronous in the current implementation. It may run screenshot OCR when a screenshot is available, but it returns direct artifacts instead of a `job_id`.
 
 Agents must poll:
 
@@ -189,6 +192,49 @@ Use `compare_environment_lock` with a prior `environment-lock.json` to detect dr
 
 Use this when deciding whether to convert, build a location index, rebuild an image book, export a review pack, or compare PDF pipelines.
 
+For `web-content-fetcher` archives, `inspect_document` returns:
+
+```json
+{
+  "kind": "web_archive",
+  "recommendation": "process_web_archive_visual_check",
+  "structure_strategy": {
+    "mode": "web_archive_visual_check",
+    "confidence": "medium"
+  },
+  "next_actions": [
+    {
+      "tool": "process_web_archive",
+      "why": "prepare visual_check artifacts for archive rebuild"
+    }
+  ]
+}
+```
+
+## Web Archive Visual Check
+
+Use `process_web_archive` for a `web-content-fetcher` archive folder after `archive rebuild --with-visual-check` has prepared `rebuild_input/manifest.json`.
+
+Required:
+
+- `input`: archive folder path.
+
+Optional:
+
+- `output`: custom visual-check output folder. Omit this for the standard `archive/visual_check/` layout.
+
+The tool writes visual evidence files only. It does not replace the source Markdown, HTML, screenshot, or final `web-content-fetcher` outputs.
+
+Returned artifacts:
+
+- `visual_check_json`: `visual_check_result.json`, including status, warnings, counts, and next step.
+- `markdown`: `layout_ocr.md`, screenshot OCR Markdown or a pending placeholder.
+- `visual_blocks_json`: OCR/layout block candidates.
+- `table_candidates_json`: Markdown/OCR table candidates.
+- `image_positions_json`: DOM image positions and screenshot visual-region candidates.
+
+When no screenshot or OCR engine is available, `status` is usually `pending_visual_engine`; agents should read `warnings` and avoid treating `layout_ocr.md` as recognized evidence.
+
 ## Artifacts
 
 Tools that write files should return `schema_version=artifact-schema-v1` and an `artifacts` array.
@@ -228,6 +274,10 @@ Common artifact types:
 - `environment_lock`
 - `environment_lock_compare`
 - `environment_lock_compare_json`
+- `visual_check_json`
+- `visual_blocks_json`
+- `table_candidates_json`
+- `image_positions_json`
 - `requirements_lock`
 - `tool_log`
 
