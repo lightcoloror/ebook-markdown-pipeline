@@ -64,6 +64,14 @@ python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\cli_agent_b
   D:\agent-batch-output\run-002\agent-batch-results.json
 ```
 
+Build a compact handoff bundle through the same local helper:
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\cli_agent_batch_handoff.py bundle `
+  --batch-results D:\agent-batch-output\run-002\agent-batch-results.json `
+  --output D:\agent-batch-output\run-002\handoff
+```
+
 Docker-hosted agents can use the same handoff tools through the HTTP bridge:
 
 ```powershell
@@ -75,7 +83,9 @@ python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\http_agent_
 When another agent needs a compact handoff package instead of the full batch JSON, call the MCP/HTTP tool `build_agent_handoff_bundle` or the local wrapper:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\scripts\build_agent_handoff_bundle.py `
+python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\http_agent_batch_handoff.py `
+  --url http://host.docker.internal:9241 `
+  bundle `
   --batch-results D:\agent-batch-output\run-002\agent-batch-results.json `
   --output D:\agent-batch-output\run-002\handoff
 ```

@@ -32,6 +32,12 @@ def main() -> int:
     list_parser.add_argument("--max-depth", type=int, default=3)
     list_parser.add_argument("--max-review-items", type=int, default=3)
 
+    bundle_parser = subparsers.add_parser("bundle", help="Build agent-handoff-bundle.json/md for a batch result.")
+    bundle_parser.add_argument("--batch-results", help="Path to agent-batch-results.json. If omitted, use --root.")
+    bundle_parser.add_argument("--root", help="Root directory to search for the newest agent-batch-results.json.")
+    bundle_parser.add_argument("--output", required=True, help="Directory where agent-handoff-bundle.json/md will be written.")
+    bundle_parser.add_argument("--max-review-items", type=int, default=10)
+
     args = parser.parse_args()
     if args.command == "inspect":
         print_json(
@@ -51,6 +57,20 @@ def main() -> int:
                     "root": args.root,
                     "max_results": args.max_results,
                     "max_depth": args.max_depth,
+                    "max_review_items": args.max_review_items,
+                },
+            )
+        )
+        return 0
+    if args.command == "bundle":
+        print_json(
+            call_tool(
+                args,
+                "build_agent_handoff_bundle",
+                {
+                    "batch_results": args.batch_results,
+                    "root": args.root,
+                    "output": args.output,
                     "max_review_items": args.max_review_items,
                 },
             )
