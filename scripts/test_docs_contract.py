@@ -17,6 +17,7 @@ def main() -> int:
             "list_agent_batch_results",
             "--fail-on-regression",
             "test_agent_smoke_suite.py",
+            "smoke summary fields",
             "agent-smoke-summary.json/md",
             "--fail-fast",
         ],
@@ -48,6 +49,7 @@ def main() -> int:
         "README.md": [
             "test_agent_fast_contract.py",
             "test_agent_smoke_suite.py",
+            "summary 报告结构",
             "agent-smoke-summary.json/md",
             "--fail-fast",
             "test_agent_contract.py",
