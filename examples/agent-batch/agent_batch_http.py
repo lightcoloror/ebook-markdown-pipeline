@@ -27,6 +27,10 @@ READABLE_TYPES = {
     "location_index_jsonl",
     "pages_jsonl",
     "order_report",
+    "visual_check_json",
+    "visual_blocks_json",
+    "table_candidates_json",
+    "image_positions_json",
     "tool_log",
 }
 ALLOWED_INTENTS = {"auto", "convert", "locate", "rebuild"}
@@ -152,6 +156,11 @@ def run_manifest_job(args: argparse.Namespace, defaults: dict[str, Any], job: di
         routed = call_tool(args, "process_material", material_args)
         runtime_job_id = routed.get("job_id")
         if not runtime_job_id:
+            delegated = routed.get("delegated") or {}
+            if isinstance(delegated, dict) and delegated.get("artifacts"):
+                artifacts = read_artifact_refs(args, delegated.get("artifacts", []), delegated.get("next_actions", []))
+                status = synchronous_status(delegated)
+                return finish(base, started, status, routed=routed, result=delegated, artifacts=artifacts)
             return finish(base, started, "unsupported" if routed.get("status") == "unsupported" else "no_job", routed=routed)
 
         final = poll_job(args, str(runtime_job_id))
@@ -197,12 +206,16 @@ def poll_job(args: argparse.Namespace, job_id: str) -> dict[str, Any]:
 
 
 def read_followup_artifacts(args: argparse.Namespace, job: dict[str, Any]) -> list[dict[str, Any]]:
+    return read_artifact_refs(args, job.get("artifacts", []), job.get("next_actions", []))
+
+
+def read_artifact_refs(args: argparse.Namespace, artifacts_payload: list[dict[str, Any]], next_actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     artifact_refs = []
-    for action in job.get("next_actions", []) or []:
+    for action in next_actions or []:
         action_args = action.get("arguments") or {}
         if action.get("tool") == "read_artifact" and action_args.get("path"):
             artifact_refs.append({"path": action_args["path"], "type": action_args.get("artifact_type", "text")})
-    for item in job.get("artifacts", []) or []:
+    for item in artifacts_payload or []:
         if item.get("type") in READABLE_TYPES and item.get("path"):
             artifact_refs.append({"path": item["path"], "type": item.get("type")})
 
@@ -228,6 +241,17 @@ def read_followup_artifacts(args: argparse.Namespace, job: dict[str, Any]) -> li
         except Exception as exc:  # noqa: BLE001
             artifacts.append({"status": "failed", "path": item["path"], "type": item.get("type"), "message": str(exc)})
     return artifacts
+
+
+def synchronous_status(result: dict[str, Any]) -> str:
+    status = str(result.get("status") or "")
+    if status in {"ok", "done"}:
+        return "ok"
+    if status in {"needs_review", "pending_visual_engine", "no_text"}:
+        return "review"
+    if status in {"failed", "error"}:
+        return "failed"
+    return "ok" if result.get("artifacts") else "failed"
 
 
 def finish(base: dict[str, Any], started: float, status: str, **extra: Any) -> dict[str, Any]:

@@ -51,6 +51,21 @@ Outputs:
 - `agent-batch-summary.md`
 - partial versions after each completed manifest job
 
+## Web Archive Jobs
+
+`web-content-fetcher` archive folders can be included in the same manifest. Use the archive folder as `input` and keep `intent=auto`:
+
+```json
+{
+  "id": "web-archive-visual-check",
+  "input": "D:\\web-archives\\example-archive",
+  "output": "D:\\agent-batch-output\\web-archives",
+  "intent": "auto"
+}
+```
+
+The router detects `rebuild_input/manifest.json`, calls `process_web_archive`, and reads `visual_check/` artifacts directly. This route is synchronous and may return `status=review` when the archive has no screenshot or OCR output yet. Treat `review` as “artifact generated but needs human/agent inspection,” not as a transport failure.
+
 ## Agent Rules
 
 - Prefer this batch runner when the agent needs repeatable multi-file processing.

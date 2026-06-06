@@ -30,6 +30,12 @@
       "output": "D:\\agent-batch-output\\screenshots",
       "intent": "rebuild",
       "ocr": "auto"
+    },
+    {
+      "id": "web-archive-visual-check",
+      "input": "D:\\web-archives\\example-archive",
+      "output": "D:\\agent-batch-output\\web-archives",
+      "intent": "auto"
     }
   ]
 }
