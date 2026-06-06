@@ -328,6 +328,7 @@ def write_reports(
     (output / f"run_summary{suffix}.md").write_text(render_run_summary(payload), encoding="utf-8")
     if not partial and baseline_results:
         payload["quality_comparison"] = write_quality_comparison(output, baseline_results, output / "agent-batch-results.json")
+        payload["next_actions"] = quality_comparison_next_actions(payload["quality_comparison"])
         (output / "agent-batch-results.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         (output / "run_summary.md").write_text(render_run_summary(payload), encoding="utf-8")
     return payload
@@ -355,6 +356,37 @@ def write_quality_comparison(output: Path, baseline_results: Path, candidate_res
         "markdown": str(markdown_path),
         "summary": payload.get("summary", {}),
     }
+
+
+def quality_comparison_next_actions(comparison: dict[str, Any]) -> list[dict[str, Any]]:
+    actions: list[dict[str, Any]] = []
+    if comparison.get("markdown"):
+        actions.append(
+            {
+                "action": "read_quality_comparison",
+                "tool": "read_artifact",
+                "arguments": {"path": comparison["markdown"], "artifact_type": "markdown"},
+            }
+        )
+    if comparison.get("json"):
+        actions.append(
+            {
+                "action": "read_quality_comparison_json",
+                "tool": "read_artifact",
+                "arguments": {"path": comparison["json"], "artifact_type": "quality_comparison_json"},
+            }
+        )
+    if comparison.get("status") == "failed":
+        actions.append(
+            {
+                "action": "rerun_failed_or_review",
+                "select": "failed-or-review",
+                "rerun_mode": "recommended",
+                "baseline_results": "previous agent-batch-results.json",
+                "note": "Quality regression detected; rerun failed/review jobs with recommended safe pipeline settings before accepting the batch.",
+            }
+        )
+    return actions
 
 
 def write_plan(
@@ -632,6 +664,9 @@ def render_run_summary(payload: dict[str, Any]) -> str:
                 f"- Quality comparison report: `{comparison.get('markdown', '')}`",
             ]
         )
+    next_actions = payload.get("next_actions") or []
+    if next_actions:
+        lines.append(f"- Next actions: {summarize_batch_next_actions(next_actions)}")
     lines.extend([
         "",
         "| Status | ID | Route | Input | Output | Artifacts | Next |",
@@ -647,6 +682,15 @@ def render_run_summary(payload: dict[str, Any]) -> str:
             f"{cell(item.get('input'))} | {cell(item.get('output'))} | {cell('; '.join(artifact_paths[:3]))} | {cell(next_action)} |"
         )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def summarize_batch_next_actions(actions: list[dict[str, Any]]) -> str:
+    names = []
+    for action in actions:
+        name = str(action.get("action") or action.get("tool") or "").strip()
+        if name:
+            names.append(name)
+    return ", ".join(names[:4])
 
 
 def summarize_next_action(item: dict[str, Any]) -> str:

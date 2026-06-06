@@ -124,6 +124,7 @@ def main() -> int:
         artifact = call_tool("read_artifact", {"path": readable["path"], "artifact_type": readable["type"]})
         if artifact.get("artifact_type") != "location_index_jsonl" or "text" not in artifact:
             raise AssertionError(f"read_artifact contract failed: {artifact}")
+        assert_quality_comparison_artifact_read(tmpdir)
 
         assert_http_contract(image_dir, tmpdir / "http-out")
 
@@ -193,6 +194,17 @@ def assert_quality_summary_next_actions(tmpdir: Path) -> None:
     action_names = {item.get("action") for item in review_items[0]["next_actions"]}
     if "compare_pdf_pipelines" not in action_names and "rerun" not in action_names:
         raise AssertionError(f"Expected actionable PDF recovery actions: {summary}")
+
+
+def assert_quality_comparison_artifact_read(tmpdir: Path) -> None:
+    comparison = tmpdir / "benchmark-quality-comparison.json"
+    comparison.write_text(
+        json.dumps({"schema_version": "benchmark-quality-comparison-v1", "summary": {"status": "passed"}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    artifact = call_tool("read_artifact", {"path": str(comparison)})
+    if artifact.get("artifact_type") != "quality_comparison_json" or (artifact.get("json") or {}).get("schema_version") != "benchmark-quality-comparison-v1":
+        raise AssertionError(f"Expected inferred quality comparison JSON artifact: {artifact}")
 
 
 def assert_environment_report_tool(input_dir: Path, output_dir: Path) -> None:

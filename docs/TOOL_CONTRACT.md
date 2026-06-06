@@ -154,6 +154,8 @@ The runner writes:
 
 `run_summary.md` includes the quality comparison status and Markdown report path. A comparison status of `failed` means one or more configured regression checks failed. The default checks guard against lower success rate, lower good rate, higher review/poor rate, higher timeout rate, and higher failed rate.
 
+When baseline comparison is enabled, `agent-batch-results.json` also includes top-level `next_actions`. Agents should first read `read_quality_comparison` / `read_quality_comparison_json`; if `rerun_failed_or_review` is present, rerun with `--select failed-or-review --rerun-mode recommended` and keep the prior results as the baseline.
+
 For this comparison, agent-batch `review` means completed-with-review rather than transport failure. It contributes to completion success but increases the review/poor quality rate, so agents should report it as usable output that still needs inspection.
 
 ## Environment Capabilities

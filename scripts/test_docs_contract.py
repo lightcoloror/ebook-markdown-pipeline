@@ -11,21 +11,25 @@ def main() -> int:
         "docs/AGENT_INTEGRATION.md": [
             "--baseline-results",
             "benchmark-quality-comparison.json/md",
+            "top-level `next_actions`",
             "--fail-on-regression",
         ],
         "docs/TOOL_CONTRACT.md": [
             "Batch Quality Baselines",
             "--baseline-results",
+            "rerun_failed_or_review",
             "completed-with-review",
         ],
         "examples/agent-batch/README.md": [
             "--baseline-results",
             "benchmark-quality-comparison.json/md",
+            "top-level `next_actions`",
             "--fail-on-regression",
         ],
         "examples/agent-batch/AGENT_PROMPT_TEMPLATE.md": [
             "--baseline-results",
             "benchmark-quality-comparison.md",
+            "top-level `next_actions`",
             "Quality comparison status",
         ],
     }

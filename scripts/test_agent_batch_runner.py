@@ -246,6 +246,10 @@ def main() -> int:
         comparison = runner.write_quality_comparison(root / "quality-agent-batch", baseline_agent_batch, candidate_agent_batch)
         if comparison.get("status") != "passed" or not Path(comparison.get("json", "")).exists() or not Path(comparison.get("markdown", "")).exists():
             raise AssertionError(f"Expected passing agent batch quality comparison artifacts: {comparison}")
+        comparison_actions = runner.quality_comparison_next_actions(comparison)
+        comparison_action_names = {item.get("action") for item in comparison_actions}
+        if not {"read_quality_comparison", "read_quality_comparison_json"}.issubset(comparison_action_names):
+            raise AssertionError(f"Expected readable quality comparison next actions: {comparison_actions}")
         summary_text = runner.render_run_summary(
             {
                 "created_at": "now",
@@ -253,10 +257,30 @@ def main() -> int:
                 "summary": runner.summarize([result]),
                 "results": [result],
                 "quality_comparison": comparison,
+                "next_actions": comparison_actions,
             }
         )
-        if "Quality comparison: passed" not in summary_text:
+        if "Quality comparison: passed" not in summary_text or "read_quality_comparison" not in summary_text:
             raise AssertionError(f"Expected quality comparison in run summary: {summary_text}")
+        regressed_agent_batch = root / "regressed-agent-batch.json"
+        regressed_agent_batch.write_text(
+            json.dumps(
+                {
+                    "schema_version": "agent-batch-v1",
+                    "results": [
+                        {"id": "failed", "status": "failed", "job": {"quality_summary": {"counts": {"failed": 1}, "review_count": 0}}},
+                        {"id": "review", "status": "review", "job": {"quality_summary": {"counts": {"poor": 1}, "review_count": 1}}},
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        failed_comparison = runner.write_quality_comparison(root / "quality-agent-batch-failed", candidate_agent_batch, regressed_agent_batch)
+        failed_actions = runner.quality_comparison_next_actions(failed_comparison)
+        if failed_comparison.get("status") != "failed" or not any(item.get("action") == "rerun_failed_or_review" for item in failed_actions):
+            raise AssertionError(f"Expected failed quality comparison to suggest safe rerun: {failed_comparison}, {failed_actions}")
 
     print("Agent batch runner smoke test passed.")
     return 0

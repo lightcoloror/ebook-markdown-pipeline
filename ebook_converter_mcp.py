@@ -57,6 +57,7 @@ JSON_ARTIFACT_TYPES = {
     "environment_lock",
     "environment_lock_compare",
     "environment_lock_compare_json",
+    "quality_comparison_json",
     "visual_check_json",
     "visual_blocks_json",
     "table_candidates_json",
@@ -1180,6 +1181,8 @@ def infer_artifact_type(path: Path) -> str:
             return "environment_lock_compare_json"
         if "environment-lock" in name:
             return "environment_lock"
+        if "benchmark-quality-comparison" in name:
+            return "quality_comparison_json"
         if "visual_check_result" in name:
             return "visual_check_json"
         if "visual_blocks" in name:

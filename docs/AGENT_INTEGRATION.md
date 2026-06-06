@@ -57,7 +57,7 @@ Repeatable agent batch templates live in `examples/agent-batch/`:
 
 Use these templates for ordinary multi-file production batches. Use `scripts/stress_agent_http.py` only for concurrency and failure-recovery testing.
 
-When rerunning or optimizing a batch, pass the prior `agent-batch-results.json` as `--baseline-results`. The runner writes `benchmark-quality-comparison.json/md` and links the comparison status from `run_summary.md`. Use `--fail-on-regression` for unattended agent runs where a lower success rate, lower good rate, higher review/poor rate, higher timeout rate, or higher failed rate should fail the run.
+When rerunning or optimizing a batch, pass the prior `agent-batch-results.json` as `--baseline-results`. The runner writes `benchmark-quality-comparison.json/md`, links the comparison status from `run_summary.md`, and exposes top-level `next_actions` in `agent-batch-results.json`. Use `--fail-on-regression` for unattended agent runs where a lower success rate, lower good rate, higher review/poor rate, higher timeout rate, or higher failed rate should fail the run.
 
 For broad real-sample benchmarks outside agent batches, use `scripts/run_benchmarks.py` with quality gates and `scripts/compare_benchmark_quality.py` to compare a baseline `benchmark-results.json` or `quality-regression-summary.json` against a candidate run. This is the preferred evidence path before changing defaults such as PDF pipeline selection, Docling enablement, or OCR cleanup rules.
 
