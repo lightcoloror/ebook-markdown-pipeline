@@ -63,7 +63,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\agent_batch
   --fail-on-regression
 ```
 
-When `--baseline-results` is set, the runner writes `benchmark-quality-comparison.json/md`, links the comparison status from `run_summary.md`, and adds top-level `next_actions` to `agent-batch-results.json`. `--fail-on-regression` exits with code `5` if the candidate run regresses in success rate, good rate, review/poor rate, timeout rate, or failed rate.
+When `--baseline-results` is set, the runner writes `benchmark-quality-comparison.json/md`, links the comparison status from `run_summary.md`, and adds top-level `next_actions` to `agent-batch-results.json`. If comparison fails, `run_summary.md` includes a copyable recommended rerun command for `--select failed-or-review --rerun-mode recommended`. `--fail-on-regression` exits with code `5` if the candidate run regresses in success rate, good rate, review/poor rate, timeout rate, or failed rate.
 
 Rerun only failed or review items from a previous run:
 

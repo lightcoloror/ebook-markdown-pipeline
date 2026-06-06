@@ -246,7 +246,12 @@ def main() -> int:
         comparison = runner.write_quality_comparison(root / "quality-agent-batch", baseline_agent_batch, candidate_agent_batch)
         if comparison.get("status") != "passed" or not Path(comparison.get("json", "")).exists() or not Path(comparison.get("markdown", "")).exists():
             raise AssertionError(f"Expected passing agent batch quality comparison artifacts: {comparison}")
-        comparison_actions = runner.quality_comparison_next_actions(comparison)
+        comparison_actions = runner.quality_comparison_next_actions(
+            comparison,
+            manifest=root / "manifest.json",
+            current_results=root / "quality-agent-batch" / "agent-batch-results.json",
+            suggested_output=root / "quality-agent-batch-rerun",
+        )
         comparison_action_names = {item.get("action") for item in comparison_actions}
         if not {"read_quality_comparison", "read_quality_comparison_json"}.issubset(comparison_action_names):
             raise AssertionError(f"Expected readable quality comparison next actions: {comparison_actions}")
@@ -278,9 +283,29 @@ def main() -> int:
             encoding="utf-8",
         )
         failed_comparison = runner.write_quality_comparison(root / "quality-agent-batch-failed", candidate_agent_batch, regressed_agent_batch)
-        failed_actions = runner.quality_comparison_next_actions(failed_comparison)
-        if failed_comparison.get("status") != "failed" or not any(item.get("action") == "rerun_failed_or_review" for item in failed_actions):
+        failed_actions = runner.quality_comparison_next_actions(
+            failed_comparison,
+            manifest=root / "manifest.json",
+            current_results=root / "quality-agent-batch-failed" / "agent-batch-results.json",
+            suggested_output=root / "quality-agent-batch-failed-rerun",
+        )
+        rerun_action = next((item for item in failed_actions if item.get("action") == "rerun_failed_or_review"), {})
+        if failed_comparison.get("status") != "failed" or not rerun_action:
             raise AssertionError(f"Expected failed quality comparison to suggest safe rerun: {failed_comparison}, {failed_actions}")
+        if "--select failed-or-review" not in rerun_action.get("powershell_command", "") or not rerun_action.get("command_args", {}).get("previous_results"):
+            raise AssertionError(f"Expected failed comparison rerun command and args: {rerun_action}")
+        failed_summary_text = runner.render_run_summary(
+            {
+                "created_at": "now",
+                "manifest": "manifest.json",
+                "summary": runner.summarize([result]),
+                "results": [result],
+                "quality_comparison": failed_comparison,
+                "next_actions": failed_actions,
+            }
+        )
+        if "## Recommended Rerun" not in failed_summary_text or "--rerun-mode recommended" not in failed_summary_text:
+            raise AssertionError(f"Expected recommended rerun command in run summary: {failed_summary_text}")
 
     print("Agent batch runner smoke test passed.")
     return 0

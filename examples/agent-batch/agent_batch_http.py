@@ -320,6 +320,7 @@ def write_reports(
         "created_at": timestamp(),
         "duration_seconds": round(time.monotonic() - started, 3),
         "partial": partial,
+        "output": str(output),
         "summary": summarize(results),
         "results": results,
     }
@@ -328,7 +329,12 @@ def write_reports(
     (output / f"run_summary{suffix}.md").write_text(render_run_summary(payload), encoding="utf-8")
     if not partial and baseline_results:
         payload["quality_comparison"] = write_quality_comparison(output, baseline_results, output / "agent-batch-results.json")
-        payload["next_actions"] = quality_comparison_next_actions(payload["quality_comparison"])
+        payload["next_actions"] = quality_comparison_next_actions(
+            payload["quality_comparison"],
+            manifest=manifest,
+            current_results=output / "agent-batch-results.json",
+            suggested_output=output.with_name(output.name + "-recommended-rerun"),
+        )
         (output / "agent-batch-results.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         (output / "run_summary.md").write_text(render_run_summary(payload), encoding="utf-8")
     return payload
@@ -358,7 +364,13 @@ def write_quality_comparison(output: Path, baseline_results: Path, candidate_res
     }
 
 
-def quality_comparison_next_actions(comparison: dict[str, Any]) -> list[dict[str, Any]]:
+def quality_comparison_next_actions(
+    comparison: dict[str, Any],
+    *,
+    manifest: Path | str | None = None,
+    current_results: Path | str | None = None,
+    suggested_output: Path | str | None = None,
+) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
     if comparison.get("markdown"):
         actions.append(
@@ -377,16 +389,40 @@ def quality_comparison_next_actions(comparison: dict[str, Any]) -> list[dict[str
             }
         )
     if comparison.get("status") == "failed":
+        command_args = {
+            "manifest": str(manifest or ""),
+            "previous_results": str(current_results or ""),
+            "select": "failed-or-review",
+            "rerun_mode": "recommended",
+            "output": str(suggested_output or ""),
+        }
         actions.append(
             {
                 "action": "rerun_failed_or_review",
+                "runner": str(Path(__file__).resolve()),
                 "select": "failed-or-review",
                 "rerun_mode": "recommended",
-                "baseline_results": "previous agent-batch-results.json",
+                "previous_results": command_args["previous_results"],
+                "baseline_results": command_args["previous_results"],
+                "suggested_output": command_args["output"],
+                "command_args": command_args,
+                "powershell_command": render_recommended_rerun_command(command_args),
                 "note": "Quality regression detected; rerun failed/review jobs with recommended safe pipeline settings before accepting the batch.",
             }
         )
     return actions
+
+
+def render_recommended_rerun_command(command_args: dict[str, str]) -> str:
+    runner = str(Path(__file__).resolve())
+    return (
+        f'python "{runner}" '
+        f'--manifest "{command_args.get("manifest", "")}" '
+        f'--previous-results "{command_args.get("previous_results", "")}" '
+        f'--select {command_args.get("select", "failed-or-review")} '
+        f'--rerun-mode {command_args.get("rerun_mode", "recommended")} '
+        f'--output "{command_args.get("output", "")}"'
+    )
 
 
 def write_plan(
@@ -667,6 +703,9 @@ def render_run_summary(payload: dict[str, Any]) -> str:
     next_actions = payload.get("next_actions") or []
     if next_actions:
         lines.append(f"- Next actions: {summarize_batch_next_actions(next_actions)}")
+        rerun_command = first_rerun_command(next_actions)
+        if rerun_command:
+            lines.extend(["", "## Recommended Rerun", "", "```powershell", rerun_command, "```"])
     lines.extend([
         "",
         "| Status | ID | Route | Input | Output | Artifacts | Next |",
@@ -691,6 +730,13 @@ def summarize_batch_next_actions(actions: list[dict[str, Any]]) -> str:
         if name:
             names.append(name)
     return ", ".join(names[:4])
+
+
+def first_rerun_command(actions: list[dict[str, Any]]) -> str:
+    for action in actions:
+        if action.get("action") == "rerun_failed_or_review" and action.get("powershell_command"):
+            return str(action["powershell_command"])
+    return ""
 
 
 def summarize_next_action(item: dict[str, Any]) -> str:
