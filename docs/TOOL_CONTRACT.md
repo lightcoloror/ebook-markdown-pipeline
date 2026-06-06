@@ -170,6 +170,8 @@ When `contract_validation.ok=false`, batch results and `inspect_agent_batch_resu
 
 Use the MCP/HTTP tool `build_agent_handoff_bundle` or the CLI wrapper `scripts/build_agent_handoff_bundle.py --batch-results <agent-batch-results.json> --output <dir>` to produce `agent-handoff-bundle.json/md`, a compact handoff index containing contract validation, attention, selection, artifact summary, next actions, artifacts, and review items. The tool returns `agent_handoff_bundle_json` and `agent_handoff_bundle_markdown` artifacts that agents can read through `read_artifact`.
 
+The handoff bundle includes `handoff_ready`, `handoff_status`, and `recommended_next_action`. Agents should use these fields instead of deriving readiness from raw counts. Current statuses are `ready`, `contract_failed`, `needs_recovery`, `needs_artifact_review`, `needs_quality_compare`, `needs_review`, and `needs_attention`.
+
 `agent-batch-results.json` includes `artifact_summary` with total/ok/failed artifact read counts, `type_counts`, and `failed_artifacts`. Agents should inspect this before assuming all referenced artifacts were readable.
 
 Real and partial batch results include top-level `next_actions` for handoff. Baseline comparisons may append quality-comparison actions, but agents should first follow `read_run_summary`, `inspect_agent_batch_results`, and `build_agent_handoff_bundle`, then handle conditional `inspect_failed_artifacts` and `inspect_review_items`.

@@ -1360,6 +1360,11 @@ def build_agent_handoff_bundle_payload(batch_results: Path, *, max_review_items:
             "schema_version": "agent-handoff-bundle-v1",
             "source": str(batch_results),
             "handoff_ready": False,
+            "handoff_status": "contract_failed",
+            "recommended_next_action": {
+                "action": "inspect_contract_validation",
+                "reason": "The source agent-batch-results.json is invalid JSON; inspect or regenerate it before handoff.",
+            },
             "contract_validation": {"ok": False, "errors": [f"invalid JSON: {exc}"]},
             "next_actions": [],
         }
@@ -1380,7 +1385,71 @@ def build_agent_handoff_bundle_payload(batch_results: Path, *, max_review_items:
         "review_items": inspection.get("review_items") or [],
     }
     bundle["handoff_ready"] = bool(validation.get("ok")) and not bool(attention.get("needs_attention"))
+    status, recommendation = classify_agent_handoff_bundle(bundle)
+    bundle["handoff_status"] = status
+    bundle["recommended_next_action"] = recommendation
     return bundle
+
+
+def classify_agent_handoff_bundle(bundle: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    validation = bundle.get("contract_validation") or {}
+    if validation.get("ok") is not True:
+        return (
+            "contract_failed",
+            {
+                "action": "inspect_contract_validation",
+                "reason": "The source batch contract did not validate; inspect errors before trusting handoff fields.",
+            },
+        )
+    attention = bundle.get("attention") or {}
+    reasons = list(attention.get("reasons") or [])
+    if "hard_failed_jobs" in reasons:
+        return (
+            "needs_recovery",
+            {
+                "action": "rerun_failed_or_review",
+                "reason": "The batch has hard-failed jobs; rerun failed/review items before accepting the handoff.",
+            },
+        )
+    if "artifact_read_failures" in reasons:
+        return (
+            "needs_artifact_review",
+            {
+                "action": "inspect_failed_artifacts",
+                "reason": "Some referenced artifacts were unreadable; inspect failed artifacts before accepting the handoff.",
+            },
+        )
+    if "quality_regression" in reasons:
+        return (
+            "needs_quality_compare",
+            {
+                "action": "read_quality_comparison",
+                "reason": "Quality comparison reports a regression; inspect it before accepting the handoff.",
+            },
+        )
+    if "review_jobs" in reasons:
+        return (
+            "needs_review",
+            {
+                "action": "inspect_review_items",
+                "reason": "Some jobs completed with review signals; inspect review items before accepting outputs.",
+            },
+        )
+    if attention.get("needs_attention"):
+        return (
+            "needs_attention",
+            {
+                "action": "inspect_agent_batch_results",
+                "reason": "The batch needs attention; inspect the batch results before accepting the handoff.",
+            },
+        )
+    return (
+        "ready",
+        {
+            "action": "accept_handoff",
+            "reason": "Contract validation passed and no attention signals were detected.",
+        },
+    )
 
 
 def validate_agent_batch_contract_payload(payload: dict[str, Any], path: Path | None = None) -> dict[str, Any]:
@@ -1433,9 +1502,11 @@ def render_agent_handoff_bundle_markdown(payload: dict[str, Any]) -> str:
         "",
         f"- Source: `{payload.get('source', '')}`",
         f"- Handoff ready: {payload.get('handoff_ready')}",
+        f"- Handoff status: {payload.get('handoff_status', '')}",
         f"- Contract validation: {'ok' if validation.get('ok') else 'failed'}",
         f"- Needs attention: {attention.get('needs_attention', False)}",
         f"- Attention reasons: {', '.join(attention.get('reasons') or []) or '(none)'}",
+        f"- Recommended next action: {(payload.get('recommended_next_action') or {}).get('action', '')}",
         f"- Select: {selection.get('select', '')}",
         f"- Selected jobs: {selection.get('selected_count', 0)}/{selection.get('manifest_job_count', 0)}",
         f"- Total: {summary.get('total', 0)}",

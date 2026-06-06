@@ -38,6 +38,8 @@ def main() -> int:
         bundle = bundle_mod.build_bundle(results_path)
         if bundle.get("schema_version") != "agent-handoff-bundle-v1" or bundle.get("handoff_ready") is not False:
             raise AssertionError(f"Expected review bundle to need attention: {bundle}")
+        if bundle.get("handoff_status") != "needs_review" or bundle.get("recommended_next_action", {}).get("action") != "inspect_review_items":
+            raise AssertionError(f"Expected review bundle status and recommendation: {bundle}")
         if bundle.get("contract_validation", {}).get("ok") is not True:
             raise AssertionError(f"Expected valid contract in handoff bundle: {bundle}")
         if not bundle.get("next_actions") or not bundle.get("review_items"):
@@ -46,8 +48,13 @@ def main() -> int:
         out.mkdir()
         (out / "agent-handoff-bundle.json").write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
         markdown = bundle_mod.render_bundle_markdown(bundle)
-        if "Agent Handoff Bundle" not in markdown or "Contract validation: ok" not in markdown or "Needs attention: True" not in markdown:
+        if "Agent Handoff Bundle" not in markdown or "Contract validation: ok" not in markdown or "Handoff status: needs_review" not in markdown or "Recommended next action: inspect_review_items" not in markdown:
             raise AssertionError(f"Expected readable handoff bundle markdown: {markdown}")
+        broken_path = root / "broken.json"
+        broken_path.write_text("{", encoding="utf-8")
+        broken = bundle_mod.build_bundle(broken_path)
+        if broken.get("handoff_status") != "contract_failed" or broken.get("recommended_next_action", {}).get("action") != "inspect_contract_validation":
+            raise AssertionError(f"Expected broken handoff bundle recommendation: {broken}")
         newest = bundle_mod.newest_batch_results(root)
         if newest is None or newest.resolve() != results_path.resolve():
             raise AssertionError(f"Expected newest batch discovery: {newest}, report={report}")

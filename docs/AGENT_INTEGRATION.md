@@ -85,6 +85,8 @@ If contract validation fails, generated or inspected batch results expose `inspe
 
 Use the MCP/HTTP tool `build_agent_handoff_bundle` or the CLI wrapper `scripts/build_agent_handoff_bundle.py --batch-results <agent-batch-results.json> --output <dir>` to create a lightweight `agent-handoff-bundle.json/md` index for another session. The bundle includes contract validation, attention, selection, artifact summary, next actions, and review items without copying large outputs.
 
+The bundle also exposes `handoff_status` and `recommended_next_action`, so a receiving agent can distinguish ready handoffs from contract failures, failed-job recovery, artifact-read failures, quality regressions, and ordinary review queues without re-deriving that state.
+
 Real batch results also include `artifact_summary` with total/ok/failed read counts, artifact type counts, and failed artifact read records. Check it before drilling into each job's `artifacts`.
 
 Top-level `next_actions` are always present in real or partial batch results. They include `read_run_summary`, `inspect_agent_batch_results`, `build_agent_handoff_bundle`, and conditional `inspect_failed_artifacts` / `inspect_review_items` actions before any quality-comparison actions.
