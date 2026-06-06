@@ -53,6 +53,8 @@ For routine agent-facing changes, run the fast smoke suite:
 python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_agent_smoke_suite.py
 ```
 
+Pass `--output <dir>` to persist `agent-smoke-summary.json/md` as handoff evidence for another session or agent.
+
 Use `--full` before releases or broad contract changes to include the slower full agent contract test.
 
 ## Batch Templates

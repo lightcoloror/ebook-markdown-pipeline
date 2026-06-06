@@ -276,6 +276,8 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_agent_fast_contract
 python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_agent_smoke_suite.py
 ```
 
+需要留下可交接证据时加 `--output D:\agent-smoke-report`，会写入 `agent-smoke-summary.json/md`。
+
 完整 agent contract 测试包含 HTTP、环境快照、PDF outline、web archive 等慢路径，适合发布前或大改后运行：
 
 ```powershell

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 import time
@@ -25,6 +26,7 @@ FULL_TESTS = FAST_TESTS + ["scripts/test_agent_contract.py"]
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the agent-facing smoke test suite.")
     parser.add_argument("--full", action="store_true", help="Also run the slower full agent contract test.")
+    parser.add_argument("--output", type=Path, help="Optional directory for agent-smoke-summary.json/md.")
     args = parser.parse_args()
 
     tests = FULL_TESTS if args.full else FAST_TESTS
@@ -33,7 +35,10 @@ def main() -> int:
     for test in tests:
         results.append(run_test(test))
     failures = [item for item in results if item["returncode"] != 0]
-    print_summary(results, elapsed=time.monotonic() - started)
+    payload = build_summary(results, elapsed=time.monotonic() - started, full=bool(args.full))
+    print_summary(payload)
+    if args.output:
+        write_reports(args.output, payload)
     return 1 if failures else 0
 
 
@@ -57,16 +62,79 @@ def run_test(relative: str) -> dict:
         "test": relative,
         "returncode": completed.returncode,
         "elapsed_seconds": round(elapsed, 3),
+        "stdout_tail": tail_text(completed.stdout),
+        "stderr_tail": tail_text(completed.stderr),
     }
 
 
-def print_summary(results: list[dict], *, elapsed: float) -> None:
+def build_summary(results: list[dict], *, elapsed: float, full: bool) -> dict:
     passed = sum(1 for item in results if item["returncode"] == 0)
     failed = len(results) - passed
-    print(f"Agent smoke suite finished: passed={passed}, failed={failed}, elapsed={elapsed:.1f}s")
-    if failed:
-        failed_tests = ", ".join(item["test"] for item in results if item["returncode"] != 0)
+    return {
+        "schema_version": "agent-smoke-suite-v1",
+        "mode": "full" if full else "fast",
+        "status": "passed" if failed == 0 else "failed",
+        "passed": passed,
+        "failed": failed,
+        "total": len(results),
+        "elapsed_seconds": round(elapsed, 3),
+        "results": results,
+    }
+
+
+def print_summary(payload: dict) -> None:
+    print(
+        "Agent smoke suite finished: "
+        f"passed={payload['passed']}, failed={payload['failed']}, elapsed={payload['elapsed_seconds']:.1f}s"
+    )
+    if payload["failed"]:
+        failed_tests = ", ".join(item["test"] for item in payload["results"] if item["returncode"] != 0)
         print(f"Failed tests: {failed_tests}")
+
+
+def write_reports(output: Path, payload: dict) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+    json_path = output / "agent-smoke-summary.json"
+    md_path = output / "agent-smoke-summary.md"
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    md_path.write_text(render_markdown(payload), encoding="utf-8")
+    print(f"Wrote agent smoke reports: {json_path}; {md_path}")
+
+
+def render_markdown(payload: dict) -> str:
+    lines = [
+        "# Agent Smoke Suite",
+        "",
+        f"- Mode: {payload['mode']}",
+        f"- Status: {payload['status']}",
+        f"- Passed: {payload['passed']}",
+        f"- Failed: {payload['failed']}",
+        f"- Total: {payload['total']}",
+        f"- Elapsed seconds: {payload['elapsed_seconds']}",
+        "",
+        "| Status | Test | Seconds |",
+        "| --- | --- | ---: |",
+    ]
+    for item in payload["results"]:
+        status = "ok" if item["returncode"] == 0 else "failed"
+        lines.append(f"| {status} | `{item['test']}` | {item['elapsed_seconds']} |")
+    failures = [item for item in payload["results"] if item["returncode"] != 0]
+    if failures:
+        lines.extend(["", "## Failures", ""])
+        for item in failures:
+            lines.append(f"### {item['test']}")
+            if item.get("stdout_tail"):
+                lines.extend(["", "```text", item["stdout_tail"], "```"])
+            if item.get("stderr_tail"):
+                lines.extend(["", "```text", item["stderr_tail"], "```"])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def tail_text(text: str, *, max_chars: int = 4000) -> str:
+    stripped = text.strip()
+    if len(stripped) <= max_chars:
+        return stripped
+    return stripped[-max_chars:]
 
 
 if __name__ == "__main__":
