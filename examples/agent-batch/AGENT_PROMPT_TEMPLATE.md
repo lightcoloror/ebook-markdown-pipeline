@@ -24,6 +24,7 @@ For every real manifest job:
 4. Follow `next_actions`; read at least `summary_report`, `review_report`, and one representative Markdown/text artifact when available.
 5. If `quality_summary.review_count > 0`, report the review reasons and suggested actions. Do not claim the output is final without mentioning the review queue.
 6. If status is `failed`, read `errors`, `events`, and any available report/log artifact. Return a concise failure reason and retry only if the failure is retryable or caused by timeout/fallback settings.
+7. If a previous batch result is available, pass it as `--baseline-results` and inspect `benchmark-quality-comparison.md` before saying the new run improved or remained stable.
 
 ## Output To User
 
@@ -34,6 +35,7 @@ Return:
 - Review count and top review reasons.
 - Artifact paths for summary, review checklist, and main Markdown output.
 - Any fallback diagnostics, especially `pymupdf4llm(fallback from ...)`.
+- Quality comparison status and report path when `--baseline-results` was used.
 
 ## Quality Rule
 

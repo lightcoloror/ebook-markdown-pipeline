@@ -14,6 +14,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2].parent))
 from ebook_markdown_pipeline.http_config import default_http_url  # noqa: E402
 from ebook_markdown_pipeline.recommendations import normalize_pdf_pipeline, pipeline_from_suggestion_text  # noqa: E402
 
+PROJECT_DIR = Path(__file__).resolve().parents[2]
+SCRIPTS_DIR = PROJECT_DIR / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+from compare_benchmark_quality import compare_reports, render_markdown as render_quality_comparison_markdown  # noqa: E402
+
 
 READABLE_TYPES = {
     "markdown",
@@ -57,6 +63,8 @@ def main() -> int:
     parser.add_argument("--select", choices=sorted(SELECT_MODES), default="all", help="Run all jobs or select jobs from --previous-results.")
     parser.add_argument("--rerun-mode", choices=sorted(RERUN_MODES), default="as-manifest", help="Use manifest arguments or recommended rerun arguments when available.")
     parser.add_argument("--previous-results", type=Path, help="Prior agent-batch-results.json used by --select failed/review/failed-or-review.")
+    parser.add_argument("--baseline-results", type=Path, help="Prior agent-batch-results.json used for quality comparison after this run.")
+    parser.add_argument("--fail-on-regression", action="store_true", help="Exit non-zero when --baseline-results comparison fails.")
     args = parser.parse_args()
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8-sig"))
@@ -77,8 +85,11 @@ def main() -> int:
         results.append(run_manifest_job(args, manifest.get("defaults", {}), job, index, previous_payload=previous_payload))
         write_reports(args.output, args.manifest, started, results, partial=True)
 
-    payload = write_reports(args.output, args.manifest, started, results, partial=False)
+    payload = write_reports(args.output, args.manifest, started, results, partial=False, baseline_results=args.baseline_results)
     print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
+    regression_failed = (payload.get("quality_comparison") or {}).get("summary", {}).get("status") == "failed"
+    if args.fail_on_regression and regression_failed:
+        return 5
     return 0 if payload["summary"]["hard_failed"] == 0 else 3
 
 
@@ -292,7 +303,15 @@ def finish(base: dict[str, Any], started: float, status: str, **extra: Any) -> d
     return result
 
 
-def write_reports(output: Path, manifest: Path, started: float, results: list[dict[str, Any]], *, partial: bool) -> dict[str, Any]:
+def write_reports(
+    output: Path,
+    manifest: Path,
+    started: float,
+    results: list[dict[str, Any]],
+    *,
+    partial: bool,
+    baseline_results: Path | None = None,
+) -> dict[str, Any]:
     suffix = ".partial" if partial else ""
     output.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -307,7 +326,35 @@ def write_reports(output: Path, manifest: Path, started: float, results: list[di
     (output / f"agent-batch-results{suffix}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     (output / f"agent-batch-summary{suffix}.md").write_text(render_markdown(payload), encoding="utf-8")
     (output / f"run_summary{suffix}.md").write_text(render_run_summary(payload), encoding="utf-8")
+    if not partial and baseline_results:
+        payload["quality_comparison"] = write_quality_comparison(output, baseline_results, output / "agent-batch-results.json")
+        (output / "agent-batch-results.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        (output / "run_summary.md").write_text(render_run_summary(payload), encoding="utf-8")
     return payload
+
+
+def write_quality_comparison(output: Path, baseline_results: Path, candidate_results: Path) -> dict[str, Any]:
+    output.mkdir(parents=True, exist_ok=True)
+    args = argparse.Namespace(
+        baseline=baseline_results,
+        candidate=candidate_results,
+        min_success_rate_delta=-0.001,
+        min_good_rate_delta=-0.05,
+        max_review_poor_delta=0.05,
+        max_timeout_rate_delta=0.001,
+        max_failed_rate_delta=0.001,
+    )
+    payload = compare_reports(args)
+    write_path = output / "benchmark-quality-comparison.json"
+    markdown_path = output / "benchmark-quality-comparison.md"
+    write_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    markdown_path.write_text(render_quality_comparison_markdown(payload), encoding="utf-8")
+    return {
+        "status": payload.get("summary", {}).get("status"),
+        "json": str(write_path),
+        "markdown": str(markdown_path),
+        "summary": payload.get("summary", {}),
+    }
 
 
 def write_plan(
@@ -576,10 +623,20 @@ def render_run_summary(payload: dict[str, Any]) -> str:
         f"- Review: {summary.get('review', 0)}",
         f"- Hard failed: {summary.get('hard_failed', 0)}",
         f"- Artifact reads: {summary.get('artifact_reads', 0)}",
+    ]
+    comparison = payload.get("quality_comparison") or {}
+    if comparison:
+        lines.extend(
+            [
+                f"- Quality comparison: {comparison.get('status', '')}",
+                f"- Quality comparison report: `{comparison.get('markdown', '')}`",
+            ]
+        )
+    lines.extend([
         "",
         "| Status | ID | Route | Input | Output | Artifacts | Next |",
         "| --- | --- | --- | --- | --- | --- | --- |",
-    ]
+    ])
     for item in payload["results"]:
         routed = item.get("routed") or {}
         route = routed.get("route") or ""

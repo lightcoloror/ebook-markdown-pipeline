@@ -52,6 +52,19 @@ Outputs:
 - `run_summary.md`
 - partial versions after each completed manifest job
 
+Compare this run against a previous batch quality baseline:
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\agent_batch_http.py `
+  --token local-token `
+  --manifest D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\batch_manifest.example.json `
+  --output D:\agent-batch-output\run-002 `
+  --baseline-results D:\agent-batch-output\run-001\agent-batch-results.json `
+  --fail-on-regression
+```
+
+When `--baseline-results` is set, the runner writes `benchmark-quality-comparison.json/md` and links the comparison status from `run_summary.md`. `--fail-on-regression` exits with code `5` if the candidate run regresses in success rate, good rate, review/poor rate, timeout rate, or failed rate.
+
 Rerun only failed or review items from a previous run:
 
 ```powershell

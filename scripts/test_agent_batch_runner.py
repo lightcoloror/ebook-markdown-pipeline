@@ -213,6 +213,51 @@ def main() -> int:
         if "Selected jobs: archive" not in plan_text:
             raise AssertionError(f"Expected selected job ids in plan markdown: {plan_payload}")
 
+        baseline_agent_batch = root / "baseline-agent-batch.json"
+        candidate_agent_batch = root / "candidate-agent-batch.json"
+        baseline_agent_batch.write_text(
+            json.dumps(
+                {
+                    "schema_version": "agent-batch-v1",
+                    "results": [
+                        {"id": "ok", "status": "ok", "job": {"quality_summary": {"counts": {"good": 1}, "review_count": 0}}},
+                        {"id": "review", "status": "review", "job": {"quality_summary": {"counts": {"review": 1}, "review_count": 1}}},
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        candidate_agent_batch.write_text(
+            json.dumps(
+                {
+                    "schema_version": "agent-batch-v1",
+                    "results": [
+                        {"id": "ok", "status": "ok", "job": {"quality_summary": {"counts": {"good": 1}, "review_count": 0}}},
+                        {"id": "ok2", "status": "ok", "job": {"quality_summary": {"counts": {"good": 1}, "review_count": 0}}},
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        comparison = runner.write_quality_comparison(root / "quality-agent-batch", baseline_agent_batch, candidate_agent_batch)
+        if comparison.get("status") != "passed" or not Path(comparison.get("json", "")).exists() or not Path(comparison.get("markdown", "")).exists():
+            raise AssertionError(f"Expected passing agent batch quality comparison artifacts: {comparison}")
+        summary_text = runner.render_run_summary(
+            {
+                "created_at": "now",
+                "manifest": "manifest.json",
+                "summary": runner.summarize([result]),
+                "results": [result],
+                "quality_comparison": comparison,
+            }
+        )
+        if "Quality comparison: passed" not in summary_text:
+            raise AssertionError(f"Expected quality comparison in run summary: {summary_text}")
+
     print("Agent batch runner smoke test passed.")
     return 0
 

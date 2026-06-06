@@ -72,6 +72,8 @@ def load_quality_report(path: Path) -> dict[str, Any]:
             "quality_gates": payload.get("quality_gates") or {},
         }
     if payload.get("schema_version") == "benchmark-run-v1" or payload.get("results"):
+        if payload.get("schema_version") == "agent-batch-v1":
+            return agent_batch_quality_report(payload)
         report = quality_regression_summary(payload)
         return {
             "schema_version": report.get("schema_version"),
@@ -81,6 +83,66 @@ def load_quality_report(path: Path) -> dict[str, Any]:
             "quality_gates": report.get("quality_gates") or {},
         }
     raise ValueError(f"Unsupported benchmark quality input: {path}")
+
+
+def agent_batch_quality_report(payload: dict[str, Any]) -> dict[str, Any]:
+    results = payload.get("results") or []
+    status_counts: dict[str, int] = {}
+    quality_counts: dict[str, int] = {}
+    review_or_poor = 0
+    scored = 0
+    heading_counts: list[int] = []
+    character_counts: list[int] = []
+    page_headings = 0
+    repeated_noise = 0
+    fallback_count = 0
+    for item in results:
+        status = str(item.get("status") or "unknown")
+        status_key = "ok" if status in {"ok", "review"} else status
+        status_counts[status_key] = status_counts.get(status_key, 0) + 1
+        quality = ((item.get("job") or {}).get("quality_summary") or {})
+        counts = quality.get("counts") or {}
+        if counts:
+            for level, count in counts.items():
+                quality_counts[level] = quality_counts.get(level, 0) + int(count or 0)
+            review_or_poor += int(counts.get("review") or 0) + int(counts.get("poor") or 0)
+            scored += sum(int(value or 0) for value in counts.values())
+        elif status == "review":
+            quality_counts["review"] = quality_counts.get("review", 0) + 1
+            review_or_poor += 1
+            scored += 1
+        elif status == "ok":
+            quality_counts["good"] = quality_counts.get("good", 0) + 1
+            scored += 1
+        for review_item in quality.get("review_items") or []:
+            score = review_item.get("quality_score")
+            if score is not None:
+                heading_counts.append(int(review_item.get("headings") or 0))
+                character_counts.append(int(review_item.get("characters") or 0))
+        for conversion in (item.get("job") or {}).get("results") or []:
+            pipeline = str(conversion.get("pipeline") or "")
+            if "fallback" in pipeline.lower():
+                fallback_count += 1
+    summary = {
+        "total": len(results),
+        "scored": scored,
+        "status_counts": status_counts,
+        "category_counts": {},
+        "avg_headings": average(heading_counts),
+        "page_heading_ratio": ratio(page_headings, max(sum(heading_counts), 1)),
+        "avg_characters": average(character_counts),
+        "repeated_noise_lines": repeated_noise,
+        "fallback_count": fallback_count,
+        "review_or_poor": review_or_poor,
+        "quality_counts": quality_counts,
+    }
+    return {
+        "schema_version": "quality-regression-summary-v1",
+        "created_at": payload.get("created_at"),
+        "manifest": payload.get("manifest", ""),
+        "summary": summary,
+        "quality_gates": {},
+    }
 
 
 def comparison_metrics(report: dict[str, Any]) -> dict[str, float]:
@@ -126,6 +188,10 @@ def regression_checks(args: argparse.Namespace, deltas: dict[str, float]) -> lis
 
 def ratio(numerator: int, denominator: int) -> float:
     return round(numerator / denominator, 3) if denominator else 0.0
+
+
+def average(values: list[int]) -> float:
+    return round(sum(values) / max(len(values), 1), 3)
 
 
 def render_markdown(payload: dict[str, Any]) -> str:
