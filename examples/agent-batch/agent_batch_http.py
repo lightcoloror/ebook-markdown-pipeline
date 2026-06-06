@@ -324,6 +324,8 @@ def agent_batch_contract(*, plan: bool = False) -> dict[str, Any]:
     ]
     if not plan:
         required_fields.extend(["artifact_summary", "next_actions", "results"])
+    else:
+        required_fields.append("validation")
     return {
         "name": "ebook-markdown-pipeline-agent-batch",
         "schema_version": AGENT_BATCH_CONTRACT_VERSION,

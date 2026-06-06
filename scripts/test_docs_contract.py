@@ -15,6 +15,7 @@ def main() -> int:
             "copyable recommended rerun command",
             "`selection` block",
             "agent-batch-contract-v1",
+            "validate_agent_batch_contract.py",
             "artifact_summary",
             "inspect_failed_artifacts",
             "`attention`",
@@ -33,6 +34,7 @@ def main() -> int:
             "--baseline-results",
             "`selection` block",
             "`contract` block",
+            "validate_agent_batch_contract.py",
             "artifact_summary",
             "read_run_summary",
             "`attention` triage block",
@@ -64,6 +66,7 @@ def main() -> int:
         ],
         "README.md": [
             "test_agent_fast_contract.py",
+            "test_agent_batch_contract_validator.py",
             "test_agent_smoke_suite.py",
             "summary 报告结构",
             "agent-smoke-summary.json/md",

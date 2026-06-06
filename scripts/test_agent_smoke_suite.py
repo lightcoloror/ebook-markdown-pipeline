@@ -15,6 +15,7 @@ FAST_TESTS = [
     "scripts/test_agent_batch_runner.py",
     "scripts/test_agent_batch_handoff_cli.py",
     "scripts/test_agent_batch_handoff_http.py",
+    "scripts/test_agent_batch_contract_validator.py",
     "scripts/test_agent_fast_contract.py",
     "scripts/test_agent_smoke_summary_contract.py",
     "scripts/test_mcp_stdio.py",

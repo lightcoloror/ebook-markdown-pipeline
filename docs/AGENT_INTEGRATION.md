@@ -75,6 +75,8 @@ Every dry-run plan and real batch result includes a `selection` block with `sele
 
 Every dry-run plan and real batch result also includes `contract`, with `schema_version=agent-batch-contract-v1`, `payload_schema_version`, `capabilities`, and `required_fields`. Agents should read `contract.capabilities` before assuming support for newer handoff fields.
 
+Use `scripts/validate_agent_batch_contract.py <agent-batch-results.json|agent-batch-plan.json> --json` when another session or agent needs a quick machine-readable contract check before trusting a handoff artifact.
+
 Real batch results also include `artifact_summary` with total/ok/failed read counts, artifact type counts, and failed artifact read records. Check it before drilling into each job's `artifacts`.
 
 Top-level `next_actions` are always present in real or partial batch results. They include `read_run_summary`, `inspect_agent_batch_results`, and conditional `inspect_failed_artifacts` / `inspect_review_items` actions before any quality-comparison actions.
