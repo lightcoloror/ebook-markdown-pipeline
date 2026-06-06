@@ -343,20 +343,62 @@ def write_reports(
         "artifact_summary": summarize_artifacts(results),
         "results": results,
     }
+    payload["next_actions"] = batch_handoff_next_actions(payload, output=output, suffix=suffix)
     (output / f"agent-batch-results{suffix}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     (output / f"agent-batch-summary{suffix}.md").write_text(render_markdown(payload), encoding="utf-8")
     (output / f"run_summary{suffix}.md").write_text(render_run_summary(payload), encoding="utf-8")
     if not partial and baseline_results:
         payload["quality_comparison"] = write_quality_comparison(output, baseline_results, output / "agent-batch-results.json")
-        payload["next_actions"] = quality_comparison_next_actions(
-            payload["quality_comparison"],
-            manifest=manifest,
-            current_results=output / "agent-batch-results.json",
-            suggested_output=output.with_name(output.name + "-recommended-rerun"),
-        )
+        payload["next_actions"] = [
+            *batch_handoff_next_actions(payload, output=output, suffix=suffix),
+            *quality_comparison_next_actions(
+                payload["quality_comparison"],
+                manifest=manifest,
+                current_results=output / "agent-batch-results.json",
+                suggested_output=output.with_name(output.name + "-recommended-rerun"),
+            ),
+        ]
         (output / "agent-batch-results.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         (output / "run_summary.md").write_text(render_run_summary(payload), encoding="utf-8")
     return payload
+
+
+def batch_handoff_next_actions(payload: dict[str, Any], *, output: Path, suffix: str = "") -> list[dict[str, Any]]:
+    results_path = output / f"agent-batch-results{suffix}.json"
+    run_summary_path = output / f"run_summary{suffix}.md"
+    actions: list[dict[str, Any]] = [
+        {
+            "action": "read_run_summary",
+            "tool": "read_artifact",
+            "arguments": {"path": str(run_summary_path), "artifact_type": "agent_batch_run_summary" if not suffix else "markdown"},
+        },
+        {
+            "action": "inspect_agent_batch_results",
+            "tool": "inspect_agent_batch_results",
+            "arguments": {"path": str(results_path)},
+        },
+    ]
+    artifact_summary = payload.get("artifact_summary") or {}
+    if int(artifact_summary.get("failed") or 0) > 0:
+        actions.append(
+            {
+                "action": "inspect_failed_artifacts",
+                "failed_count": artifact_summary.get("failed"),
+                "failed_artifacts": artifact_summary.get("failed_artifacts") or [],
+                "reason": "One or more referenced artifacts could not be read during batch handoff.",
+            }
+        )
+    summary = payload.get("summary") or {}
+    if int(summary.get("review") or 0) > 0 or int(summary.get("review_count") or 0) > 0:
+        actions.append(
+            {
+                "action": "inspect_review_items",
+                "review_jobs": summary.get("review", 0),
+                "review_items": summary.get("review_count", 0),
+                "reason": "Some jobs completed with review signals; inspect review items before accepting outputs.",
+            }
+        )
+    return actions
 
 
 def write_quality_comparison(output: Path, baseline_results: Path, candidate_results: Path) -> dict[str, Any]:

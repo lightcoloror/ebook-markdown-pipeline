@@ -89,6 +89,9 @@ def main() -> int:
         report_payload = runner.write_reports(root / "reports", root / "manifest.json", 0.0, [result], partial=False)
         if report_payload.get("artifact_summary", {}).get("failed") != 1:
             raise AssertionError(f"Expected artifact_summary in report payload: {report_payload}")
+        report_action_names = {item.get("action") for item in report_payload.get("next_actions") or []}
+        if not {"read_run_summary", "inspect_agent_batch_results", "inspect_failed_artifacts", "inspect_review_items"}.issubset(report_action_names):
+            raise AssertionError(f"Expected handoff next actions in report payload: {report_payload}")
         if not (root / "reports" / "run_summary.md").exists():
             raise AssertionError(f"Expected run_summary.md to be written: {report_payload}")
         if "Artifact read failures: 1" not in (root / "reports" / "run_summary.md").read_text(encoding="utf-8"):

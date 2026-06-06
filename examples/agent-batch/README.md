@@ -83,6 +83,8 @@ Both dry-run plans and real `agent-batch-results.json` include a machine-readabl
 
 Real batch results also include `artifact_summary` with total/ok/failed read counts, artifact type counts, and up to 20 failed artifact read records. Check it before drilling into each job's `artifacts`.
 
+Every real or partial batch result includes top-level `next_actions` for handoff: `read_run_summary`, `inspect_agent_batch_results`, `inspect_failed_artifacts` when `artifact_summary.failed` is non-zero, and `inspect_review_items` when jobs completed with review signals.
+
 When `--select` is not `all`, `--previous-results` is recommended but no longer mandatory if a nearby prior `agent-batch-results.json` exists. The runner searches the output directory, sibling run directories under the output parent, and the manifest directory, then uses the newest non-partial results file. If no prior result is found, dry-run reports a validation error instead of starting work.
 
 `--rerun-mode recommended` applies conservative rerun hints in this order:
