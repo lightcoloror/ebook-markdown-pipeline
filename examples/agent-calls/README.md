@@ -47,6 +47,23 @@ python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\cli_process
   --output D:\books-output
 ```
 
+## Agent Batch Handoff
+
+When taking over an existing batch without starting MCP or HTTP, list recent batch results under an output root:
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\cli_agent_batch_handoff.py list `
+  D:\agent-batch-output `
+  --max-depth 3
+```
+
+Inspect a known `agent-batch-results.json`:
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\cli_agent_batch_handoff.py inspect `
+  D:\agent-batch-output\run-002\agent-batch-results.json
+```
+
 ## Query Mode
 
 If you only need to locate a keyword in PDFs/images:
