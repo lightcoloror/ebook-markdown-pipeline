@@ -22,7 +22,19 @@ def poll_job(call_tool: Callable[[str, dict[str, Any]], dict[str, Any]], job_id:
 
 
 def first_readable_artifact(job: dict[str, Any]) -> dict[str, Any] | None:
-    preferred = {"markdown", "html", "text", "summary_report", "review_report", "location_index_jsonl", "order_report"}
+    preferred = {
+        "markdown",
+        "html",
+        "text",
+        "summary_report",
+        "review_report",
+        "location_index_jsonl",
+        "order_report",
+        "visual_check_json",
+        "visual_blocks_json",
+        "table_candidates_json",
+        "image_positions_json",
+    }
     for item in job.get("artifacts", []):
         if item.get("type") in preferred and item.get("path"):
             return item
@@ -35,10 +47,16 @@ def run_material_flow(call_tool: Callable[[str, dict[str, Any]], dict[str, Any]]
         return {"routed": routed, "job": None, "artifact": None}
     job_id = routed.get("job_id")
     if not job_id:
-        return {"routed": routed, "job": None, "artifact": None}
+        delegated = routed.get("delegated") if isinstance(routed.get("delegated"), dict) else None
+        artifact_payload = read_first_artifact(call_tool, delegated or {})
+        return {"routed": routed, "job": None, "result": delegated, "artifact": artifact_payload}
     job = poll_job(call_tool, str(job_id), timeout=timeout)
-    artifact = first_readable_artifact(job)
-    artifact_payload = None
-    if artifact:
-        artifact_payload = call_tool("read_artifact", {"path": artifact["path"], "artifact_type": artifact["type"], "max_chars": 4000, "max_lines": 120})
+    artifact_payload = read_first_artifact(call_tool, job)
     return {"routed": routed, "job": job, "artifact": artifact_payload}
+
+
+def read_first_artifact(call_tool: Callable[[str, dict[str, Any]], dict[str, Any]], payload: dict[str, Any]) -> dict[str, Any] | None:
+    artifact = first_readable_artifact(payload)
+    if not artifact:
+        return None
+    return call_tool("read_artifact", {"path": artifact["path"], "artifact_type": artifact["type"], "max_chars": 4000, "max_lines": 120})

@@ -3,8 +3,9 @@
 These examples show the same stable flow through three integration styles:
 
 1. Call `process_material`.
-2. Poll `get_job_status` until the job is not running.
-3. Read a returned text artifact with `read_artifact`.
+2. If a `job_id` is returned, poll `get_job_status` until the job is not running.
+3. If no `job_id` is returned but `delegated.artifacts` exists, read those artifacts directly.
+4. Read a returned text/JSON artifact with `read_artifact`.
 
 Use HTTP for Docker-hosted agents such as OpenClaw or Hermes when they cannot run Windows stdio MCP directly. Use MCP stdio for MCP-native agents. Use the CLI-style Python example for local automation and debugging.
 
@@ -56,3 +57,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\http_proces
   --output D:\documents-index `
   --query "合同金额"
 ```
+
+## Web Archive Mode
+
+For `web-content-fetcher` archive folders, `process_material` may route to the synchronous `process_web_archive` tool. In that case the example scripts read `visual_check_json` or another returned visual artifact directly instead of polling a background job.
