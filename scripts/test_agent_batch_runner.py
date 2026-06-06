@@ -45,6 +45,7 @@ def main() -> int:
                         "artifacts": [
                             {"type": "visual_check_json", "path": str(result_path)},
                             {"type": "markdown", "path": str(layout_path)},
+                            {"type": "markdown", "path": str(visual_check / "missing.md")},
                         ],
                         "next_actions": [
                             {
@@ -77,14 +78,21 @@ def main() -> int:
         if result.get("status") != "review":
             raise AssertionError(f"Expected pending visual archive to become review status: {result}")
         artifacts = result.get("artifacts") or []
-        if len(artifacts) != 2 or not all(item.get("status") == "ok" for item in artifacts):
-            raise AssertionError(f"Expected readable synchronous artifacts: {result}")
+        if len(artifacts) != 3 or sum(1 for item in artifacts if item.get("status") == "ok") != 2 or sum(1 for item in artifacts if item.get("status") == "failed") != 1:
+            raise AssertionError(f"Expected readable synchronous artifacts plus one read failure: {result}")
         summary = runner.summarize([result])
         if summary.get("review") != 1 or summary.get("failed") != 0 or summary.get("hard_failed") != 0 or summary.get("artifact_reads") != 2:
             raise AssertionError(f"Expected review status to be non-failed but artifact-readable: {summary}")
+        artifact_summary = runner.summarize_artifacts([result])
+        if artifact_summary.get("ok") != 2 or artifact_summary.get("failed") != 1 or artifact_summary.get("type_counts", {}).get("markdown") != 2:
+            raise AssertionError(f"Expected top-level artifact read summary: {artifact_summary}")
         report_payload = runner.write_reports(root / "reports", root / "manifest.json", 0.0, [result], partial=False)
+        if report_payload.get("artifact_summary", {}).get("failed") != 1:
+            raise AssertionError(f"Expected artifact_summary in report payload: {report_payload}")
         if not (root / "reports" / "run_summary.md").exists():
             raise AssertionError(f"Expected run_summary.md to be written: {report_payload}")
+        if "Artifact read failures: 1" not in (root / "reports" / "run_summary.md").read_text(encoding="utf-8"):
+            raise AssertionError(f"Expected artifact read failures in run_summary.md: {report_payload}")
 
         previous_payload = {
             "results": [

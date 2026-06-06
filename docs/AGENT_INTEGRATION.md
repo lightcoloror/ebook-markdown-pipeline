@@ -73,6 +73,8 @@ When rerunning or optimizing a batch, pass the prior `agent-batch-results.json` 
 
 Every dry-run plan and real batch result includes a `selection` block with `select`, `rerun_mode`, `previous_results`, `selected_job_ids`, `selected_count`, and `manifest_job_count`. Use it before claiming a run covered the whole manifest or only a targeted failed/review rerun.
 
+Real batch results also include `artifact_summary` with total/ok/failed read counts, artifact type counts, and failed artifact read records. Check it before drilling into each job's `artifacts`.
+
 When taking over a previous batch, call `inspect_agent_batch_results` with the prior `agent-batch-results.json`. If the path is unknown, call `list_agent_batch_results` on the likely output root first. These tools return the summary, quality comparison status, `recommended_rerun`, review items, and artifact paths without requiring the agent to parse the whole JSON by hand.
 
 For broad real-sample benchmarks outside agent batches, use `scripts/run_benchmarks.py` with quality gates and `scripts/compare_benchmark_quality.py` to compare a baseline `benchmark-results.json` or `quality-regression-summary.json` against a candidate run. This is the preferred evidence path before changing defaults such as PDF pipeline selection, Docling enablement, or OCR cleanup rules.

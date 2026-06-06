@@ -340,6 +340,7 @@ def write_reports(
             manifest_job_count=len(results),
         ),
         "summary": summarize(results),
+        "artifact_summary": summarize_artifacts(results),
         "results": results,
     }
     (output / f"agent-batch-results{suffix}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -707,8 +708,45 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def summarize_artifacts(results: list[dict[str, Any]]) -> dict[str, Any]:
+    total = 0
+    ok = 0
+    failed = 0
+    type_counts: dict[str, int] = {}
+    failed_artifacts = []
+    for item in results:
+        job_id = str(item.get("id") or "")
+        for artifact_item in item.get("artifacts") or []:
+            if not isinstance(artifact_item, dict):
+                continue
+            total += 1
+            artifact_type = str(artifact_item.get("type") or "unknown")
+            type_counts[artifact_type] = type_counts.get(artifact_type, 0) + 1
+            if artifact_item.get("status") == "ok":
+                ok += 1
+            else:
+                failed += 1
+                failed_artifacts.append(
+                    {
+                        "job_id": job_id,
+                        "path": artifact_item.get("path"),
+                        "type": artifact_item.get("type"),
+                        "status": artifact_item.get("status"),
+                        "message": artifact_item.get("message") or ((artifact_item.get("preview") or {}).get("message") if isinstance(artifact_item.get("preview"), dict) else ""),
+                    }
+                )
+    return {
+        "total": total,
+        "ok": ok,
+        "failed": failed,
+        "type_counts": type_counts,
+        "failed_artifacts": failed_artifacts[:20],
+    }
+
+
 def render_markdown(payload: dict[str, Any]) -> str:
     selection = payload.get("selection") or {}
+    artifact_summary = payload.get("artifact_summary") or {}
     lines = [
         "# Agent Batch Summary",
         "",
@@ -719,6 +757,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
         f"- Status: {payload['summary']['status_counts']}",
         f"- Review items: {payload['summary']['review_count']}",
         f"- Artifact reads: {payload['summary']['artifact_reads']}",
+        f"- Artifact read failures: {artifact_summary.get('failed', 0)}",
         "",
         "| Status | ID | Input | Output | Review | Failure |",
         "| --- | --- | --- | --- | ---: | --- |",
@@ -736,6 +775,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
 def render_run_summary(payload: dict[str, Any]) -> str:
     summary = payload["summary"]
     selection = payload.get("selection") or {}
+    artifact_summary = payload.get("artifact_summary") or {}
     lines = [
         "# Run Summary",
         "",
@@ -750,6 +790,7 @@ def render_run_summary(payload: dict[str, Any]) -> str:
         f"- Review: {summary.get('review', 0)}",
         f"- Hard failed: {summary.get('hard_failed', 0)}",
         f"- Artifact reads: {summary.get('artifact_reads', 0)}",
+        f"- Artifact read failures: {artifact_summary.get('failed', 0)}",
     ]
     comparison = payload.get("quality_comparison") or {}
     if comparison:

@@ -158,6 +158,8 @@ When baseline comparison is enabled, `agent-batch-results.json` also includes to
 
 `agent-batch-plan.json` and `agent-batch-results.json` include a `selection` block: `select`, `rerun_mode`, `previous_results`, `selected_job_ids`, `selected_count`, `manifest_job_count`, and `selection_ratio`. Agents should use this block to distinguish full runs from targeted reruns.
 
+`agent-batch-results.json` includes `artifact_summary` with total/ok/failed artifact read counts, `type_counts`, and `failed_artifacts`. Agents should inspect this before assuming all referenced artifacts were readable.
+
 Agents taking over an existing batch should call `inspect_agent_batch_results` on `agent-batch-results.json` before inventing paths or parsing the whole file themselves. If the exact results path is unknown, call `list_agent_batch_results` on the output root first and inspect the newest or most relevant item. These tools return summary counts, quality comparison status, top-level `next_actions`, `recommended_rerun`, extracted review items, and artifact paths for `run_summary.md` / quality comparison reports.
 
 For this comparison, agent-batch `review` means completed-with-review rather than transport failure. It contributes to completion success but increases the review/poor quality rate, so agents should report it as usable output that still needs inspection.

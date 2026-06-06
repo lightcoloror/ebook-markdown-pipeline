@@ -104,6 +104,8 @@ def assert_agent_batch_results_inspection(tmpdir: Path) -> None:
                 "duration_seconds": 1.2,
                 "partial": False,
                 "summary": {"total": 2, "ok": 1, "review": 1, "hard_failed": 0},
+                "selection": {"select": "failed-or-review", "selected_count": 1, "manifest_job_count": 2},
+                "artifact_summary": {"total": 3, "ok": 2, "failed": 1, "type_counts": {"markdown": 2}, "failed_artifacts": [{"job_id": "review", "path": "missing.md"}]},
                 "quality_comparison": {
                     "status": "failed",
                     "markdown": str(comparison_md),
@@ -157,6 +159,8 @@ def assert_agent_batch_results_inspection(tmpdir: Path) -> None:
         raise AssertionError(f"Expected agent batch inspection summary: {inspected}")
     if inspected.get("quality_comparison", {}).get("status") != "failed":
         raise AssertionError(f"Expected quality comparison status: {inspected}")
+    if inspected.get("selection", {}).get("select") != "failed-or-review" or inspected.get("artifact_summary", {}).get("failed") != 1:
+        raise AssertionError(f"Expected selection and artifact summary passthrough: {inspected}")
     if inspected.get("recommended_rerun", {}).get("action") != "rerun_failed_or_review":
         raise AssertionError(f"Expected recommended rerun action: {inspected}")
     if not inspected.get("review_items") or inspected["review_items"][0].get("quality_level") != "poor":
@@ -180,6 +184,8 @@ def assert_agent_batch_results_listing(tmpdir: Path) -> None:
         raise AssertionError(f"Expected two listed agent batches: {listed}")
     if Path(listed["items"][0].get("path", "")).resolve() != second.resolve():
         raise AssertionError(f"Expected newest batch first: {listed}")
+    if listed["items"][0].get("selection", {}).get("selected_count") != 2 or listed["items"][0].get("artifact_summary", {}).get("ok") != 1:
+        raise AssertionError(f"Expected selection and artifact summary in listed batch: {listed}")
     action_names = {item.get("action") for item in listed.get("next_actions") or []}
     if "inspect_latest_agent_batch" not in action_names or "rerun_failed_or_review" not in action_names:
         raise AssertionError(f"Expected list next actions for latest failed batch: {listed}")
@@ -222,6 +228,8 @@ def write_agent_batch_result_fixture(batch_dir: Path, *, status: str, review: in
                 "duration_seconds": 1.2,
                 "partial": False,
                 "summary": {"total": 2, "ok": 2 - review, "review": review, "hard_failed": 0},
+                "selection": {"select": "all", "selected_count": 2, "manifest_job_count": 2},
+                "artifact_summary": {"total": 1, "ok": 1, "failed": 0, "type_counts": {"markdown": 1}, "failed_artifacts": []},
                 "quality_comparison": {
                     "status": status,
                     "markdown": str(comparison_md),
