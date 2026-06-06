@@ -140,6 +140,22 @@ Agents should treat `quality_summary.review_count > 0` as a prompt to read the `
 
 Review checklist JSON entries also include machine-readable `next_actions`. These actions are advisory, not automatic permission to overwrite files. Prefer versioned reruns and ask the user before destructive replacement.
 
+## Batch Quality Baselines
+
+Agent batch runs should preserve `agent-batch-results.json` as the machine-readable handoff artifact. When a previous run exists, invoke `examples/agent-batch/agent_batch_http.py` with:
+
+- `--baseline-results <prior agent-batch-results.json>`
+- `--fail-on-regression` for unattended runs that must fail on quality regression
+
+The runner writes:
+
+- `benchmark-quality-comparison.json`
+- `benchmark-quality-comparison.md`
+
+`run_summary.md` includes the quality comparison status and Markdown report path. A comparison status of `failed` means one or more configured regression checks failed. The default checks guard against lower success rate, lower good rate, higher review/poor rate, higher timeout rate, and higher failed rate.
+
+For this comparison, agent-batch `review` means completed-with-review rather than transport failure. It contributes to completion success but increases the review/poor quality rate, so agents should report it as usable output that still needs inspection.
+
 ## Environment Capabilities
 
 HTTP `/health` returns the transport contract plus lightweight operating status:

@@ -52,10 +52,14 @@ Use `--convert` if you also want to test a tiny real TXT conversion.
 Repeatable agent batch templates live in `examples/agent-batch/`:
 
 - `batch_manifest.example.json`: a stable manifest shape for conversion, location indexing, and screenshot rebuild jobs.
-- `agent_batch_http.py`: deterministic HTTP runner that validates manifests with `--dry-run`, calls `process_material`, polls `get_job_status`, reads `next_actions` artifacts, and writes `agent-batch-results.json` plus `agent-batch-summary.md`.
+- `agent_batch_http.py`: deterministic HTTP runner that validates manifests with `--dry-run`, calls `process_material`, polls `get_job_status`, reads `next_actions` artifacts, and writes `agent-batch-results.json`, `agent-batch-summary.md`, and `run_summary.md`.
 - `AGENT_PROMPT_TEMPLATE.md`: prompt block for OpenClaw, Hermes, Codex, or another LLM agent.
 
 Use these templates for ordinary multi-file production batches. Use `scripts/stress_agent_http.py` only for concurrency and failure-recovery testing.
+
+When rerunning or optimizing a batch, pass the prior `agent-batch-results.json` as `--baseline-results`. The runner writes `benchmark-quality-comparison.json/md` and links the comparison status from `run_summary.md`. Use `--fail-on-regression` for unattended agent runs where a lower success rate, lower good rate, higher review/poor rate, higher timeout rate, or higher failed rate should fail the run.
+
+For broad real-sample benchmarks outside agent batches, use `scripts/run_benchmarks.py` with quality gates and `scripts/compare_benchmark_quality.py` to compare a baseline `benchmark-results.json` or `quality-regression-summary.json` against a candidate run. This is the preferred evidence path before changing defaults such as PDF pipeline selection, Docling enablement, or OCR cleanup rules.
 
 ## Docker Agent Integration
 
