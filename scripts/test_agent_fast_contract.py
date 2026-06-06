@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -72,9 +73,97 @@ def main() -> int:
 
         assert_quality_summary_next_actions(tmpdir)
         assert_quality_comparison_artifact_read(tmpdir)
+        assert_agent_batch_results_inspection(tmpdir)
 
     print("Agent fast contract test passed.")
     return 0
+
+
+def assert_agent_batch_results_inspection(tmpdir: Path) -> None:
+    batch_dir = tmpdir / "agent-batch"
+    batch_dir.mkdir()
+    comparison_md = batch_dir / "benchmark-quality-comparison.md"
+    comparison_json = batch_dir / "benchmark-quality-comparison.json"
+    run_summary = batch_dir / "run_summary.md"
+    comparison_md.write_text("# Quality Comparison\n\nfailed", encoding="utf-8")
+    comparison_json.write_text(
+        json.dumps({"schema_version": "benchmark-quality-comparison-v1", "summary": {"status": "failed"}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    run_summary.write_text("# Run Summary\n\n## Recommended Rerun\n", encoding="utf-8")
+    results_path = batch_dir / "agent-batch-results.json"
+    results_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "agent-batch-v1",
+                "manifest": str(tmpdir / "manifest.json"),
+                "created_at": "now",
+                "duration_seconds": 1.2,
+                "partial": False,
+                "summary": {"total": 2, "ok": 1, "review": 1, "hard_failed": 0},
+                "quality_comparison": {
+                    "status": "failed",
+                    "markdown": str(comparison_md),
+                    "json": str(comparison_json),
+                    "summary": {"status": "failed"},
+                },
+                "next_actions": [
+                    {
+                        "action": "read_quality_comparison",
+                        "tool": "read_artifact",
+                        "arguments": {"path": str(comparison_md), "artifact_type": "markdown"},
+                    },
+                    {
+                        "action": "rerun_failed_or_review",
+                        "select": "failed-or-review",
+                        "rerun_mode": "recommended",
+                        "powershell_command": "python runner.py --select failed-or-review --rerun-mode recommended",
+                    },
+                ],
+                "results": [
+                    {
+                        "id": "review",
+                        "status": "review",
+                        "input": "input.pdf",
+                        "output": "output.md",
+                        "job": {
+                            "quality_summary": {
+                                "review_items": [
+                                    {
+                                        "source": "input.pdf",
+                                        "report": "report.json",
+                                        "quality_level": "poor",
+                                        "quality_score": 42,
+                                        "quality_reasons": ["no headings"],
+                                        "suggested_action": "compare pipelines",
+                                        "next_actions": [{"action": "compare_pdf_pipelines"}],
+                                    }
+                                ]
+                            }
+                        },
+                    }
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    inspected = call_tool("inspect_agent_batch_results", {"path": str(results_path)})
+    if inspected.get("schema_version") != "agent-batch-inspection-v1" or inspected.get("summary", {}).get("review") != 1:
+        raise AssertionError(f"Expected agent batch inspection summary: {inspected}")
+    if inspected.get("quality_comparison", {}).get("status") != "failed":
+        raise AssertionError(f"Expected quality comparison status: {inspected}")
+    if inspected.get("recommended_rerun", {}).get("action") != "rerun_failed_or_review":
+        raise AssertionError(f"Expected recommended rerun action: {inspected}")
+    if not inspected.get("review_items") or inspected["review_items"][0].get("quality_level") != "poor":
+        raise AssertionError(f"Expected review item extraction: {inspected}")
+    artifact_types = {item.get("type") for item in inspected.get("artifacts") or []}
+    if not {"agent_batch_results", "agent_batch_run_summary", "quality_comparison_json"}.issubset(artifact_types):
+        raise AssertionError(f"Expected agent batch artifacts: {inspected}")
+    readable = call_tool("read_artifact", {"path": str(results_path), "artifact_type": "agent_batch_results"})
+    if (readable.get("json") or {}).get("schema_version") != "agent-batch-v1":
+        raise AssertionError(f"Expected readable agent batch JSON artifact: {readable}")
 
 
 if __name__ == "__main__":

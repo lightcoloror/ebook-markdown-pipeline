@@ -47,6 +47,7 @@ JOBS_LOCK = threading.Lock()
 JSON_STDOUT = sys.stdout
 JSON_ARTIFACT_TYPES = {
     "json",
+    "agent_batch_results",
     "conversion_report",
     "summary_json",
     "review_json",
@@ -65,6 +66,9 @@ JSON_ARTIFACT_TYPES = {
 }
 READABLE_ARTIFACT_TYPES = {
     "markdown",
+    "agent_batch_run_summary",
+    "agent_batch_summary",
+    "agent_batch_results",
     "html",
     "text",
     "conversion_report",
@@ -84,6 +88,8 @@ READABLE_ARTIFACT_TYPES = {
     "environment_lock",
     "environment_lock_compare",
     "environment_lock_compare_json",
+    "quality_comparison",
+    "quality_comparison_json",
     "visual_check_json",
     "visual_blocks_json",
     "table_candidates_json",
@@ -369,6 +375,18 @@ def tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "inspect_agent_batch_results",
+            "description": "Summarize an agent-batch-results.json handoff and expose quality comparison next actions.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "max_review_items": {"type": "integer", "default": 10},
+                },
+                "required": ["path"],
+            },
+        },
+        {
             "name": "build_location_index",
             "description": "Build a page/image-level searchable index for PDFs and image files.",
             "inputSchema": {
@@ -508,6 +526,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return read_pdf_tool_log(arguments)
     if name == "read_artifact":
         return read_artifact(arguments)
+    if name == "inspect_agent_batch_results":
+        return inspect_agent_batch_results(arguments)
     if name == "build_location_index":
         return build_location_index_tool(arguments)
     if name == "start_location_index":
@@ -1159,6 +1179,124 @@ def read_artifact(arguments: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def inspect_agent_batch_results(arguments: dict[str, Any]) -> dict[str, Any]:
+    path = Path(arguments["path"])
+    max_review_items = clamp_int(arguments.get("max_review_items"), default=10, minimum=1, maximum=100)
+    if not path.exists() or not path.is_file():
+        return {"error": True, "message": f"Agent batch results file not found: {path}", "path": str(path)}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except json.JSONDecodeError as exc:
+        return {"error": True, "message": f"Invalid agent batch JSON: {exc}", "path": str(path)}
+
+    if payload.get("schema_version") != "agent-batch-v1":
+        return {
+            "error": True,
+            "message": "Expected schema_version=agent-batch-v1.",
+            "path": str(path),
+            "schema_version": payload.get("schema_version"),
+        }
+
+    results = [item for item in payload.get("results") or [] if isinstance(item, dict)]
+    review_items = agent_batch_review_items(results, max_review_items)
+    next_actions = [item for item in payload.get("next_actions") or [] if isinstance(item, dict)]
+    artifacts = agent_batch_artifacts(path, payload)
+    return {
+        "schema_version": "agent-batch-inspection-v1",
+        "path": str(path),
+        "manifest": payload.get("manifest"),
+        "created_at": payload.get("created_at"),
+        "duration_seconds": payload.get("duration_seconds"),
+        "partial": bool(payload.get("partial")),
+        "summary": payload.get("summary") or {},
+        "quality_comparison": payload.get("quality_comparison") or {},
+        "next_actions": next_actions,
+        "recommended_rerun": first_agent_batch_rerun_action(next_actions),
+        "review_items": review_items,
+        "artifacts": artifacts,
+        "human_summary": agent_batch_human_summary(payload, next_actions),
+    }
+
+
+def agent_batch_review_items(results: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    review_items: list[dict[str, Any]] = []
+    for item in results:
+        quality = ((item.get("job") or {}).get("quality_summary") or {})
+        for review in quality.get("review_items") or []:
+            if not isinstance(review, dict):
+                continue
+            review_items.append(
+                {
+                    "id": item.get("id"),
+                    "status": item.get("status"),
+                    "input": item.get("input"),
+                    "output": item.get("output"),
+                    "source": review.get("source"),
+                    "report": review.get("report"),
+                    "quality_level": review.get("quality_level"),
+                    "quality_score": review.get("quality_score"),
+                    "quality_reasons": review.get("quality_reasons") or [],
+                    "suggested_action": review.get("suggested_action"),
+                    "next_actions": review.get("next_actions") or [],
+                }
+            )
+            if len(review_items) >= limit:
+                return review_items
+    return review_items
+
+
+def agent_batch_artifacts(results_path: Path, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    artifacts = [
+        artifact("agent_batch_results", results_path, label="Agent batch results", media_type="application/json"),
+    ]
+    base = results_path.parent
+    for filename, artifact_type, label, media_type in [
+        ("run_summary.md", "agent_batch_run_summary", "Agent batch run summary", "text/markdown"),
+        ("agent-batch-summary.md", "agent_batch_summary", "Agent batch summary", "text/markdown"),
+        ("benchmark-quality-comparison.md", "quality_comparison", "Quality comparison", "text/markdown"),
+        ("benchmark-quality-comparison.json", "quality_comparison_json", "Quality comparison JSON", "application/json"),
+    ]:
+        candidate = base / filename
+        if candidate.exists():
+            artifacts.append(artifact(artifact_type, candidate, label=label, media_type=media_type))
+
+    comparison = payload.get("quality_comparison") or {}
+    for key, artifact_type, media_type in [
+        ("markdown", "quality_comparison", "text/markdown"),
+        ("json", "quality_comparison_json", "application/json"),
+    ]:
+        candidate = comparison.get(key)
+        if candidate and Path(candidate).exists():
+            item = artifact(artifact_type, Path(candidate), label=f"Quality comparison {key}", media_type=media_type)
+            if not any(existing.get("path") == item.get("path") and existing.get("type") == item.get("type") for existing in artifacts):
+                artifacts.append(item)
+    return artifacts
+
+
+def first_agent_batch_rerun_action(actions: list[dict[str, Any]]) -> dict[str, Any]:
+    for action in actions:
+        if action.get("action") == "rerun_failed_or_review":
+            return action
+    return {}
+
+
+def agent_batch_human_summary(payload: dict[str, Any], next_actions: list[dict[str, Any]]) -> str:
+    summary = payload.get("summary") or {}
+    comparison = payload.get("quality_comparison") or {}
+    parts = [
+        f"total={summary.get('total', 0)}",
+        f"ok={summary.get('ok', 0)}",
+        f"review={summary.get('review', 0)}",
+        f"hard_failed={summary.get('hard_failed', 0)}",
+    ]
+    if comparison:
+        parts.append(f"quality_comparison={comparison.get('status')}")
+    rerun = first_agent_batch_rerun_action(next_actions)
+    if rerun:
+        parts.append("recommended_rerun=failed-or-review")
+    return "; ".join(parts)
+
+
 def infer_artifact_type(path: Path) -> str:
     suffix = path.suffix.lower()
     name = path.name.lower()
@@ -1169,6 +1307,8 @@ def infer_artifact_type(path: Path) -> str:
             return "location_index_jsonl"
         return "pages_jsonl"
     if suffix == ".json":
+        if "agent-batch-results" in name:
+            return "agent_batch_results"
         if "review-decisions" in name:
             return "review_decisions_json"
         if "review-checklist" in name:

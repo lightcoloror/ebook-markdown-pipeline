@@ -27,6 +27,7 @@ REQUIRED_TOOLS = {
     "process_web_archive",
     "get_job_status",
     "read_artifact",
+    "inspect_agent_batch_results",
     "inspect_document",
     "scan_books",
     "health_check",

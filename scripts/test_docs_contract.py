@@ -13,6 +13,7 @@ def main() -> int:
             "benchmark-quality-comparison.json/md",
             "top-level `next_actions`",
             "copyable recommended rerun command",
+            "inspect_agent_batch_results",
             "--fail-on-regression",
         ],
         "docs/TOOL_CONTRACT.md": [
@@ -20,6 +21,7 @@ def main() -> int:
             "--baseline-results",
             "rerun_failed_or_review",
             "powershell_command",
+            "inspect_agent_batch_results",
             "completed-with-review",
         ],
         "examples/agent-batch/README.md": [
@@ -34,11 +36,13 @@ def main() -> int:
             "benchmark-quality-comparison.md",
             "top-level `next_actions`",
             "powershell_command",
+            "inspect_agent_batch_results",
             "Quality comparison status",
         ],
         "README.md": [
             "test_agent_fast_contract.py",
             "test_agent_contract.py",
+            "inspect_agent_batch_results",
             "完整 agent contract",
         ],
     }
