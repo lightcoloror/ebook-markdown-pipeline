@@ -122,6 +122,30 @@ def main() -> int:
         if selected_ids != ["job-2"]:
             raise AssertionError(f"Expected original anonymous job id to be preserved: {selected_ids}")
 
+        previous_dir = root / "batch-runs" / "run-001"
+        next_dir = root / "batch-runs" / "run-002"
+        previous_dir.mkdir(parents=True)
+        next_dir.mkdir(parents=True)
+        previous_path = previous_dir / "agent-batch-results.json"
+        previous_path.write_text(json.dumps(previous_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        discovered = runner.resolve_previous_results_path(None, root / "manifest.json", next_dir, "failed-or-review")
+        if discovered != previous_path:
+            raise AssertionError(f"Expected previous results auto-discovery: {discovered}")
+        discovered_payload = runner.load_previous_results(discovered)
+        validation = runner.validate_manifest(
+            {
+                "jobs": [
+                    {"id": "archive", "input": str(root / "archive"), "output": str(root / "out")},
+                    {"id": "ok-job", "input": "x", "output": "y"},
+                ]
+            },
+            previous_payload=discovered_payload,
+            select="failed-or-review",
+            previous_results_path=discovered,
+        )
+        if validation.get("selected_job_ids") != ["archive"] or validation.get("previous_results") != str(previous_path):
+            raise AssertionError(f"Expected auto-discovered previous results to drive selection: {validation}")
+
         args.rerun_mode = "recommended"
         runner.run_manifest_job(
             args,

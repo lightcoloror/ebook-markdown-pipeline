@@ -61,11 +61,12 @@ def main() -> int:
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8-sig"))
     args.output.mkdir(parents=True, exist_ok=True)
-    previous_payload = load_previous_results(args.previous_results)
+    previous_results_path = resolve_previous_results_path(args.previous_results, args.manifest, args.output, args.select)
+    previous_payload = load_previous_results(previous_results_path)
 
-    validation = validate_manifest(manifest, previous_payload=previous_payload, select=args.select)
+    validation = validate_manifest(manifest, previous_payload=previous_payload, select=args.select, previous_results_path=previous_results_path)
     if args.dry_run or args.validate_only or validation["errors"]:
-        plan_payload = write_plan(args.output, args.manifest, manifest, validation)
+        plan_payload = write_plan(args.output, args.manifest, manifest, validation, previous_results_path=previous_results_path)
         print(json.dumps(plan_payload["summary"], ensure_ascii=False, indent=2))
         return 2 if validation["errors"] else 0
 
@@ -81,7 +82,13 @@ def main() -> int:
     return 0 if payload["summary"]["hard_failed"] == 0 else 3
 
 
-def validate_manifest(manifest: dict[str, Any], *, previous_payload: dict[str, Any] | None = None, select: str = "all") -> dict[str, Any]:
+def validate_manifest(
+    manifest: dict[str, Any],
+    *,
+    previous_payload: dict[str, Any] | None = None,
+    select: str = "all",
+    previous_results_path: Path | None = None,
+) -> dict[str, Any]:
     errors: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     defaults = manifest.get("defaults", {})
@@ -94,7 +101,7 @@ def validate_manifest(manifest: dict[str, Any], *, previous_payload: dict[str, A
         errors.append({"scope": "jobs", "message": "jobs must be a non-empty array"})
         jobs = []
     if select != "all" and not previous_payload:
-        errors.append({"scope": "previous_results", "message": "--previous-results is required when --select is not all"})
+        errors.append({"scope": "previous_results", "message": "--previous-results is required when --select is not all, and no prior agent-batch-results.json was auto-discovered"})
 
     seen_ids: set[str] = set()
     normalized_jobs = []
@@ -148,6 +155,7 @@ def validate_manifest(manifest: dict[str, Any], *, previous_payload: dict[str, A
         "warnings": warnings,
         "normalized_jobs": normalized_jobs,
         "selected_job_ids": selected_job_ids(jobs, previous_payload, select),
+        "previous_results": str(previous_results_path) if previous_results_path else "",
     }
 
 
@@ -302,7 +310,14 @@ def write_reports(output: Path, manifest: Path, started: float, results: list[di
     return payload
 
 
-def write_plan(output: Path, manifest: Path, raw_manifest: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
+def write_plan(
+    output: Path,
+    manifest: Path,
+    raw_manifest: dict[str, Any],
+    validation: dict[str, Any],
+    *,
+    previous_results_path: Path | None = None,
+) -> dict[str, Any]:
     output.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema_version": "agent-batch-plan-v1",
@@ -316,6 +331,7 @@ def write_plan(output: Path, manifest: Path, raw_manifest: dict[str, Any], valid
         },
         "validation": validation,
         "defaults": raw_manifest.get("defaults", {}),
+        "previous_results": str(previous_results_path) if previous_results_path else "",
     }
     (output / "agent-batch-plan.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     (output / "agent-batch-plan.md").write_text(render_plan_markdown(payload), encoding="utf-8")
@@ -326,6 +342,54 @@ def load_previous_results(path: Path | None) -> dict[str, Any] | None:
     if not path:
         return None
     return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def resolve_previous_results_path(explicit: Path | None, manifest: Path, output: Path, select: str) -> Path | None:
+    if explicit:
+        return explicit
+    if select == "all":
+        return None
+    return discover_previous_results(manifest, output)
+
+
+def discover_previous_results(manifest: Path, output: Path) -> Path | None:
+    candidates: list[Path] = []
+    seen: set[str] = set()
+    for root in previous_results_search_roots(manifest, output):
+        for path in previous_results_candidates(root):
+            key = str(path.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(path)
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
+def previous_results_search_roots(manifest: Path, output: Path) -> list[Path]:
+    roots = []
+    for candidate in [output, output.parent, manifest.parent]:
+        if candidate and candidate.exists() and candidate.is_dir():
+            roots.append(candidate)
+    deduped = []
+    seen = set()
+    for root in roots:
+        key = str(root.resolve())
+        if key not in seen:
+            seen.add(key)
+            deduped.append(root)
+    return deduped
+
+
+def previous_results_candidates(root: Path) -> list[Path]:
+    direct = root / "agent-batch-results.json"
+    candidates = [direct] if direct.exists() else []
+    try:
+        candidates.extend(path for path in root.glob("*/agent-batch-results.json") if path.exists())
+    except OSError:
+        pass
+    return candidates
 
 
 def select_jobs(jobs: list[Any], previous_payload: dict[str, Any] | None, select: str) -> list[dict[str, Any]]:
@@ -557,6 +621,7 @@ def render_plan_markdown(payload: dict[str, Any]) -> str:
         f"- Jobs: {payload['summary']['jobs']}",
         f"- Errors: {payload['summary']['errors']}",
         f"- Warnings: {payload['summary']['warnings']}",
+        f"- Previous results: `{payload.get('previous_results') or payload['validation'].get('previous_results') or ''}`",
         f"- Selected jobs: {', '.join(payload['validation'].get('selected_job_ids') or []) or '(none)'}",
         "",
     ]
