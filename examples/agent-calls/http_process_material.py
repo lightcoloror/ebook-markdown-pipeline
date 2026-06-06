@@ -8,13 +8,15 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2].parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ebook_markdown_pipeline.http_config import default_http_url  # noqa: E402
 from agent_call_helpers import print_json, run_material_flow  # noqa: E402
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Call process_material through the HTTP bridge.")
-    parser.add_argument("--url", default="http://127.0.0.1:8765")
+    parser.add_argument("--url", default=default_http_url())
     parser.add_argument("--token", default="")
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)

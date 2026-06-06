@@ -67,13 +67,15 @@ Host-side startup:
 
 ```powershell
 $env:EBOOK_CONVERTER_API_TOKEN = "replace-with-a-local-token"
-python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_http.py --host 0.0.0.0 --port 8765
+python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_http.py --host 0.0.0.0
 ```
+
+The HTTP port is read from `config/http.env` unless explicitly overridden.
 
 Container-side health check:
 
 ```bash
-curl -H "Authorization: Bearer replace-with-a-local-token" http://host.docker.internal:8765/health
+curl -H "Authorization: Bearer replace-with-a-local-token" "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/health"
 ```
 
 The health response includes `schema_version`, `tool_count`, `tools`, `supports_async_jobs`, and `supports_artifacts`. Agents should use it for capability discovery before making tool calls.
@@ -84,7 +86,7 @@ Container-side tool call:
 curl -H "Authorization: Bearer replace-with-a-local-token" \
   -H "Content-Type: application/json" \
   -d '{"name":"scan_books","arguments":{"input":"D:\\books","output":"D:\\books-md","recursive":true}}' \
-  http://host.docker.internal:8765/call
+  "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/call"
 ```
 
 The HTTP bridge intentionally reuses the MCP tool names and payloads. Treat it as a Docker transport adapter, not as a separate conversion implementation.

@@ -7,10 +7,15 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
+from ebook_markdown_pipeline.http_config import default_http_url  # noqa: E402
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-test the ebook converter HTTP bridge.")
-    parser.add_argument("--url", default="http://127.0.0.1:8765")
+    parser.add_argument("--url", default=default_http_url())
     parser.add_argument("--token", default="")
     parser.add_argument("--input", default=str(Path(__file__).resolve().parents[1] / "requirements.txt"))
     parser.add_argument("--output", default=str(Path(__file__).resolve().parents[1] / "_http_api_test_output"))

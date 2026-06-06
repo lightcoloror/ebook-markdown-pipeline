@@ -14,14 +14,15 @@ Start the service:
 
 ```powershell
 $env:EBOOK_CONVERTER_API_TOKEN = "local-token"
-python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_http.py --host 127.0.0.1 --port 8765
+python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_http.py
 ```
+
+The default host and port are read from `config/http.env`.
 
 Run:
 
 ```powershell
 python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\http_process_material.py `
-  --url http://127.0.0.1:8765 `
   --token local-token `
   --input D:\books\sample.epub `
   --output D:\books-output
@@ -51,7 +52,6 @@ If you only need to locate a keyword in PDFs/images:
 
 ```powershell
 python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\http_process_material.py `
-  --url http://127.0.0.1:8765 `
   --input D:\documents `
   --output D:\documents-index `
   --query "合同金额"

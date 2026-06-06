@@ -5,7 +5,7 @@ Use this project as the only document/image recognition tool. Do not parse PDF, 
 ## Inputs
 
 - Manifest: `D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\batch_manifest.example.json`
-- HTTP bridge: `http://host.docker.internal:8765` for Docker agents, or `http://127.0.0.1:8765` on the host.
+- HTTP bridge: read host/port from `D:\used-by-codex\ebook_markdown_pipeline\config\http.env`; Docker agents use `host.docker.internal` with that port.
 - Token: provided by the user or `EBOOK_CONVERTER_API_TOKEN`.
 
 ## Required Flow

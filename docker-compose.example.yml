@@ -3,8 +3,10 @@ services:
     build:
       context: .
     image: ebook-material-tools:local
+    env_file:
+      - ./config/http.env
     ports:
-      - "8765:8765"
+      - "${EBOOK_CONVERTER_HTTP_PORT:?Load config/http.env}:${EBOOK_CONVERTER_HTTP_PORT:?Load config/http.env}"
     environment:
       EBOOK_CONVERTER_API_TOKEN: "replace-with-a-local-token"
     volumes:
@@ -17,5 +19,3 @@ services:
       - ebook_markdown_pipeline.ebook_converter_http
       - --host
       - 0.0.0.0
-      - --port
-      - "8765"

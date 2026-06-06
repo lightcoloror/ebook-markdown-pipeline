@@ -1,5 +1,5 @@
 param(
-  [int]$Port = 8766,
+  [int]$Port = 0,
   [string]$Token = "ebook-test-20260531",
   [string]$ReportDir = "",
   [int]$ContainerIterations = 2,
@@ -18,6 +18,32 @@ $ServerErr = Join-Path $TestRoot "http-bridge.err.log"
 $Python = (Get-Command python).Source
 $Formats = @()
 $PSNativeCommandUseErrorActionPreference = $false
+
+function Read-HttpEnvConfig {
+  param([string]$Path)
+  $values = @{}
+  if (-not (Test-Path -LiteralPath $Path)) {
+    return $values
+  }
+  foreach ($line in Get-Content -LiteralPath $Path) {
+    $trimmed = $line.Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#") -or -not $trimmed.Contains("=")) {
+      continue
+    }
+    $parts = $trimmed.Split("=", 2)
+    $values[$parts[0].Trim()] = $parts[1].Trim().Trim('"').Trim("'")
+  }
+  return $values
+}
+
+$HttpConfig = Read-HttpEnvConfig (Join-Path $ProjectRoot "config\http.env")
+if ($Port -le 0) {
+  $configuredPort = $HttpConfig["EBOOK_CONVERTER_HTTP_PORT"]
+  if ([string]::IsNullOrWhiteSpace($configuredPort)) {
+    throw "Missing EBOOK_CONVERTER_HTTP_PORT in config\http.env"
+  }
+  $Port = [int]$configuredPort
+}
 
 if ([string]::IsNullOrWhiteSpace($ReportDir)) {
   $ReportDir = Join-Path $ProjectRoot "benchmarks\runs\docker-agent-smoke-current"

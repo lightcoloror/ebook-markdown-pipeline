@@ -11,8 +11,10 @@ docker build -t ebook-material-tools:local .
 ## Run
 
 ```bash
-docker run --rm -p 8765:8765 \
+set -a && . ./config/http.env && set +a
+docker run --rm -p "${EBOOK_CONVERTER_HTTP_PORT}:${EBOOK_CONVERTER_HTTP_PORT}" \
   -e EBOOK_CONVERTER_API_TOKEN=replace-with-a-local-token \
+  --env-file ./config/http.env \
   -v "$PWD/data/input:/data/input" \
   -v "$PWD/data/output:/data/output" \
   ebook-material-tools:local
@@ -21,14 +23,14 @@ docker run --rm -p 8765:8765 \
 ## Compose
 
 ```bash
-docker compose -f docker-compose.example.yml up --build
+docker compose --env-file config/http.env -f docker-compose.example.yml up --build
 ```
 
 ## Health
 
 ```bash
 curl -H "Authorization: Bearer replace-with-a-local-token" \
-  http://127.0.0.1:8765/health
+  "http://127.0.0.1:${EBOOK_CONVERTER_HTTP_PORT}/health"
 ```
 
 The health response includes tool names, `schema_version`, async job support, and artifact support.
@@ -39,7 +41,7 @@ The health response includes tool names, `schema_version`, async job support, an
 curl -H "Authorization: Bearer replace-with-a-local-token" \
   -H "Content-Type: application/json" \
   -d '{"name":"process_material","arguments":{"input":"/data/input","output":"/data/output","recursive":true}}' \
-  http://127.0.0.1:8765/call
+  "http://127.0.0.1:${EBOOK_CONVERTER_HTTP_PORT}/call"
 ```
 
 If a `job_id` is returned, poll:
@@ -48,7 +50,7 @@ If a `job_id` is returned, poll:
 curl -H "Authorization: Bearer replace-with-a-local-token" \
   -H "Content-Type: application/json" \
   -d '{"name":"get_job_status","arguments":{"job_id":"job-..."}}' \
-  http://127.0.0.1:8765/call
+  "http://127.0.0.1:${EBOOK_CONVERTER_HTTP_PORT}/call"
 ```
 
 ## Volumes

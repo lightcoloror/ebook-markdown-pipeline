@@ -18,6 +18,4 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY . /app/ebook_markdown_pipeline
 WORKDIR /app
 
-EXPOSE 8765
-
-CMD ["python", "-m", "ebook_markdown_pipeline.ebook_converter_http", "--host", "0.0.0.0", "--port", "8765"]
+CMD ["python", "-m", "ebook_markdown_pipeline.ebook_converter_http", "--host", "0.0.0.0"]

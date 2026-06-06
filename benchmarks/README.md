@@ -74,7 +74,6 @@ Stress HTTP agent calls:
 
 ```powershell
 python D:\used-by-codex\ebook_markdown_pipeline\scripts\stress_agent_http.py `
-  --url http://127.0.0.1:8765 `
   --manifest D:\used-by-codex\ebook_markdown_pipeline\benchmarks\samples.local.json `
   --iterations 20 `
   --concurrency 4 `

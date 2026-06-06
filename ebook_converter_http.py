@@ -20,12 +20,14 @@ from ebook_markdown_pipeline.ebook_converter_mcp import (  # noqa: E402
     tool_schemas,
 )
 from ebook_markdown_pipeline.artifact_schema import SCHEMA_VERSION  # noqa: E402
+from ebook_markdown_pipeline.http_config import load_http_config  # noqa: E402
 
 
 def main() -> int:
+    config = load_http_config()
     parser = argparse.ArgumentParser(description="HTTP bridge for Docker/remote agent access.")
-    parser.add_argument("--host", default="127.0.0.1", help="Bind host. Use 0.0.0.0 for Docker container access.")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--host", default=config.host, help=f"Bind host. Default from {config.source}. Use 0.0.0.0 for Docker container access.")
+    parser.add_argument("--port", type=int, default=config.port, help=f"Bind port. Default from {config.source}.")
     parser.add_argument("--token", default=os.environ.get("EBOOK_CONVERTER_API_TOKEN", ""))
     args = parser.parse_args()
 

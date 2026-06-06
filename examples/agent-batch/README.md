@@ -14,11 +14,10 @@ Host process:
 
 ```powershell
 $env:EBOOK_CONVERTER_API_TOKEN = "local-token"
-python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_http.py --host 0.0.0.0 --port 8765 --token local-token
+python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_http.py --host 0.0.0.0 --token local-token
 ```
 
-Docker agents should call `http://host.docker.internal:8765`.
-Host-local scripts can call `http://127.0.0.1:8765`.
+The default HTTP port is read from `config/http.env`. Docker agents should call `http://host.docker.internal:<EBOOK_CONVERTER_HTTP_PORT>`. Host-local scripts default to `config/http.env`.
 
 ## Run Batch
 
@@ -40,7 +39,6 @@ Run the real batch after the plan is valid:
 
 ```powershell
 python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\agent_batch_http.py `
-  --url http://127.0.0.1:8765 `
   --token local-token `
   --manifest D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\batch_manifest.example.json `
   --output D:\agent-batch-output\run-001 `
