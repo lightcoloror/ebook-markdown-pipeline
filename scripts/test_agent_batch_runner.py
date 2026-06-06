@@ -114,6 +114,14 @@ def main() -> int:
         if [item.get("id") for item in selected] != ["archive"]:
             raise AssertionError(f"Expected only review job to be selected: {selected}")
 
+        selected_ids = runner.selected_job_ids(
+            [{"input": str(root / "skip"), "output": str(root / "skip-out")}, {"input": str(root / "anon"), "output": str(root / "anon-out")}],
+            {"results": [{"id": "job-2", "status": "review"}]},
+            "review",
+        )
+        if selected_ids != ["job-2"]:
+            raise AssertionError(f"Expected original anonymous job id to be preserved: {selected_ids}")
+
         args.rerun_mode = "recommended"
         runner.run_manifest_job(
             args,
@@ -124,6 +132,62 @@ def main() -> int:
         )
         if seen_material_args[-1].get("pdf_pipeline_mode") != "pymupdf4llm":
             raise AssertionError(f"Expected recommended rerun pipeline to be applied: {seen_material_args[-1]}")
+
+        nested_suggestion = {
+            "id": "pdf-review",
+            "status": "review",
+            "job": {
+                "quality_summary": {
+                    "review_items": [
+                        {
+                            "suggested_action": "建议用 Umi-OCR 重跑疑难页",
+                        }
+                    ]
+                }
+            },
+        }
+        if runner.extract_recommended_arguments(nested_suggestion) != {"pdf_pipeline_mode": "umi"}:
+            raise AssertionError("Expected nested review suggested_action to choose umi pipeline")
+
+        compare_suggestion = {
+            "id": "pdf-compare",
+            "status": "review",
+            "job": {
+                "quality_summary": {
+                    "review_items": [
+                        {
+                            "suggested_action": "PDF对比建议重跑 / Compare with MinerU or Umi-OCR",
+                        }
+                    ]
+                }
+            },
+        }
+        if runner.extract_recommended_arguments(compare_suggestion) != {"pdf_pipeline_mode": "auto"}:
+            raise AssertionError("Expected compare suggestions to keep pdf pipeline in auto mode")
+
+        plan_payload = runner.write_plan(
+            root / "plans",
+            root / "manifest.json",
+            {
+                "jobs": [
+                    {"id": "archive", "input": str(root / "archive"), "output": str(root / "out")},
+                    {"id": "ok-job", "input": "x", "output": "y"},
+                ]
+            },
+            runner.validate_manifest(
+                {
+                    "jobs": [
+                        {"id": "archive", "input": str(root / "archive"), "output": str(root / "out")},
+                        {"id": "ok-job", "input": "x", "output": "y"},
+                    ]
+                },
+                previous_payload=previous_payload,
+                select="review",
+            ),
+        )
+        plan_text = (root / "plans" / "agent-batch-plan.md").read_text(encoding="utf-8")
+        if "Selected jobs: archive" not in plan_text:
+            raise AssertionError(f"Expected selected job ids in plan markdown: {plan_payload}")
 
     print("Agent batch runner smoke test passed.")
     return 0

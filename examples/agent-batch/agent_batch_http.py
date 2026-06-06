@@ -38,6 +38,18 @@ ALLOWED_OUTPUT_FORMATS = {"markdown", "html", "text"}
 ALLOWED_OCR = {"auto", "always", "never"}
 SELECT_MODES = {"all", "failed", "review", "failed-or-review"}
 RERUN_MODES = {"as-manifest", "recommended"}
+PDF_PIPELINES = {"auto", "fast", "pymupdf4llm", "mineru", "marker", "umi", "docling"}
+PIPELINE_TEXT_ALIASES = [
+    ("pymupdf4llm", "pymupdf4llm"),
+    ("pymupdf", "pymupdf4llm"),
+    ("mineru", "mineru"),
+    ("marker", "marker"),
+    ("umi-ocr", "umi"),
+    ("umi_ocr", "umi"),
+    ("umi ocr", "umi"),
+    ("umi", "umi"),
+    ("docling", "docling"),
+]
 
 
 def main() -> int:
@@ -146,7 +158,7 @@ def validate_manifest(manifest: dict[str, Any], *, previous_payload: dict[str, A
         "errors": errors,
         "warnings": warnings,
         "normalized_jobs": normalized_jobs,
-        "selected_job_ids": [str(job.get("id") or f"job-{index}") for index, job in enumerate(select_jobs(jobs, previous_payload, select), start=1)],
+        "selected_job_ids": selected_job_ids(jobs, previous_payload, select),
     }
 
 
@@ -348,6 +360,28 @@ def select_jobs(jobs: list[Any], previous_payload: dict[str, Any] | None, select
     return selected
 
 
+def selected_job_ids(jobs: list[Any], previous_payload: dict[str, Any] | None, select: str) -> list[str]:
+    if select == "all":
+        return [str(job.get("id") or f"job-{index}") for index, job in enumerate(jobs, start=1) if isinstance(job, dict)]
+    previous_by_id = previous_results_by_id(previous_payload)
+    selected = []
+    for index, job in enumerate(jobs, start=1):
+        if not isinstance(job, dict):
+            continue
+        job_id = str(job.get("id") or f"job-{index}")
+        previous = previous_by_id.get(job_id)
+        if not previous:
+            continue
+        status = str(previous.get("status") or "")
+        if select == "failed" and is_hard_failed_status(status):
+            selected.append(job_id)
+        elif select == "review" and status == "review":
+            selected.append(job_id)
+        elif select == "failed-or-review" and (status == "review" or is_hard_failed_status(status)):
+            selected.append(job_id)
+    return selected
+
+
 def previous_results_by_id(previous_payload: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
     if not previous_payload:
         return {}
@@ -376,13 +410,35 @@ def extract_recommended_arguments(previous: dict[str, Any]) -> dict[str, Any]:
     for action in iter_next_actions(previous):
         pipeline = action.get("pipeline") or action.get("pdf_pipeline_mode")
         if action.get("action") == "rerun" and pipeline:
-            return {"pdf_pipeline_mode": str(pipeline)}
+            normalized = normalize_pdf_pipeline(str(pipeline))
+            if normalized:
+                return {"pdf_pipeline_mode": normalized}
         if action.get("action") == "compare_pdf_pipelines":
             return {"pdf_pipeline_mode": "auto"}
-    suggested = str(previous.get("suggested_action") or "")
-    if "pymupdf" in suggested.lower():
-        return {"pdf_pipeline_mode": "pymupdf4llm"}
+    for suggested in iter_suggested_actions(previous):
+        pipeline = pipeline_from_text(suggested)
+        if pipeline:
+            return {"pdf_pipeline_mode": pipeline}
     return {}
+
+
+def normalize_pdf_pipeline(value: str) -> str:
+    normalized = value.strip().lower().replace("_", "-")
+    if normalized == "umi-ocr":
+        return "umi"
+    if normalized == "pymupdf":
+        return "pymupdf4llm"
+    return normalized if normalized in PDF_PIPELINES else ""
+
+
+def pipeline_from_text(value: str) -> str:
+    text = value.lower()
+    if "compare" in text or "对比" in text:
+        return "auto"
+    for needle, pipeline in PIPELINE_TEXT_ALIASES:
+        if needle in text:
+            return pipeline
+    return ""
 
 
 def iter_next_actions(payload: dict[str, Any]):
@@ -403,6 +459,25 @@ def iter_next_actions(payload: dict[str, Any]):
         for action in item.get("next_actions") or []:
             if isinstance(action, dict):
                 yield action
+
+
+def iter_suggested_actions(payload: dict[str, Any]):
+    if payload.get("suggested_action"):
+        yield str(payload.get("suggested_action"))
+    for path in [
+        ("result", "suggested_action"),
+        ("job", "suggested_action"),
+        ("routed", "suggested_action"),
+    ]:
+        current: Any = payload
+        for key in path:
+            current = current.get(key) if isinstance(current, dict) else None
+        if current:
+            yield str(current)
+    quality_items = (((payload.get("job") or {}).get("quality_summary") or {}).get("review_items") or [])
+    for item in quality_items:
+        if isinstance(item, dict) and item.get("suggested_action"):
+            yield str(item.get("suggested_action"))
 
 
 def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -512,6 +587,7 @@ def render_plan_markdown(payload: dict[str, Any]) -> str:
         f"- Jobs: {payload['summary']['jobs']}",
         f"- Errors: {payload['summary']['errors']}",
         f"- Warnings: {payload['summary']['warnings']}",
+        f"- Selected jobs: {', '.join(payload['validation'].get('selected_job_ids') or []) or '(none)'}",
         "",
     ]
     if payload["validation"]["errors"]:

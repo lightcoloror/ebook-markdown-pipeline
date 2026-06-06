@@ -64,7 +64,15 @@ python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\agent_batch
   --output D:\agent-batch-output\run-002
 ```
 
-`--select` supports `all`, `failed`, `review`, and `failed-or-review`. `--rerun-mode recommended` applies machine-readable rerun hints when prior reports expose them; otherwise it falls back to the manifest arguments.
+`--select` supports `all`, `failed`, `review`, and `failed-or-review`. Dry-run plans write the exact selected job IDs to `agent-batch-plan.md`.
+
+`--rerun-mode recommended` applies conservative rerun hints in this order:
+
+- Structured `next_actions` with `action=rerun` and `pipeline` / `pdf_pipeline_mode`.
+- Structured `next_actions` with `action=compare_pdf_pipelines`, which keeps `pdf_pipeline_mode=auto`.
+- Review `suggested_action` text that clearly names a known PDF backend such as `pymupdf4llm`, `MinerU`, `Marker`, `Umi-OCR`, or `Docling`.
+
+If no supported hint is found, the runner falls back to the manifest arguments instead of guessing.
 
 ## Web Archive Jobs
 
