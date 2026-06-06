@@ -83,6 +83,8 @@ Freshly generated agent batch plans/results also include `contract_validation`; 
 
 If contract validation fails, generated or inspected batch results expose `inspect_contract_validation` in `next_actions` with the validation errors.
 
+Use `scripts/build_agent_handoff_bundle.py --batch-results <agent-batch-results.json> --output <dir>` to create a lightweight `agent-handoff-bundle.json/md` index for another session. The bundle includes contract validation, attention, selection, artifact summary, next actions, and review items without copying large outputs.
+
 Real batch results also include `artifact_summary` with total/ok/failed read counts, artifact type counts, and failed artifact read records. Check it before drilling into each job's `artifacts`.
 
 Top-level `next_actions` are always present in real or partial batch results. They include `read_run_summary`, `inspect_agent_batch_results`, and conditional `inspect_failed_artifacts` / `inspect_review_items` actions before any quality-comparison actions.

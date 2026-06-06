@@ -19,6 +19,7 @@ def main() -> int:
             "contract_validation",
             "Contract validation",
             "inspect_contract_validation",
+            "build_agent_handoff_bundle.py",
             "artifact_summary",
             "inspect_failed_artifacts",
             "`attention`",
@@ -41,6 +42,7 @@ def main() -> int:
             "contract_validation",
             "Contract validation",
             "inspect_contract_validation",
+            "agent-handoff-bundle.json/md",
             "artifact_summary",
             "read_run_summary",
             "`attention` triage block",
@@ -73,6 +75,7 @@ def main() -> int:
         "README.md": [
             "test_agent_fast_contract.py",
             "test_agent_batch_contract_validator.py",
+            "test_agent_handoff_bundle.py",
             "test_agent_smoke_suite.py",
             "summary 报告结构",
             "agent-smoke-summary.json/md",
