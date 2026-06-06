@@ -1219,7 +1219,7 @@ def inspect_agent_batch_results(arguments: dict[str, Any]) -> dict[str, Any]:
 
     results = [item for item in payload.get("results") or [] if isinstance(item, dict)]
     review_items = agent_batch_review_items(results, max_review_items)
-    next_actions = [item for item in payload.get("next_actions") or [] if isinstance(item, dict)]
+    next_actions = agent_batch_next_actions(path, payload)
     artifacts = agent_batch_artifacts(path, payload)
     attention = agent_batch_attention_summary(payload)
     return {
@@ -1312,6 +1312,68 @@ def list_agent_batch_next_actions(items: list[dict[str, Any]]) -> list[dict[str,
     ]
     if newest.get("recommended_rerun"):
         actions.append(newest["recommended_rerun"])
+    return actions
+
+
+def agent_batch_next_actions(path: Path, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    actions = [item for item in payload.get("next_actions") or [] if isinstance(item, dict)]
+    names = {str(item.get("action") or item.get("tool") or "") for item in actions}
+
+    def add_once(action: dict[str, Any]) -> None:
+        name = str(action.get("action") or action.get("tool") or "")
+        if name and name not in names:
+            actions.append(action)
+            names.add(name)
+
+    run_summary = path.with_name("run_summary.partial.md" if payload.get("partial") else "run_summary.md")
+    if run_summary.exists():
+        add_once(
+            {
+                "action": "read_run_summary",
+                "tool": "read_artifact",
+                "arguments": {"path": str(run_summary), "artifact_type": "agent_batch_run_summary" if not payload.get("partial") else "markdown"},
+                "reason": "Read the human-facing batch handoff summary before inspecting individual jobs.",
+            }
+        )
+
+    attention = agent_batch_attention_summary(payload)
+    artifact_summary = payload.get("artifact_summary") or {}
+    if int(artifact_summary.get("failed") or 0) > 0:
+        add_once(
+            {
+                "action": "inspect_failed_artifacts",
+                "failed_count": artifact_summary.get("failed"),
+                "failed_artifacts": artifact_summary.get("failed_artifacts") or [],
+                "reason": "One or more referenced artifacts could not be read during batch handoff.",
+            }
+        )
+    if int(attention.get("review_jobs") or 0) > 0 or int(attention.get("review_items") or 0) > 0:
+        add_once(
+            {
+                "action": "inspect_review_items",
+                "review_jobs": attention.get("review_jobs", 0),
+                "review_items": attention.get("review_items", 0),
+                "reason": "Some jobs completed with review signals; inspect review items before accepting outputs.",
+            }
+        )
+
+    comparison = payload.get("quality_comparison") or {}
+    if comparison.get("markdown"):
+        add_once(
+            {
+                "action": "read_quality_comparison",
+                "tool": "read_artifact",
+                "arguments": {"path": comparison["markdown"], "artifact_type": "markdown"},
+            }
+        )
+    if comparison.get("json"):
+        add_once(
+            {
+                "action": "read_quality_comparison_json",
+                "tool": "read_artifact",
+                "arguments": {"path": comparison["json"], "artifact_type": "quality_comparison_json"},
+            }
+        )
     return actions
 
 

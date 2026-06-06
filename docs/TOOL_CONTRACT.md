@@ -166,6 +166,8 @@ Agents taking over an existing batch should call `inspect_agent_batch_results` o
 
 The inspect/list tools include an `attention` triage block with `needs_attention`, reason codes, hard-failed count, review count, artifact failure count, quality comparison status, and partial-run status. Use it to decide whether to inspect details before accepting a batch.
 
+`inspect_agent_batch_results` is backward-compatible with older `agent-batch-results.json` files. If top-level handoff actions are missing, it synthesizes `read_run_summary`, `inspect_failed_artifacts`, `inspect_review_items`, and quality-comparison read actions from `summary`, `artifact_summary`, and `quality_comparison`.
+
 For this comparison, agent-batch `review` means completed-with-review rather than transport failure. It contributes to completion success but increases the review/poor quality rate, so agents should report it as usable output that still needs inspection.
 
 ## Environment Capabilities

@@ -166,6 +166,10 @@ def assert_agent_batch_results_inspection(tmpdir: Path) -> None:
         raise AssertionError(f"Expected attention summary for review/artifact/regression signals: {inspected}")
     if inspected.get("recommended_rerun", {}).get("action") != "rerun_failed_or_review":
         raise AssertionError(f"Expected recommended rerun action: {inspected}")
+    inspected_action_names = {item.get("action") for item in inspected.get("next_actions") or []}
+    expected_synthesized_actions = {"read_run_summary", "inspect_failed_artifacts", "inspect_review_items", "read_quality_comparison_json"}
+    if not expected_synthesized_actions.issubset(inspected_action_names):
+        raise AssertionError(f"Expected synthesized handoff actions for legacy batch results: {inspected}")
     if not inspected.get("review_items") or inspected["review_items"][0].get("quality_level") != "poor":
         raise AssertionError(f"Expected review item extraction: {inspected}")
     artifact_types = {item.get("type") for item in inspected.get("artifacts") or []}
