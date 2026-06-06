@@ -36,6 +36,7 @@ def main() -> int:
         "scan_books",
         "inspect_document",
         "process_material",
+        "process_web_archive",
         "read_artifact",
         "start_location_index",
         "export_location_review_pack",

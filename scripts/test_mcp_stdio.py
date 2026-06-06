@@ -47,6 +47,7 @@ def main() -> int:
                 "health_check",
                 "inspect_document",
                 "process_material",
+                "process_web_archive",
                 "start_conversion",
                 "get_job_status",
                 "read_report",

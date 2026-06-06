@@ -200,6 +200,25 @@ def run_iteration(args: argparse.Namespace, sample: dict, iteration: int) -> dic
         routed = call_tool(args, "process_material", material_args)
         job_id = routed.get("job_id")
         if not job_id:
+            delegated = routed.get("delegated") if isinstance(routed.get("delegated"), dict) else None
+            if delegated and delegated.get("artifacts"):
+                artifact = first_readable_artifact(delegated)
+                artifact_result = None
+                if artifact:
+                    artifact_result = call_tool(
+                        args,
+                        "read_artifact",
+                        {"path": artifact["path"], "artifact_type": artifact["type"], "max_chars": 1000, "max_lines": 40},
+                    )
+                return finish(
+                    base,
+                    started,
+                    synchronous_status(delegated),
+                    routed=routed,
+                    result=delegated,
+                    artifact=artifact_result,
+                    artifact_read=bool(artifact_result),
+                )
             return finish(base, started, "no_job", routed=routed)
         job = poll_job(args, str(job_id))
         artifact_result = None
@@ -275,11 +294,34 @@ def poll_job(args: argparse.Namespace, job_id: str) -> dict[str, Any]:
 
 
 def first_readable_artifact(job: dict[str, Any]) -> dict[str, Any] | None:
-    readable = {"markdown", "html", "text", "summary_report", "review_report", "location_index_jsonl", "order_report"}
+    readable = {
+        "markdown",
+        "html",
+        "text",
+        "summary_report",
+        "review_report",
+        "location_index_jsonl",
+        "order_report",
+        "visual_check_json",
+        "visual_blocks_json",
+        "table_candidates_json",
+        "image_positions_json",
+    }
     for item in job.get("artifacts", []):
         if item.get("type") in readable and item.get("path"):
             return item
     return None
+
+
+def synchronous_status(result: dict[str, Any]) -> str:
+    status = str(result.get("status") or "")
+    if status in {"ok", "done"}:
+        return "ok"
+    if status in {"needs_review", "pending_visual_engine", "no_text"}:
+        return "review"
+    if status in {"failed", "error"}:
+        return "failed"
+    return "ok" if result.get("artifacts") else "no_job"
 
 
 def finish(base: dict, started: float, status: str, **updates) -> dict:
