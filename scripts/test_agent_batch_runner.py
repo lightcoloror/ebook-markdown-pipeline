@@ -145,6 +145,16 @@ def main() -> int:
         )
         if validation.get("selected_job_ids") != ["archive"] or validation.get("previous_results") != str(previous_path):
             raise AssertionError(f"Expected auto-discovered previous results to drive selection: {validation}")
+        selection = runner.build_selection_summary(
+            select="failed-or-review",
+            rerun_mode="recommended",
+            previous_results_path=previous_path,
+            selected_job_ids=validation["selected_job_ids"],
+            selected_count=1,
+            manifest_job_count=2,
+        )
+        if selection.get("selection_ratio") != 0.5 or selection.get("previous_results") != str(previous_path):
+            raise AssertionError(f"Expected machine-readable selection summary: {selection}")
 
         args.rerun_mode = "recommended"
         runner.run_manifest_job(
@@ -210,8 +220,8 @@ def main() -> int:
             ),
         )
         plan_text = (root / "plans" / "agent-batch-plan.md").read_text(encoding="utf-8")
-        if "Selected jobs: archive" not in plan_text:
-            raise AssertionError(f"Expected selected job ids in plan markdown: {plan_payload}")
+        if plan_payload.get("selection", {}).get("selected_count") != 1 or "Selected jobs: 1/2: archive" not in plan_text:
+            raise AssertionError(f"Expected selected job count in plan markdown: {plan_payload}")
 
         baseline_agent_batch = root / "baseline-agent-batch.json"
         candidate_agent_batch = root / "candidate-agent-batch.json"
@@ -267,6 +277,17 @@ def main() -> int:
         )
         if "Quality comparison: passed" not in summary_text or "read_quality_comparison" not in summary_text:
             raise AssertionError(f"Expected quality comparison in run summary: {summary_text}")
+        selected_summary_text = runner.render_run_summary(
+            {
+                "created_at": "now",
+                "manifest": "manifest.json",
+                "selection": selection,
+                "summary": runner.summarize([result]),
+                "results": [result],
+            }
+        )
+        if "Select: failed-or-review" not in selected_summary_text or "Selected jobs: 1/2" not in selected_summary_text:
+            raise AssertionError(f"Expected selection summary in run summary: {selected_summary_text}")
         regressed_agent_batch = root / "regressed-agent-batch.json"
         regressed_agent_batch.write_text(
             json.dumps(

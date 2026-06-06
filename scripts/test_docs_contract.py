@@ -13,6 +13,7 @@ def main() -> int:
             "benchmark-quality-comparison.json/md",
             "top-level `next_actions`",
             "copyable recommended rerun command",
+            "`selection` block",
             "inspect_agent_batch_results",
             "list_agent_batch_results",
             "--fail-on-regression",
@@ -25,6 +26,7 @@ def main() -> int:
         "docs/TOOL_CONTRACT.md": [
             "Batch Quality Baselines",
             "--baseline-results",
+            "`selection` block",
             "rerun_failed_or_review",
             "powershell_command",
             "inspect_agent_batch_results",
@@ -34,6 +36,7 @@ def main() -> int:
         "examples/agent-batch/README.md": [
             "--baseline-results",
             "benchmark-quality-comparison.json/md",
+            "machine-readable `selection` block",
             "top-level `next_actions`",
             "copyable recommended rerun command",
             "--fail-on-regression",

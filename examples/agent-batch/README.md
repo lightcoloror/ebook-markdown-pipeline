@@ -79,6 +79,8 @@ python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\agent_batch
 
 `--select` supports `all`, `failed`, `review`, and `failed-or-review`. Dry-run plans write the exact selected job IDs to `agent-batch-plan.md`.
 
+Both dry-run plans and real `agent-batch-results.json` include a machine-readable `selection` block with `select`, `rerun_mode`, `previous_results`, `selected_job_ids`, `selected_count`, and `manifest_job_count`. `run_summary.md` mirrors the same selection summary so a handoff agent can see whether the run was full or a targeted rerun without parsing the manifest.
+
 When `--select` is not `all`, `--previous-results` is recommended but no longer mandatory if a nearby prior `agent-batch-results.json` exists. The runner searches the output directory, sibling run directories under the output parent, and the manifest directory, then uses the newest non-partial results file. If no prior result is found, dry-run reports a validation error instead of starting work.
 
 `--rerun-mode recommended` applies conservative rerun hints in this order:

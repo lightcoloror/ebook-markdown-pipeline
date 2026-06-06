@@ -81,11 +81,19 @@ def main() -> int:
     started = time.monotonic()
     results = []
     jobs_to_run = select_jobs(manifest.get("jobs", []), previous_payload, args.select)
+    selection = build_selection_summary(
+        select=args.select,
+        rerun_mode=args.rerun_mode,
+        previous_results_path=previous_results_path,
+        selected_job_ids=validation.get("selected_job_ids") or [],
+        selected_count=len(jobs_to_run),
+        manifest_job_count=len([job for job in manifest.get("jobs", []) if isinstance(job, dict)]),
+    )
     for index, job in enumerate(jobs_to_run, start=1):
         results.append(run_manifest_job(args, manifest.get("defaults", {}), job, index, previous_payload=previous_payload))
-        write_reports(args.output, args.manifest, started, results, partial=True)
+        write_reports(args.output, args.manifest, started, results, partial=True, selection=selection)
 
-    payload = write_reports(args.output, args.manifest, started, results, partial=False, baseline_results=args.baseline_results)
+    payload = write_reports(args.output, args.manifest, started, results, partial=False, baseline_results=args.baseline_results, selection=selection)
     print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
     regression_failed = (payload.get("quality_comparison") or {}).get("summary", {}).get("status") == "failed"
     if args.fail_on_regression and regression_failed:
@@ -165,6 +173,7 @@ def validate_manifest(
         "errors": errors,
         "warnings": warnings,
         "normalized_jobs": normalized_jobs,
+        "select": select,
         "selected_job_ids": selected_job_ids(jobs, previous_payload, select),
         "previous_results": str(previous_results_path) if previous_results_path else "",
     }
@@ -311,6 +320,7 @@ def write_reports(
     *,
     partial: bool,
     baseline_results: Path | None = None,
+    selection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     suffix = ".partial" if partial else ""
     output.mkdir(parents=True, exist_ok=True)
@@ -321,6 +331,14 @@ def write_reports(
         "duration_seconds": round(time.monotonic() - started, 3),
         "partial": partial,
         "output": str(output),
+        "selection": selection or build_selection_summary(
+            select="all",
+            rerun_mode="as-manifest",
+            previous_results_path=None,
+            selected_job_ids=job_ids(results),
+            selected_count=len(results),
+            manifest_job_count=len(results),
+        ),
         "summary": summarize(results),
         "results": results,
     }
@@ -445,6 +463,14 @@ def write_plan(
             "valid": not validation["errors"],
         },
         "validation": validation,
+        "selection": build_selection_summary(
+            select=str(validation.get("select") or "all"),
+            rerun_mode="as-manifest",
+            previous_results_path=previous_results_path,
+            selected_job_ids=validation.get("selected_job_ids") or [],
+            selected_count=len(validation.get("selected_job_ids") or []),
+            manifest_job_count=len(validation.get("normalized_jobs") or []),
+        ),
         "defaults": raw_manifest.get("defaults", {}),
         "previous_results": str(previous_results_path) if previous_results_path else "",
     }
@@ -548,6 +574,31 @@ def selected_job_ids(jobs: list[Any], previous_payload: dict[str, Any] | None, s
         elif select == "failed-or-review" and (status == "review" or is_hard_failed_status(status)):
             selected.append(job_id)
     return selected
+
+
+def build_selection_summary(
+    *,
+    select: str,
+    rerun_mode: str,
+    previous_results_path: Path | str | None,
+    selected_job_ids: list[Any],
+    selected_count: int,
+    manifest_job_count: int,
+) -> dict[str, Any]:
+    ids = [str(job_id) for job_id in selected_job_ids]
+    return {
+        "select": select,
+        "rerun_mode": rerun_mode,
+        "previous_results": str(previous_results_path) if previous_results_path else "",
+        "selected_job_ids": ids,
+        "selected_count": selected_count,
+        "manifest_job_count": manifest_job_count,
+        "selection_ratio": round(selected_count / manifest_job_count, 4) if manifest_job_count else 0.0,
+    }
+
+
+def job_ids(items: list[dict[str, Any]]) -> list[str]:
+    return [str(item.get("id") or f"job-{index}") for index, item in enumerate(items, start=1)]
 
 
 def previous_results_by_id(previous_payload: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
@@ -657,11 +708,14 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def render_markdown(payload: dict[str, Any]) -> str:
+    selection = payload.get("selection") or {}
     lines = [
         "# Agent Batch Summary",
         "",
         f"- Created: {payload['created_at']}",
         f"- Manifest: `{payload['manifest']}`",
+        f"- Select: {selection.get('select', 'all')}",
+        f"- Selected jobs: {selection.get('selected_count', len(payload.get('results') or []))}/{selection.get('manifest_job_count', len(payload.get('results') or []))}",
         f"- Status: {payload['summary']['status_counts']}",
         f"- Review items: {payload['summary']['review_count']}",
         f"- Artifact reads: {payload['summary']['artifact_reads']}",
@@ -681,11 +735,16 @@ def render_markdown(payload: dict[str, Any]) -> str:
 
 def render_run_summary(payload: dict[str, Any]) -> str:
     summary = payload["summary"]
+    selection = payload.get("selection") or {}
     lines = [
         "# Run Summary",
         "",
         f"- Created: {payload['created_at']}",
         f"- Manifest: `{payload['manifest']}`",
+        f"- Select: {selection.get('select', 'all')}",
+        f"- Rerun mode: {selection.get('rerun_mode', 'as-manifest')}",
+        f"- Previous results: `{selection.get('previous_results', '')}`",
+        f"- Selected jobs: {selection.get('selected_count', len(payload.get('results') or []))}/{selection.get('manifest_job_count', len(payload.get('results') or []))}",
         f"- Total: {summary.get('total', 0)}",
         f"- OK: {summary.get('ok', 0)}",
         f"- Review: {summary.get('review', 0)}",
@@ -759,6 +818,7 @@ def summarize_next_action(item: dict[str, Any]) -> str:
 
 
 def render_plan_markdown(payload: dict[str, Any]) -> str:
+    selection = payload.get("selection") or {}
     lines = [
         "# Agent Batch Plan",
         "",
@@ -768,8 +828,10 @@ def render_plan_markdown(payload: dict[str, Any]) -> str:
         f"- Jobs: {payload['summary']['jobs']}",
         f"- Errors: {payload['summary']['errors']}",
         f"- Warnings: {payload['summary']['warnings']}",
+        f"- Select: {selection.get('select', payload['validation'].get('select', 'all'))}",
+        f"- Rerun mode: {selection.get('rerun_mode', 'as-manifest')}",
         f"- Previous results: `{payload.get('previous_results') or payload['validation'].get('previous_results') or ''}`",
-        f"- Selected jobs: {', '.join(payload['validation'].get('selected_job_ids') or []) or '(none)'}",
+        f"- Selected jobs: {selection.get('selected_count', len(payload['validation'].get('selected_job_ids') or []))}/{selection.get('manifest_job_count', len(payload['validation'].get('normalized_jobs') or []))}: {', '.join(payload['validation'].get('selected_job_ids') or []) or '(none)'}",
         "",
     ]
     if payload["validation"]["errors"]:
