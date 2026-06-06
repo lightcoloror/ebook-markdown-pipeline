@@ -96,6 +96,103 @@ def main() -> int:
         if failed_gate.get("status") != "failed":
             raise RuntimeError(f"Expected failing quality gate: {failed_gate}")
 
+        baseline_quality = root / "baseline-quality.json"
+        candidate_quality = root / "candidate-quality.json"
+        baseline_quality.write_text(
+            json.dumps(
+                {
+                    "schema_version": "quality-regression-summary-v1",
+                    "summary": {
+                        "total": 2,
+                        "scored": 2,
+                        "status_counts": {"ok": 2},
+                        "avg_headings": 1,
+                        "avg_characters": 1000,
+                        "page_heading_ratio": 0,
+                        "repeated_noise_lines": 4,
+                        "fallback_count": 0,
+                        "review_or_poor": 1,
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        candidate_quality.write_text(
+            json.dumps(
+                {
+                    "schema_version": "quality-regression-summary-v1",
+                    "summary": {
+                        "total": 2,
+                        "scored": 2,
+                        "status_counts": {"ok": 2},
+                        "avg_headings": 2,
+                        "avg_characters": 1200,
+                        "page_heading_ratio": 0,
+                        "repeated_noise_lines": 0,
+                        "fallback_count": 0,
+                        "review_or_poor": 0,
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        quality_compare_dir = root / "quality-compare"
+        run_cmd(
+            "compare_benchmark_quality.py",
+            "--baseline",
+            str(baseline_quality),
+            "--candidate",
+            str(candidate_quality),
+            "--output",
+            str(quality_compare_dir),
+            "--fail-on-regression",
+        )
+        comparison_payload = json.loads((quality_compare_dir / "benchmark-quality-comparison.json").read_text(encoding="utf-8"))
+        if comparison_payload.get("summary", {}).get("status") != "passed":
+            raise RuntimeError(f"Expected passing quality comparison: {comparison_payload}")
+
+        bad_candidate = root / "bad-candidate-quality.json"
+        bad_candidate.write_text(
+            json.dumps(
+                {
+                    "schema_version": "quality-regression-summary-v1",
+                    "summary": {
+                        "total": 2,
+                        "scored": 2,
+                        "status_counts": {"ok": 1, "failed": 1},
+                        "avg_headings": 0,
+                        "avg_characters": 500,
+                        "page_heading_ratio": 0,
+                        "repeated_noise_lines": 8,
+                        "fallback_count": 0,
+                        "review_or_poor": 2,
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        bad_compare_dir = root / "quality-compare-bad"
+        bad = subprocess.run(
+            [
+                sys.executable,
+                str(PROJECT_DIR / "scripts" / "compare_benchmark_quality.py"),
+                "--baseline",
+                str(baseline_quality),
+                "--candidate",
+                str(bad_candidate),
+                "--output",
+                str(bad_compare_dir),
+                "--fail-on-regression",
+            ],
+            cwd=PROJECT_DIR,
+            check=False,
+        )
+        if bad.returncode != 5:
+            raise RuntimeError(f"Expected quality comparison regression exit 5, got {bad.returncode}")
+
         compare_dir = root / "compare"
         run_cmd("compare_pipelines.py", "--input", str(pdf), "--output", str(compare_dir), "--pipelines", "pymupdf4llm", "--overwrite", "--pipeline-timeout", "20")
         if (

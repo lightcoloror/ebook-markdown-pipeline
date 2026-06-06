@@ -226,6 +226,18 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\run_benchmarks.py `
 
 `--pdf-mode-for-benchmark fast` 会把 PDF 批量评测切到 `PyMuPDF4LLM`，适合先跑完整 20-50 个样本拿到速度、基础结构和失败证据；不要用它替代最终质量判断。需要比较 MinerU / Docling / PyMuPDF4LLM / Umi-OCR 的实际效果时，仍然使用下面的 `compare_pipelines.py` 对代表性 PDF 单独跑多管道。
 
+对比两次 benchmark 质量，检查优化是否带来回归：
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_benchmark_quality.py `
+  --baseline D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\full-real-current\benchmark-results.json `
+  --candidate D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\latest\benchmark-results.json `
+  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\quality-compare-latest `
+  --fail-on-regression
+```
+
+该命令兼容 `benchmark-results.json` 和 `quality-regression-summary.json`，会输出 `benchmark-quality-comparison.json/md`，并比较成功率、good 率、review/poor 比例、timeout/failed 比例、平均标题数、页码标题比例和重复噪声行。
+
 对同一个 PDF 比较多条管道：
 
 ```powershell
