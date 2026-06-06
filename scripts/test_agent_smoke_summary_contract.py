@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 from pathlib import Path
 
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_DIR))
+
+from ebook_converter_mcp import infer_artifact_type, read_artifact
 from test_agent_smoke_suite import build_summary, render_markdown, tail_text, write_reports
 
 
@@ -136,6 +141,16 @@ def assert_report_artifact_contract() -> None:
         action_names = [item.get("action") for item in persisted.get("next_actions") or []]
         if action_names[:2] != ["read_smoke_summary_markdown", "read_smoke_summary_json"]:
             raise AssertionError(f"Expected read-report actions first: {persisted}")
+        if infer_artifact_type(summary_json) != "agent_smoke_summary_json":
+            raise AssertionError("Expected agent-smoke-summary.json to infer agent_smoke_summary_json")
+        if infer_artifact_type(summary_md) != "agent_smoke_summary_markdown":
+            raise AssertionError("Expected agent-smoke-summary.md to infer agent_smoke_summary_markdown")
+        readable_json = read_artifact({"path": str(summary_json), "artifact_type": "agent_smoke_summary_json"})
+        if readable_json.get("artifact_type") != "agent_smoke_summary_json" or readable_json.get("json", {}).get("schema_version") != "agent-smoke-suite-v1":
+            raise AssertionError(f"Expected readable smoke JSON artifact: {readable_json}")
+        readable_md = read_artifact({"path": str(summary_md), "artifact_type": "agent_smoke_summary_markdown"})
+        if readable_md.get("artifact_type") != "agent_smoke_summary_markdown" or "# Agent Smoke Suite" not in readable_md.get("text", ""):
+            raise AssertionError(f"Expected readable smoke Markdown artifact: {readable_md}")
 
 
 def assert_tail_contract() -> None:

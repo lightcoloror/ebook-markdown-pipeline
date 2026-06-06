@@ -49,6 +49,7 @@ JSON_STDOUT = sys.stdout
 JSON_ARTIFACT_TYPES = {
     "json",
     "agent_batch_results",
+    "agent_smoke_summary_json",
     "conversion_report",
     "summary_json",
     "review_json",
@@ -70,6 +71,8 @@ READABLE_ARTIFACT_TYPES = {
     "agent_batch_run_summary",
     "agent_batch_summary",
     "agent_batch_results",
+    "agent_smoke_summary_markdown",
+    "agent_smoke_summary_json",
     "html",
     "text",
     "conversion_report",
@@ -1401,12 +1404,16 @@ def infer_artifact_type(path: Path) -> str:
     suffix = path.suffix.lower()
     name = path.name.lower()
     if suffix in {".md", ".markdown"}:
+        if "agent-smoke-summary" in name:
+            return "agent_smoke_summary_markdown"
         return "markdown"
     if suffix == ".jsonl":
         if "location" in name:
             return "location_index_jsonl"
         return "pages_jsonl"
     if suffix == ".json":
+        if "agent-smoke-summary" in name:
+            return "agent_smoke_summary_json"
         if "agent-batch-results" in name:
             return "agent_batch_results"
         if "review-decisions" in name:
