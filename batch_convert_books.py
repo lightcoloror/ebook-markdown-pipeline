@@ -3603,6 +3603,8 @@ def suggest_review_next_actions(item: dict) -> list[dict[str, str]]:
         actions.append({"action": "read_report", "path": report, "why": "inspect converter diagnostics and quality reasons"})
     if output:
         actions.append({"action": "open_output", "path": output, "why": "spot-check visible structure before replacing any existing file"})
+    if output and ("没有 Markdown 标题" in reasons or "章节层级" in reasons):
+        actions.append({"action": "enhance_markdown_structure", "why": "run a safe local structure-repair second pass on the generated Markdown without overwriting it"})
     if status == "failed":
         fallback = "pymupdf4llm" if source_suffix == ".pdf" else "auto"
         actions.append({"action": "rerun", "pipeline": fallback, "why": "recover a failed conversion with a lightweight fallback"})

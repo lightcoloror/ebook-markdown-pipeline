@@ -179,6 +179,8 @@ Agents should treat `quality_summary.review_count > 0` as a prompt to read the `
 
 Review checklist JSON entries and completed conversion jobs also include machine-readable `next_actions`. Prefer actions with `tool` and `arguments` / `arguments_list` instead of inferring commands from prose. Rerun actions default to `overwrite=false`, `resume=false`, and an `output_name_suffix` such as `-agent-rerun-mineru`, so agents can compare outputs without replacing the original. These actions are advisory, not automatic permission to overwrite files; ask the user before destructive replacement.
 
+When a completed output is usable but has weak heading hierarchy, `next_actions` may include `enhance_markdown_structure` with `model_mode=local`, `overwrite=false`, and an output folder such as `.structure-enhanced`. This is a safe second-pass suggestion, not an automatic acceptance of the enhanced result.
+
 ## Structure Repair Report
 
 Per-book conversion reports may include `structure_repair` when Markdown headings were promoted, normalized, or backed by external evidence. Agents should read this block before assuming a weak heading hierarchy is final.

@@ -215,8 +215,14 @@ def assert_quality_summary_next_actions(tmpdir: Path) -> None:
     if "compare_pdf_pipelines" not in action_names and "rerun" not in action_names:
         raise AssertionError(f"Expected actionable PDF recovery actions: {summary}")
     tools = {item.get("tool") for item in review_items[0]["next_actions"] if item.get("tool")}
-    if not {"read_report", "read_artifact", "start_conversion"}.intersection(tools):
+    if not {"read_report", "read_artifact", "start_conversion", "enhance_markdown_structure"}.intersection(tools):
         raise AssertionError(f"Expected executable tool calls in review next_actions: {summary}")
+    structure_actions = [item for item in review_items[0]["next_actions"] if item.get("tool") == "enhance_markdown_structure"]
+    if not structure_actions:
+        raise AssertionError(f"Expected structure enhancement action for weak headings: {summary}")
+    structure_args = structure_actions[0].get("arguments") or {}
+    if structure_args.get("model_mode") != "local" or structure_args.get("overwrite") is not False or ".structure-enhanced" not in str(structure_args.get("output") or ""):
+        raise AssertionError(f"Structure enhancement action must be safe/local/versioned: {summary}")
     rerun_actions = [item for item in review_items[0]["next_actions"] if item.get("tool") == "start_conversion" and item.get("arguments")]
     compare_actions = [item for item in review_items[0]["next_actions"] if item.get("action") == "compare_pdf_pipelines"]
     if not rerun_actions and not compare_actions:

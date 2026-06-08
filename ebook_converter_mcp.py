@@ -1736,6 +1736,24 @@ def executable_review_next_actions(item: dict[str, Any], *, output_root: Path | 
                     "why": why or "build a page/image-level index for OCR spot checks",
                 }
             )
+        elif action_name == "enhance_markdown_structure" and output:
+            output_path = Path(output)
+            target_root = output_root if output_root and str(output_root) not in {"", "."} else output_path.parent
+            actions.append(
+                {
+                    "action": "enhance_markdown_structure",
+                    "tool": "enhance_markdown_structure",
+                    "arguments": {
+                        "input": output,
+                        "output": str(target_root / ".structure-enhanced"),
+                        "source_kind": "markdown",
+                        "model_mode": "local",
+                        "provider_mode": "fake",
+                        "overwrite": False,
+                    },
+                    "why": why or "run a safe local structure-repair second pass without overwriting the generated Markdown",
+                }
+            )
         elif action_name == "manual_accept_or_score":
             actions.append({"action": "manual_accept_or_score", "tool": None, "arguments": {}, "why": why})
 
