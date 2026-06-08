@@ -62,6 +62,25 @@ class ScreenshotPage:
 ProgressCallback = Callable[[dict], None]
 
 
+def default_vlm_python() -> str:
+    candidate = Path(r"C:\Users\lightcolor\.conda\envs\pytorch-cuda121\python.exe")
+    return str(candidate) if candidate.exists() else sys.executable
+
+
+def default_paddleocr_vl_command() -> str:
+    script = Path(__file__).resolve().parent / "scripts" / "paddleocr_vl_image_to_md.py"
+    if not script.exists():
+        return ""
+    return f'"{default_vlm_python()}" "{script}" --input {{input}} --output {{output}}'
+
+
+def default_qwen_vl_command() -> str:
+    script = Path(__file__).resolve().parent / "scripts" / "qwen_vl_image_to_md.py"
+    if not script.exists():
+        return ""
+    return f'"{default_vlm_python()}" "{script}" --input {{input}} --output {{output}}'
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Rebuild an ordered Markdown document from screenshots.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -75,14 +94,14 @@ def main() -> int:
     build_parser.add_argument("--umi-paddle-exe", default=suggested_umi_paddle_exe())
     build_parser.add_argument("--umi-paddle-module", default=suggested_umi_paddle_module())
     build_parser.add_argument("--enhance-layout-heavy", choices=["auto", "never"], default="auto")
-    build_parser.add_argument("--layout-enhancer-order", default="mineru-vlm,paddleocr-vl,qwen-vl")
+    build_parser.add_argument("--layout-enhancer-order", default="paddleocr-vl,mineru-vlm,qwen-vl")
     build_parser.add_argument("--layout-enhancer-timeout", type=float, default=180.0)
     build_parser.add_argument("--mineru-command", default="mineru")
     build_parser.add_argument("--mineru-method", default="auto")
     build_parser.add_argument("--mineru-backend", default="vlm-transformers")
     build_parser.add_argument("--mineru-lang", default="ch")
-    build_parser.add_argument("--paddleocr-vl-command", default=os.environ.get("PADDLEOCR_VL_COMMAND", ""))
-    build_parser.add_argument("--qwen-vl-command", default=os.environ.get("QWEN_VL_COMMAND", ""))
+    build_parser.add_argument("--paddleocr-vl-command", default=os.environ.get("PADDLEOCR_VL_COMMAND", default_paddleocr_vl_command()))
+    build_parser.add_argument("--qwen-vl-command", default=os.environ.get("QWEN_VL_COMMAND", default_qwen_vl_command()))
 
     reorder_parser = subparsers.add_parser("rebuild-from-order", help="Rebuild Markdown from pages.jsonl and a manually edited order.md.")
     reorder_parser.add_argument("pages", type=Path)
@@ -129,7 +148,7 @@ def rebuild_image_book(
     umi_paddle_exe: str | None = None,
     umi_paddle_module: str | None = None,
     enhance_layout_heavy: str = "auto",
-    layout_enhancer_order: str = "mineru-vlm,paddleocr-vl,qwen-vl",
+    layout_enhancer_order: str = "paddleocr-vl,mineru-vlm,qwen-vl",
     layout_enhancer_timeout: float = 180.0,
     mineru_command: str = "mineru",
     mineru_method: str = "auto",
@@ -172,7 +191,7 @@ def rebuild_image_book_from_sources(
     umi_paddle_exe: str | None = None,
     umi_paddle_module: str | None = None,
     enhance_layout_heavy: str = "auto",
-    layout_enhancer_order: str = "mineru-vlm,paddleocr-vl,qwen-vl",
+    layout_enhancer_order: str = "paddleocr-vl,mineru-vlm,qwen-vl",
     layout_enhancer_timeout: float = 180.0,
     mineru_command: str = "mineru",
     mineru_method: str = "auto",
@@ -211,8 +230,8 @@ def rebuild_image_book_from_sources(
         mineru_method=mineru_method,
         mineru_backend=mineru_backend,
         mineru_lang=mineru_lang,
-        paddleocr_vl_command=paddleocr_vl_command,
-        qwen_vl_command=qwen_vl_command,
+        paddleocr_vl_command=paddleocr_vl_command or default_paddleocr_vl_command(),
+        qwen_vl_command=qwen_vl_command or default_qwen_vl_command(),
         progress_callback=progress_callback,
     )
 
@@ -671,7 +690,7 @@ def parse_enhancer_order(order: str) -> list[str]:
         backend = aliases.get(key)
         if backend and backend not in parsed:
             parsed.append(backend)
-    return parsed or ["mineru-vlm", "paddleocr-vl", "qwen-vl"]
+    return parsed or ["paddleocr-vl", "mineru-vlm", "qwen-vl"]
 
 
 def run_layout_enhancer_backend(
@@ -747,7 +766,7 @@ def run_template_image_enhancer(
         return {"backend": backend, "status": "skipped", "reason": "command template is not configured"}
     output_file = output_dir / "enhanced.md"
     command_text = command_template.format(input=page.source, output=str(output_file), output_dir=str(output_dir))
-    cmd = shlex.split(command_text, posix=False)
+    cmd = [part.strip('"') for part in shlex.split(command_text, posix=False)]
     if not cmd:
         return {"backend": backend, "status": "skipped", "reason": "empty command template"}
     executable = resolve_executable(cmd[0])

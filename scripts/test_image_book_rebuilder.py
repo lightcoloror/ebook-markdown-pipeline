@@ -10,6 +10,8 @@ from ebook_markdown_pipeline.image_book_rebuilder import (  # noqa: E402
     ScreenshotPage,
     build_layout_profile,
     build_structure_outline,
+    default_paddleocr_vl_command,
+    default_qwen_vl_command,
     detect_title_candidate_details,
     extract_page_number,
     infer_page_order,
@@ -119,6 +121,10 @@ def main() -> int:
     layout_report = render_layout_markdown([infographic_page])
     if "Likely infographic/layout-heavy pages: 1" not in layout_report or "multi_region_ocr_blocks" not in layout_report:
         raise RuntimeError(f"Expected layout report signals: {layout_report}")
+    if "paddleocr_vl_image_to_md.py" not in default_paddleocr_vl_command() or "{input}" not in default_paddleocr_vl_command():
+        raise RuntimeError(f"Expected default PaddleOCR-VL wrapper command: {default_paddleocr_vl_command()}")
+    if "qwen_vl_image_to_md.py" not in default_qwen_vl_command() or "{output}" not in default_qwen_vl_command():
+        raise RuntimeError(f"Expected default Qwen-VL wrapper command: {default_qwen_vl_command()}")
     with tempfile.TemporaryDirectory(prefix="image-book-enhancement-") as tmp:
         enhancement_output = Path(tmp)
         missing = run_layout_heavy_enhancements(

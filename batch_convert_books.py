@@ -788,6 +788,7 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace) 
             "detail": getattr(args, "umi_paddle_module", suggested_umi_paddle_module()),
         }
     )
+    checks.extend(vlm_image_backend_health())
     cache_status, cache_detail = mineru_model_cache_status()
     checks.append(
         {
@@ -805,6 +806,29 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace) 
             "detail": torch_cuda_detail(),
         }
     )
+    return checks
+
+
+def vlm_image_backend_health() -> list[dict[str, str]]:
+    root = Path(__file__).resolve().parent
+    vlm_python = Path(r"C:\Users\lightcolor\.conda\envs\pytorch-cuda121\python.exe")
+    paddleocr_exe = Path(r"C:\Users\lightcolor\.conda\envs\pytorch-cuda121\Scripts\paddleocr.exe")
+    paddle_wrapper = root / "scripts" / "paddleocr_vl_image_to_md.py"
+    qwen_wrapper = root / "scripts" / "qwen_vl_image_to_md.py"
+    checks = [
+        {
+            "name": "PaddleOCR-VL wrapper",
+            "kind": "vlm",
+            "status": "ok" if vlm_python.exists() and paddleocr_exe.exists() and paddle_wrapper.exists() else "missing",
+            "detail": f"python={vlm_python}; paddleocr={paddleocr_exe}; wrapper={paddle_wrapper}",
+        },
+        {
+            "name": "Qwen-VL wrapper",
+            "kind": "vlm",
+            "status": "ok" if vlm_python.exists() and qwen_wrapper.exists() else "missing",
+            "detail": f"python={vlm_python}; wrapper={qwen_wrapper}; model downloads on first real run",
+        },
+    ]
     return checks
 
 
@@ -846,6 +870,8 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
     pymupdf4llm_ok = check_ok("pymupdf4llm")
     docling_ok = check_ok("docling")
     umi_ok = check_ok("Umi PaddleOCR module")
+    paddle_vl_ok = check_ok("PaddleOCR-VL wrapper")
+    qwen_vl_ok = check_ok("Qwen-VL wrapper")
     mineru_cache = check_status("MinerU model cache")
     cuda_status = check_status("CUDA for torch")
 
@@ -898,6 +924,20 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
             "ok" if umi_ok else "missing",
             "Umi-OCR Paddle module is available." if umi_ok else "Umi-OCR Paddle module is not configured.",
             "Use Umi-OCR for long scanned documents or image batches." if umi_ok else "Configure Umi-OCR path for scanned PDFs/images.",
+        )
+    )
+
+    image_layout_status = "ok" if paddle_vl_ok else "degraded" if qwen_vl_ok or mineru_ok else "missing"
+    capabilities.append(
+        capability_item(
+            "image_layout_enhancement",
+            image_layout_status,
+            "PaddleOCR-VL wrapper is configured; Qwen-VL wrapper is available as a heavier fallback."
+            if paddle_vl_ok
+            else "No preferred image-layout VLM wrapper is fully configured.",
+            "Use screenshot/image book mode; layout-heavy pages auto-generate enhanced.md."
+            if image_layout_status == "ok"
+            else "Configure PaddleOCR-VL/Qwen-VL wrappers or keep using Umi-OCR layout review.",
         )
     )
 
