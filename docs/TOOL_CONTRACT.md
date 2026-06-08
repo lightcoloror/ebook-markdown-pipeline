@@ -17,6 +17,8 @@ Preferred order:
 
 Agents should not directly parse PDFs, images, temporary directories, SQLite files, or model outputs when a tool exists for that purpose.
 
+Agents should also not call online model providers directly for document recognition. Future online API support should remain behind this project's provider abstraction so that privacy, cost, retry, fallback, artifact schema, and report logging stay consistent.
+
 ## Main Router: `process_material`
 
 Use `process_material` as the default entry point for unknown input.
@@ -35,6 +37,10 @@ Optional:
 - `output_format`: `markdown`, `html`, or `text`.
 - `image_book_threshold`: default `8`.
 - `ocr`: `auto`, `always`, or `never`.
+
+Planned online-model option:
+
+- `model_mode`: planned values `local`, `online`, `hybrid`, or `auto`. This is not yet part of the stable implementation. When added, it should route through provider adapters for OCR layout, VLM layout, text structure repair, and embeddings instead of exposing vendor-specific API calls to agents.
 
 Routing rules:
 

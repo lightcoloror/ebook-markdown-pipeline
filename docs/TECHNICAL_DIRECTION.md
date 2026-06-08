@@ -174,6 +174,73 @@
 - `tool_log`
 - `health_report`
 
+## 在线大模型 API 接入路线
+
+后续需要支持把本地大模型能力替换为在线大模型 API，但不改变本项目“调度层/复查层/agent 接口层”的定位。在线化不应让 agent 或 UI 直接调用供应商 API，而应通过统一 provider adapter 接入。
+
+### 需要的在线模型类型
+
+最小可用组合：
+
+- `ocr_layout`：OCR + layout API，返回文字、坐标、页码、阅读顺序和置信度。用于替代或补强 Umi-OCR、Tesseract、部分 MinerU OCR 能力。
+- `vlm_layout`：视觉语言模型 API，用于信息图、复杂截图、扫描页、图文混排页、卡片式版面和低质量 OCR 页补强。用于替代或补强 MinerU VLM、PaddleOCR-VL、Qwen-VL。
+- `text_structure_llm`：文本 LLM API，用于 Markdown 标题层级修复、目录对齐、页眉页脚/脚注噪声判断、结构化清洗说明。规则层仍应保留，LLM 只处理疑难段落或复查项。
+
+增强组合：
+
+- `table_parser`：表格识别 API，输出 Markdown table、HTML table 或 JSON table。只对明确表格块启用，不把横向卡片/对比块强行表格化。
+- `formula_parser`：公式识别 API，输出 LaTeX。主要用于教材、论文和技术文档。
+- `embedding`：文本/图文 embedding API，用于定位索引、相似页去重、截图排序、RAG 检索和跨材料聚类。
+- `reranker`：检索重排 API，用于提升定位索引和 agent 查询结果质量。
+- `router_classifier`：轻量分类/路由模型，用于判断输入是否为普通电子书、文字层 PDF、扫描 PDF、复杂图文页、表格页、截图书或信息图。
+
+### 本地能力到在线 API 的映射
+
+| 当前本地组件 | 在线 API 替代类型 | 建议策略 |
+| --- | --- | --- |
+| Umi-OCR / Tesseract | `ocr_layout` | 可替换，但保留本地 fallback。 |
+| MinerU pipeline | `ocr_layout` + `vlm_layout` + `table_parser` + `formula_parser` | 只在复杂 PDF 或扫描件启用在线替代，避免整本无差别调用。 |
+| MinerU VLM / PaddleOCR-VL / Qwen-VL | `vlm_layout` | 作为疑难页、信息图、截图书补强层。 |
+| Marker | `ocr_layout` / `vlm_layout` / 文档解析 API | 可作为在线文档解析 provider 的一种实现。 |
+| PyMuPDF / PyMuPDF4LLM | 不建议替换 | 继续本地运行，便宜、快、稳定。 |
+| `structure_repair` | `text_structure_llm` 补强 | 规则优先，LLM 只处理低置信度结构。 |
+| `document_locator` | `embedding` / `reranker` 可选补强 | 默认仍使用本地 SQLite/FTS，在线 embedding 用于语义检索。 |
+
+### 统一接口设计要求
+
+后续新增在线 API 接口时，应先实现 provider 抽象，而不是在 MinerU、截图成书、定位索引或 UI 中直接写供应商调用：
+
+- `ModelProvider`：读取 provider 名称、模型名、base URL、超时、并发、价格/限额策略和密钥环境变量名。
+- `OcrLayoutProvider`：输入图片/PDF 页，输出 `blocks`，字段包括 `text`、`bbox`、`page`、`block_type`、`confidence`、`reading_order`。
+- `VlmLayoutProvider`：输入图片/PDF 页和任务提示，输出结构化 Markdown、块列表或复查建议。
+- `TextStructureProvider`：输入 Markdown 片段、候选 heading、领域 grammar 和质量问题，输出修复后的 Markdown 片段、决策列表和依据。
+- `EmbeddingProvider`：输入文本块或图片说明，输出 embedding 向量和模型元数据。
+
+统一输出必须先转换为项目内部 artifact，而不是把供应商原始响应直接暴露给 UI/agent：
+
+- OCR/VLM 输出进入 `pages.jsonl` 或 `blocks.jsonl`。
+- 结构修复输出进入 `structure_repair` report。
+- 表格输出进入 `table_candidates.json` 或 Markdown table。
+- embedding 输出进入定位索引数据库或可重建的 sidecar 文件。
+
+### 默认调用策略
+
+- 本地轻量预检先运行：文件类型、页数、文本层、扫描比例、图片比例、目录/书签、疑难页比例。
+- 有文本层的 PDF、EPUB、Office、HTML 继续优先走本地工具。
+- 只有扫描页、复杂图文页、信息图、表格页、公式页、低置信度结构页才调用在线 API。
+- 长文档必须支持分段、预算上限、超时、重试、fallback 和可恢复 manifest。
+- 所有在线调用必须写入 provider、model、耗时、输入页码、token/图片数量估计、错误原因和 fallback 记录。
+- 不把 API key 写入文档、report、manifest、Git 提交或 agent contract；只记录环境变量名。
+
+### 后续 TODO
+
+- 新增 `online_providers.py`，定义 `OcrLayoutProvider`、`VlmLayoutProvider`、`TextStructureProvider`、`EmbeddingProvider` 抽象。
+- 新增 `config/online_models.example.json`，只保存 provider 配置模板和环境变量名，不保存密钥。
+- 扩展 `health_check`，检测在线 provider 配置是否存在、是否可连通、是否缺少密钥。
+- 扩展 `inspect_document`，返回 `online_api_recommended`、`estimated_pages`、`estimated_cost_risk` 和 `privacy_risk`。
+- 扩展 `process_material`，支持 `model_mode=local|online|hybrid|auto`。
+- 为在线 OCR/VLM/结构修复输出增加 fixture 和 smoke test，先用 fake provider 保证契约稳定。
+
 ## 当前项目已覆盖
 
 当前已经具备：
