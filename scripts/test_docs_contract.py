@@ -42,6 +42,7 @@ def main() -> int:
             "--fail-fast",
             "TOC/bookmark match ratio",
             "OCR character volume",
+            "structure repair decision",
             "duration",
         ],
         "docs/TOOL_CONTRACT.md": [

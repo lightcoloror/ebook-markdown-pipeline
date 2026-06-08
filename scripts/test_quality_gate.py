@@ -70,6 +70,9 @@ def main() -> int:
             "avg_toc_match_ratio",
             "page_heading_ratio",
             "ocr_characters",
+            "structure_repair_decisions",
+            "structure_repair_promoted",
+            "structure_repair_low_confidence",
             "review_or_poor",
             "avg_duration_seconds",
             "max_duration_seconds",
@@ -78,7 +81,7 @@ def main() -> int:
         if missing:
             raise AssertionError(f"Quality regression summary missing required metrics {sorted(missing)}: {summary}")
         quality_text = quality_md.read_text(encoding="utf-8")
-        for needle in ["Average TOC match ratio", "OCR characters", "Average duration seconds", "Review or poor"]:
+        for needle in ["Average TOC match ratio", "OCR characters", "Structure repair decisions", "Average duration seconds", "Review or poor"]:
             if needle not in quality_text:
                 raise AssertionError(f"Quality regression Markdown missing {needle}: {quality_text}")
     print("Quality gate smoke test passed.")

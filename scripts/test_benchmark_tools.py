@@ -83,7 +83,7 @@ def main() -> int:
         if quality_payload.get("quality_gates", {}).get("status") != "passed":
             raise RuntimeError(f"Expected quality gates in regression summary: {quality_payload}")
         summary_fields = quality_payload.get("summary") or {}
-        for field in ["avg_toc_match_ratio", "ocr_characters", "avg_duration_seconds", "max_duration_seconds"]:
+        for field in ["avg_toc_match_ratio", "ocr_characters", "structure_repair_decisions", "structure_repair_promoted", "avg_duration_seconds", "max_duration_seconds"]:
             if field not in summary_fields:
                 raise RuntimeError(f"Expected quality metric {field}: {quality_payload}")
         benchmark_module = load_run_benchmarks()
@@ -99,6 +99,29 @@ def main() -> int:
         )
         if failed_gate.get("status") != "failed":
             raise RuntimeError(f"Expected failing quality gate: {failed_gate}")
+        structure_report = root / "structure.report.json"
+        structure_report.write_text(
+            json.dumps(
+                {
+                    "structure_repair": {
+                        "action_counts": {"promoted_to_heading": 2},
+                        "decisions": [
+                            {"action": "promoted_to_heading", "confidence": 0.92},
+                            {"action": "kept_as_body", "confidence": 0.42},
+                            {"action": "promoted_to_heading", "confidence": "0.70"},
+                        ],
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        structure_metrics = benchmark_module.structure_repair_metrics([{"report": str(structure_report)}])
+        if structure_metrics != {
+            "structure_repair_decisions": 3,
+            "structure_repair_promoted": 2,
+            "structure_repair_low_confidence": 1,
+        }:
+            raise RuntimeError(f"Expected structure repair metrics from report: {structure_metrics}")
 
         baseline_quality = root / "baseline-quality.json"
         candidate_quality = root / "candidate-quality.json"
@@ -114,6 +137,9 @@ def main() -> int:
                         "avg_characters": 1000,
                         "avg_toc_match_ratio": 0.5,
                         "ocr_characters": 100,
+                        "structure_repair_decisions": 2,
+                        "structure_repair_promoted": 1,
+                        "structure_repair_low_confidence": 1,
                         "page_heading_ratio": 0,
                         "repeated_noise_lines": 4,
                         "avg_duration_seconds": 2.0,
@@ -138,6 +164,9 @@ def main() -> int:
                         "avg_characters": 1200,
                         "avg_toc_match_ratio": 0.75,
                         "ocr_characters": 120,
+                        "structure_repair_decisions": 4,
+                        "structure_repair_promoted": 3,
+                        "structure_repair_low_confidence": 0,
                         "page_heading_ratio": 0,
                         "repeated_noise_lines": 0,
                         "avg_duration_seconds": 1.5,
@@ -165,7 +194,7 @@ def main() -> int:
         if comparison_payload.get("summary", {}).get("status") != "passed":
             raise RuntimeError(f"Expected passing quality comparison: {comparison_payload}")
         deltas = comparison_payload.get("summary", {}).get("deltas", {})
-        for field in ["avg_toc_match_ratio", "ocr_characters", "avg_duration_seconds", "max_duration_seconds"]:
+        for field in ["avg_toc_match_ratio", "ocr_characters", "structure_repair_decisions", "structure_repair_promoted", "avg_duration_seconds", "max_duration_seconds"]:
             if field not in deltas:
                 raise RuntimeError(f"Expected quality comparison delta {field}: {comparison_payload}")
 
@@ -182,6 +211,9 @@ def main() -> int:
                         "avg_characters": 500,
                         "avg_toc_match_ratio": 0.0,
                         "ocr_characters": 50,
+                        "structure_repair_decisions": 0,
+                        "structure_repair_promoted": 0,
+                        "structure_repair_low_confidence": 0,
                         "page_heading_ratio": 0,
                         "repeated_noise_lines": 8,
                         "avg_duration_seconds": 4.0,

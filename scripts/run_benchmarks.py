@@ -246,13 +246,15 @@ def run_sample(sample: dict, output_root: Path, *, overwrite: bool, skip_heavy: 
         first = results[0]
         output_path = Path(first.output) if first.output else None
         metrics = enrich_quality_metrics(markdown_metrics(output_path), source=source, output_path=output_path, category=category)
+        conversion_payloads = [asdict(item) for item in results]
+        metrics.update(structure_repair_metrics(conversion_payloads))
         return finish_result(
             base,
             started,
             "ok" if all(item.status in {"ok", "skipped"} for item in results) else "failed",
             failure_reason="; ".join(item.message for item in results if item.status == "failed" and item.message),
             metrics=metrics,
-            conversion_results=[asdict(item) for item in results],
+            conversion_results=conversion_payloads,
             plans=[asdict(item) for item in plans],
         )
     except Exception as exc:  # noqa: BLE001
@@ -272,6 +274,37 @@ def enrich_quality_metrics(metrics: dict, *, source: Path, output_path: Path | N
     enriched.setdefault("toc_match_ratio", toc_match_ratio(source, output_path))
     enriched.setdefault("ocr_characters", ocr_character_count(enriched, category=category))
     return enriched
+
+
+def structure_repair_metrics(conversion_results: list[dict]) -> dict[str, int]:
+    decision_count = 0
+    promoted_count = 0
+    low_confidence_count = 0
+    for item in conversion_results:
+        report_path = item.get("report")
+        if not report_path:
+            continue
+        try:
+            report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        repair = report.get("structure_repair") or {}
+        decisions = repair.get("decisions") if isinstance(repair.get("decisions"), list) else []
+        action_counts = repair.get("action_counts") if isinstance(repair.get("action_counts"), dict) else {}
+        decision_count += len(decisions)
+        promoted_count += int(action_counts.get("promoted_to_heading") or 0)
+        for decision in decisions:
+            try:
+                confidence = float(decision.get("confidence"))
+            except (TypeError, ValueError):
+                continue
+            if confidence < 0.65:
+                low_confidence_count += 1
+    return {
+        "structure_repair_decisions": decision_count,
+        "structure_repair_promoted": promoted_count,
+        "structure_repair_low_confidence": low_confidence_count,
+    }
 
 
 def toc_match_ratio(source: Path, output_path: Path | None) -> float:
@@ -422,6 +455,9 @@ def quality_regression_summary(payload: dict) -> dict:
     characters = [int((item.get("metrics") or {}).get("characters") or 0) for item in scored]
     toc_match_ratios = [float((item.get("metrics") or {}).get("toc_match_ratio") or 0) for item in scored]
     ocr_characters = [int((item.get("metrics") or {}).get("ocr_characters") or 0) for item in scored]
+    structure_decisions = [int((item.get("metrics") or {}).get("structure_repair_decisions") or 0) for item in scored]
+    structure_promoted = [int((item.get("metrics") or {}).get("structure_repair_promoted") or 0) for item in scored]
+    structure_low_confidence = [int((item.get("metrics") or {}).get("structure_repair_low_confidence") or 0) for item in scored]
     repeated_noise = [int((item.get("metrics") or {}).get("repeated_noise_lines") or 0) for item in scored]
     durations = [float(item.get("duration_seconds") or 0) for item in results]
     fallback_count = sum(1 for item in results if "fallback" in str(item.get("actual_pipeline") or item.get("pipeline") or "").lower())
@@ -435,6 +471,9 @@ def quality_regression_summary(payload: dict) -> dict:
         "avg_characters": average(characters),
         "avg_toc_match_ratio": average_float(toc_match_ratios),
         "ocr_characters": sum(ocr_characters),
+        "structure_repair_decisions": sum(structure_decisions),
+        "structure_repair_promoted": sum(structure_promoted),
+        "structure_repair_low_confidence": sum(structure_low_confidence),
         "repeated_noise_lines": sum(repeated_noise),
         "avg_duration_seconds": average_float(durations),
         "max_duration_seconds": max(durations) if durations else 0.0,
@@ -566,6 +605,9 @@ def render_quality_regression_summary(payload: dict) -> str:
         f"- Average characters: {summary['avg_characters']}",
         f"- Average TOC match ratio: {summary['avg_toc_match_ratio']}",
         f"- OCR characters: {summary['ocr_characters']}",
+        f"- Structure repair decisions: {summary['structure_repair_decisions']}",
+        f"- Structure repair promoted headings: {summary['structure_repair_promoted']}",
+        f"- Structure repair low-confidence decisions: {summary['structure_repair_low_confidence']}",
         f"- Repeated noise lines: {summary['repeated_noise_lines']}",
         f"- Average duration seconds: {summary['avg_duration_seconds']}",
         f"- Max duration seconds: {summary['max_duration_seconds']}",

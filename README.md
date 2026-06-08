@@ -345,7 +345,7 @@ python scripts\run_benchmarks.py `
 - `benchmark-summary.md`：人工快速浏览的样本状态、质量和失败原因。
 - `benchmark-summary.partial.md`：中断前可读的阶段性摘要。
 - `docling-decision.md`：根据真实样本自动给出 Docling 是否默认启用的建议；在样本不足、依赖缺失或成功率偏低时会保持 Docling 为可选后端。
-- `quality-regression-summary.md/json`：汇总成功率、标题数量、目录/书签匹配率、页码标题比例、OCR 字符量、噪声行、review/poor 数、运行时间、fallback 次数和可选质量 gate。传入 `--fail-on-quality-gate` 后，任何配置的 gate 失败都会让命令以非 0 退出，适合 agent 批处理或 CI。
+- `quality-regression-summary.md/json`：汇总成功率、标题数量、目录/书签匹配率、页码标题比例、OCR 字符量、结构修复决策数、结构修复提升标题数、低置信度结构修复数、噪声行、review/poor 数、运行时间、fallback 次数和可选质量 gate。传入 `--fail-on-quality-gate` 后，任何配置的 gate 失败都会让命令以非 0 退出，适合 agent 批处理或 CI。
 
 `--sample-timeout` 可以避免单个坏文件、慢 OCR 或模型收尾卡住拖死整批评测；超时样本会记录为 `timeout` 并继续处理后续样本。Windows 下会用进程树终止，避免 MinerU/Marker 等子进程留下孤儿进程。
 
@@ -361,7 +361,7 @@ python scripts\compare_benchmark_quality.py `
   --fail-on-regression
 ```
 
-该命令兼容 `benchmark-results.json` 和 `quality-regression-summary.json`，会输出 `benchmark-quality-comparison.json/md`，并比较成功率、good 率、review/poor 比例、timeout/failed 比例、平均标题数、目录/书签匹配率、页码标题比例、OCR 字符量、运行时间和重复噪声行。
+该命令兼容 `benchmark-results.json` 和 `quality-regression-summary.json`，会输出 `benchmark-quality-comparison.json/md`，并比较成功率、good 率、review/poor 比例、timeout/failed 比例、平均标题数、目录/书签匹配率、页码标题比例、OCR 字符量、结构修复决策数、结构修复提升标题数、运行时间和重复噪声行。
 
 对同一个 PDF 比较多条管道：
 
