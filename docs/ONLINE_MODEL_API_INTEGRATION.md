@@ -2,6 +2,8 @@
 
 本项目后续会支持把部分本地大模型能力替换为在线大模型 API。接入原则是：统一 provider 抽象优先，不在 MinerU、PaddleOCR、截图成书、`structure_repair` 等具体管道里分别写供应商 API 调用。
 
+当前状态：`online_providers.py` 已提供 provider 抽象、fake provider、OpenAI-compatible adapter、配置健康检查和离线契约测试。默认转换流程仍然 local-first，不会自动调用远程 API。
+
 ## 核心原则
 
 - 本项目继续作为调度层、复查层、artifact 管理层和 agent 接口层。
@@ -12,12 +14,13 @@
 
 ## Provider 抽象
 
-下一步需要新增 `online_providers.py`，定义以下接口：
+`online_providers.py` 已定义以下接口：
 
 - `ModelProvider`：读取 provider 名称、模型名、base URL、超时、并发、价格/限额策略和密钥环境变量名。
 - `OcrLayoutProvider`：输入图片或 PDF 页，输出 OCR/layout blocks。
 - `VlmLayoutProvider`：输入图片或 PDF 页和任务提示，输出结构化 Markdown、块列表或复查建议。
 - `TextStructureProvider`：输入 Markdown 片段、候选 heading、领域 grammar 和质量问题，输出修复后的 Markdown 片段、决策列表和依据。
+- `TableRepairProvider`：输入真实表格候选，输出修复后的 Markdown table、表格 JSON 和决策依据。
 - `EmbeddingProvider`：输入文本块或图片说明，输出 embedding 向量和模型元数据。
 
 ## 配置草案
@@ -48,6 +51,13 @@
       "model": "text-embedding-model",
       "api_key_env": "EMBEDDING_API_KEY",
       "timeout_seconds": 30
+    },
+    "openai_compatible_table": {
+      "type": "table_repair",
+      "base_url": "https://example.com/v1",
+      "model": "gpt-4.1-mini",
+      "api_key_env": "TABLE_LLM_API_KEY",
+      "timeout_seconds": 60
     }
   }
 }
@@ -93,16 +103,16 @@
 
 - Agent 仍然优先调用 `process_material`。
 - Agent 不直接调用 OpenAI、Qwen、Claude、Gemini、Paddle 官方 API 或其他供应商 API。
-- `process_material` 后续增加 `model_mode=local|online|hybrid|auto`。
-- `health_check` 后续增加 online provider 可用性、缺失密钥、连通性和风险提示。
+- `process_material` 后续增加 `model_mode=local|online|hybrid|auto`。当前还不会自动调用在线 API。
+- `health_check` 已暴露 online provider 配置健康和缺失密钥状态；真实连通性、预算和隐私确认仍待接入。
 - `inspect_document` 后续返回 `online_api_recommended`、`estimated_pages`、`estimated_cost_risk` 和 `privacy_risk`。
 
 ## 开发顺序
 
-1. 新增 provider 抽象和 fake provider 测试。
-2. 扩展 `health_check` 和 `inspect_document`，只做检测和推荐，不真实调用。
-3. 接入 OpenAI-compatible `TextStructureProvider`，先用于 `structure_repair` 疑难段补强。
-4. 接入 OpenAI-compatible `VlmLayoutProvider`，先用于信息图、PPT PDF、截图书疑难页。
-5. 接入 `OcrLayoutProvider`，用于云 OCR/layout 替代本地 OCR。
-6. 接入 `EmbeddingProvider`，增强定位索引和语义检索。
-7. 加入预算、并发、重试、超时、隐私确认和 report 记录。
+1. 已完成：provider 抽象、fake provider 测试、OpenAI-compatible adapter、配置健康检查。
+2. 下一步：扩展 `inspect_document`，返回 `online_api_recommended`、`estimated_pages`、`estimated_cost_risk` 和 `privacy_risk`。
+3. 下一步：在 `structure_repair` 低置信度片段中可选调用 OpenAI-compatible `TextStructureProvider`。
+4. 下一步：在信息图、PPT PDF、截图书疑难页中可选调用 OpenAI-compatible `VlmLayoutProvider`。
+5. 下一步：接入 `OcrLayoutProvider`，用于云 OCR/layout 替代本地 OCR。
+6. 下一步：接入 `EmbeddingProvider`，增强定位索引和语义检索。
+7. 下一步：加入预算、并发、重试、超时、隐私确认和 report 记录。

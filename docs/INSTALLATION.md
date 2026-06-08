@@ -163,7 +163,7 @@ copy config\online_models.example.json config\online_models.local.json
 $env:EBOOK_CONVERTER_ONLINE_MODELS_CONFIG = "config\online_models.local.json"
 ```
 
-The current implementation only reads this config for provider health and fake-provider tests. It does not call remote APIs yet. Keep API keys in environment variables such as `VLM_API_KEY`, `TEXT_LLM_API_KEY`, and `EMBEDDING_API_KEY`; do not write real keys into the JSON file.
+The current default conversion flow does not call remote APIs. `online_providers.py` provides provider health checks, fake-provider tests, and an optional OpenAI-compatible adapter for future text structure, VLM layout, table repair, and embedding work. Keep API keys in environment variables such as `VLM_API_KEY`, `TEXT_LLM_API_KEY`, `TABLE_LLM_API_KEY`, and `EMBEDDING_API_KEY`; do not write real keys into the JSON file.
 
 ## 4. Agent / API Setup
 
