@@ -115,6 +115,8 @@ def main() -> int:
             "目录/书签匹配率",
             "OCR 字符量",
             "运行时间",
+            "check_project_readiness.py",
+            "project-readiness.json/md",
         ],
         "docs/PROJECT_OVERVIEW.md": [
             "GitHub About Text",

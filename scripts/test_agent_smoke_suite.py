@@ -25,6 +25,7 @@ FAST_TESTS = [
     "scripts/test_mcp_stdio.py",
     "scripts/test_http_api.py",
     "scripts/test_docs_contract.py",
+    "scripts/check_project_readiness.py",
 ]
 FULL_TESTS = FAST_TESTS + ["scripts/test_agent_contract.py"]
 AGENT_SMOKE_SCHEMA_VERSION = "agent-smoke-suite-v1"
