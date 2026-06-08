@@ -42,8 +42,28 @@ def main() -> int:
         gates = ((payload.get("summary") or {}).get("quality_gates") or {})
         if gates.get("status") != "passed":
             raise AssertionError(f"Expected passing quality gate: {gates}")
-        if not (output / "quality-regression-summary.md").exists():
+        quality_json = output / "quality-regression-summary.json"
+        quality_md = output / "quality-regression-summary.md"
+        if not quality_md.exists() or not quality_json.exists():
             raise AssertionError("Expected quality-regression-summary.md")
+        quality_payload = json.loads(quality_json.read_text(encoding="utf-8"))
+        summary = quality_payload.get("summary") or {}
+        required_summary_fields = {
+            "avg_headings",
+            "avg_toc_match_ratio",
+            "page_heading_ratio",
+            "ocr_characters",
+            "review_or_poor",
+            "avg_duration_seconds",
+            "max_duration_seconds",
+        }
+        missing = required_summary_fields.difference(summary)
+        if missing:
+            raise AssertionError(f"Quality regression summary missing required metrics {sorted(missing)}: {summary}")
+        quality_text = quality_md.read_text(encoding="utf-8")
+        for needle in ["Average TOC match ratio", "OCR characters", "Average duration seconds", "Review or poor"]:
+            if needle not in quality_text:
+                raise AssertionError(f"Quality regression Markdown missing {needle}: {quality_text}")
     print("Quality gate smoke test passed.")
     return 0
 

@@ -21,7 +21,10 @@ from ebook_markdown_pipeline.batch_convert_books import (  # noqa: E402
     analyze_sources,
     collect_sources,
     convert_sources,
+    extract_epub_toc_titles,
     find_missing_dependencies,
+    normalize_heading_key,
+    pdf_outline_heading_candidates,
 )
 from ebook_markdown_pipeline.document_locator import build_location_index
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book
@@ -242,7 +245,7 @@ def run_sample(sample: dict, output_root: Path, *, overwrite: bool, skip_heavy: 
         write_batch_summary(results, options)
         first = results[0]
         output_path = Path(first.output) if first.output else None
-        metrics = markdown_metrics(output_path)
+        metrics = enrich_quality_metrics(markdown_metrics(output_path), source=source, output_path=output_path, category=category)
         return finish_result(
             base,
             started,
@@ -262,6 +265,58 @@ def effective_pdf_mode(source: Path, pdf_mode_for_benchmark: str) -> str:
     if pdf_mode_for_benchmark == "fast":
         return "pymupdf4llm"
     return pdf_mode_for_benchmark
+
+
+def enrich_quality_metrics(metrics: dict, *, source: Path, output_path: Path | None, category: str) -> dict:
+    enriched = dict(metrics or {})
+    enriched.setdefault("toc_match_ratio", toc_match_ratio(source, output_path))
+    enriched.setdefault("ocr_characters", ocr_character_count(enriched, category=category))
+    return enriched
+
+
+def toc_match_ratio(source: Path, output_path: Path | None) -> float:
+    if output_path is None or not output_path.exists():
+        return 0.0
+    titles = toc_or_outline_titles(source)
+    if not titles:
+        return 0.0
+    markdown_titles = markdown_heading_keys(output_path)
+    if not markdown_titles:
+        return 0.0
+    matched = sum(1 for title in titles if normalize_heading_key(title) in markdown_titles)
+    return round(matched / max(len(titles), 1), 3)
+
+
+def toc_or_outline_titles(source: Path) -> list[str]:
+    suffix = source.suffix.lower()
+    if suffix == ".epub":
+        return extract_epub_toc_titles(source)
+    if suffix == ".pdf":
+        return [str(item.get("title") or "") for item in pdf_outline_heading_candidates(source)]
+    return []
+
+
+def markdown_heading_keys(path: Path) -> set[str]:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return set()
+    keys: set[str] = set()
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("#"):
+            continue
+        title = stripped.lstrip("#").strip()
+        key = normalize_heading_key(title)
+        if key:
+            keys.add(key)
+    return keys
+
+
+def ocr_character_count(metrics: dict, *, category: str) -> int:
+    if category in {"scanned_pdf", "image", "image_infographic", "image_set", "image_set_duplicates"}:
+        return int(metrics.get("characters") or 0)
+    return 0
 
 
 def finish_result(base: dict, started: float, status: str, **updates) -> dict:
@@ -365,7 +420,10 @@ def quality_regression_summary(payload: dict) -> dict:
     heading_counts = [int((item.get("metrics") or {}).get("headings") or 0) for item in scored]
     page_heading_counts = [int((item.get("metrics") or {}).get("page_headings") or 0) for item in scored]
     characters = [int((item.get("metrics") or {}).get("characters") or 0) for item in scored]
+    toc_match_ratios = [float((item.get("metrics") or {}).get("toc_match_ratio") or 0) for item in scored]
+    ocr_characters = [int((item.get("metrics") or {}).get("ocr_characters") or 0) for item in scored]
     repeated_noise = [int((item.get("metrics") or {}).get("repeated_noise_lines") or 0) for item in scored]
+    durations = [float(item.get("duration_seconds") or 0) for item in results]
     fallback_count = sum(1 for item in results if "fallback" in str(item.get("actual_pipeline") or item.get("pipeline") or "").lower())
     summary = {
         "total": len(results),
@@ -375,7 +433,11 @@ def quality_regression_summary(payload: dict) -> dict:
         "avg_headings": average(heading_counts),
         "page_heading_ratio": round(sum(page_heading_counts) / max(sum(heading_counts), 1), 3),
         "avg_characters": average(characters),
+        "avg_toc_match_ratio": average_float(toc_match_ratios),
+        "ocr_characters": sum(ocr_characters),
         "repeated_noise_lines": sum(repeated_noise),
+        "avg_duration_seconds": average_float(durations),
+        "max_duration_seconds": max(durations) if durations else 0.0,
         "fallback_count": fallback_count,
         "review_or_poor": sum(1 for item in scored if (item.get("metrics") or {}).get("level") in {"review", "poor"}),
     }
@@ -389,6 +451,10 @@ def quality_regression_summary(payload: dict) -> dict:
 
 
 def average(values: list[int]) -> float:
+    return round(sum(values) / max(len(values), 1), 3)
+
+
+def average_float(values: list[float]) -> float:
     return round(sum(values) / max(len(values), 1), 3)
 
 
@@ -498,7 +564,11 @@ def render_quality_regression_summary(payload: dict) -> str:
         f"- Average headings: {summary['avg_headings']}",
         f"- Page heading ratio: {summary['page_heading_ratio']}",
         f"- Average characters: {summary['avg_characters']}",
+        f"- Average TOC match ratio: {summary['avg_toc_match_ratio']}",
+        f"- OCR characters: {summary['ocr_characters']}",
         f"- Repeated noise lines: {summary['repeated_noise_lines']}",
+        f"- Average duration seconds: {summary['avg_duration_seconds']}",
+        f"- Max duration seconds: {summary['max_duration_seconds']}",
         f"- Fallback count: {summary['fallback_count']}",
         f"- Review or poor: {summary['review_or_poor']}",
         f"- Quality gates: {gates.get('status', 'not_configured')}",

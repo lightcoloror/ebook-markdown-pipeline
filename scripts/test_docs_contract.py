@@ -112,6 +112,9 @@ def main() -> int:
             "cli_agent_batch_handoff.py",
             "http_agent_batch_handoff.py",
             "完整 agent contract",
+            "目录/书签匹配率",
+            "OCR 字符量",
+            "运行时间",
         ],
         "docs/PROJECT_OVERVIEW.md": [
             "GitHub About Text",

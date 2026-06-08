@@ -82,6 +82,10 @@ def main() -> int:
             raise RuntimeError(f"Expected quality regression summary: {quality_payload}")
         if quality_payload.get("quality_gates", {}).get("status") != "passed":
             raise RuntimeError(f"Expected quality gates in regression summary: {quality_payload}")
+        summary_fields = quality_payload.get("summary") or {}
+        for field in ["avg_toc_match_ratio", "ocr_characters", "avg_duration_seconds", "max_duration_seconds"]:
+            if field not in summary_fields:
+                raise RuntimeError(f"Expected quality metric {field}: {quality_payload}")
         benchmark_module = load_run_benchmarks()
         failed_gate = benchmark_module.evaluate_quality_gates(
             [{"status": "failed", "metrics": {"level": "poor"}}],
@@ -108,8 +112,12 @@ def main() -> int:
                         "status_counts": {"ok": 2},
                         "avg_headings": 1,
                         "avg_characters": 1000,
+                        "avg_toc_match_ratio": 0.5,
+                        "ocr_characters": 100,
                         "page_heading_ratio": 0,
                         "repeated_noise_lines": 4,
+                        "avg_duration_seconds": 2.0,
+                        "max_duration_seconds": 3.0,
                         "fallback_count": 0,
                         "review_or_poor": 1,
                     },
@@ -128,8 +136,12 @@ def main() -> int:
                         "status_counts": {"ok": 2},
                         "avg_headings": 2,
                         "avg_characters": 1200,
+                        "avg_toc_match_ratio": 0.75,
+                        "ocr_characters": 120,
                         "page_heading_ratio": 0,
                         "repeated_noise_lines": 0,
+                        "avg_duration_seconds": 1.5,
+                        "max_duration_seconds": 2.5,
                         "fallback_count": 0,
                         "review_or_poor": 0,
                     },
@@ -152,6 +164,10 @@ def main() -> int:
         comparison_payload = json.loads((quality_compare_dir / "benchmark-quality-comparison.json").read_text(encoding="utf-8"))
         if comparison_payload.get("summary", {}).get("status") != "passed":
             raise RuntimeError(f"Expected passing quality comparison: {comparison_payload}")
+        deltas = comparison_payload.get("summary", {}).get("deltas", {})
+        for field in ["avg_toc_match_ratio", "ocr_characters", "avg_duration_seconds", "max_duration_seconds"]:
+            if field not in deltas:
+                raise RuntimeError(f"Expected quality comparison delta {field}: {comparison_payload}")
 
         bad_candidate = root / "bad-candidate-quality.json"
         bad_candidate.write_text(
@@ -164,8 +180,12 @@ def main() -> int:
                         "status_counts": {"ok": 1, "failed": 1},
                         "avg_headings": 0,
                         "avg_characters": 500,
+                        "avg_toc_match_ratio": 0.0,
+                        "ocr_characters": 50,
                         "page_heading_ratio": 0,
                         "repeated_noise_lines": 8,
+                        "avg_duration_seconds": 4.0,
+                        "max_duration_seconds": 5.0,
                         "fallback_count": 0,
                         "review_or_poor": 2,
                     },
