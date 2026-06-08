@@ -150,6 +150,23 @@ Agents should treat `quality_summary.review_count > 0` as a prompt to read the `
 
 Review checklist JSON entries also include machine-readable `next_actions`. These actions are advisory, not automatic permission to overwrite files. Prefer versioned reruns and ask the user before destructive replacement.
 
+## Structure Repair Report
+
+Per-book conversion reports may include `structure_repair` when Markdown headings were promoted, normalized, or backed by external evidence. Agents should read this block before assuming a weak heading hierarchy is final.
+
+Important fields:
+
+- `action_counts`: counts of `promoted_to_heading`, `normalized_heading`, and `kept_with_evidence`.
+- `decisions[].line_number`: original line number in the Markdown before repair.
+- `decisions[].original` and `decisions[].repaired`: the exact line before and after repair.
+- `decisions[].action`: whether the line was promoted, normalized, or kept with evidence.
+- `decisions[].confidence`: conservative 0-1 score for the repair decision.
+- `decisions[].reason`: human-readable explanation.
+- `decisions[].signals`: machine-readable evidence such as `domain_grammar:*`, `candidate_source:pdf_outline`, `candidate_source:pymupdf_font_jump`, `candidate_source:mineru_paragraph_title`, `candidate_source:docling_heading`, and `nearest_parent:*`.
+- `inferred_outline`: repaired heading hierarchy with `level`, `title`, `parent`, and `path`.
+
+Low-confidence or surprising repairs should be treated as review cues, not as silent final truth.
+
 ## Batch Quality Baselines
 
 Agent batch runs should preserve `agent-batch-results.json` as the machine-readable handoff artifact. When a previous run exists, invoke `examples/agent-batch/agent_batch_http.py` with:

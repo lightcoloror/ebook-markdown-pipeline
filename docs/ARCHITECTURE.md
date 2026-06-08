@@ -87,6 +87,18 @@ flowchart TD
 - Risky reruns should be versioned by default. Overwriting original output should be an explicit user choice.
 - Agent-facing calls should return artifact paths and `next_actions` instead of making agents guess local paths or parse raw logs.
 
+## Structure Repair Evidence
+
+Markdown structure repair is intentionally explainable. When a conversion promotes or normalizes headings, the per-book `*.report.json` can include `structure_repair` with:
+
+- `decisions[]`: one record per repaired or evidence-backed heading line.
+- `action`: `promoted_to_heading`, `normalized_heading`, or `kept_with_evidence`.
+- `confidence`: a conservative 0-1 score derived from domain grammar, external candidates, parent context, PDF outline, font-size jumps, MinerU titles, or Docling headings.
+- `reason` and `signals`: human-readable explanation plus machine-readable evidence.
+- `inferred_outline`: the resulting Markdown heading hierarchy with parent/path fields.
+
+This keeps the default path local and rule-first while leaving a clear future hook for online `TextStructureProvider` fallback on low-confidence segments.
+
 ## Main Modules
 
 | Area | Main Files |

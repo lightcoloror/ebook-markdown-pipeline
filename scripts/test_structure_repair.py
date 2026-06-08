@@ -67,6 +67,10 @@ def main() -> int:
     if subitem.get("path") != expected_path:
         raise AssertionError(f"Expected full hierarchy path, got {subitem}")
     decisions = report.get("decisions") or []
+    if not all(item.get("action") and isinstance(item.get("confidence"), float) for item in decisions):
+        raise AssertionError(f"Expected every structure decision to expose action and confidence: {report}")
+    if report.get("action_counts", {}).get("promoted_to_heading", 0) < 1:
+        raise AssertionError(f"Expected promoted heading count in report: {report}")
     fifth_children = [
         item
         for item in decisions
@@ -104,6 +108,9 @@ def main() -> int:
         payload = __import__("json").loads(report_path.read_text(encoding="utf-8"))
     if not payload.get("structure_repair", {}).get("decisions"):
         raise AssertionError(f"Expected structure repair decisions in conversion report: {payload}")
+    first_report_decision = payload["structure_repair"]["decisions"][0]
+    if "confidence" not in first_report_decision or "action" not in first_report_decision:
+        raise AssertionError(f"Expected persisted structure repair explanation fields: {payload}")
     candidate_source = (
         "正文开始\n\n"
         "特别约定\n\n"
@@ -133,6 +140,8 @@ def main() -> int:
         raise AssertionError(f"Expected candidate source count in report: {candidate_report}")
     if "font_size:16" not in "\n".join(candidate_result.decisions[0].signals):
         raise AssertionError(f"Expected font signal in decision: {candidate_result.decisions[0]}")
+    if candidate_result.report()["decisions"][0]["confidence"] < 0.85:
+        raise AssertionError(f"Expected high confidence from font candidate score: {candidate_result.report()}")
     try:
         import pymupdf
     except Exception:

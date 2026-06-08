@@ -26,6 +26,7 @@ flowchart LR
 - Routes work across existing tools instead of reinventing parsers: Pandoc, Calibre, PyMuPDF4LLM, MinerU, Marker, Docling, Umi-OCR, PaddleOCR-VL, and Qwen-VL wrappers.
 - Detects long PDFs, scanned PDFs, complex layouts, PPT-exported slide PDFs, and weak text layers before choosing a pipeline.
 - Builds quality reports under `.reports/`, including summary, review checklist, PDF tool logs, fallback diagnostics, and structure repair evidence.
+- Explains structure repair decisions with action, confidence, reason, signals, and inferred outline in per-book reports.
 - Rebuilds screenshot/image books from unordered, duplicate, or partially overlapping screenshots.
 - Builds a lightweight page/image location index when you only need to know which PDF page or image contains a keyword.
 - Exposes the same core workflow through UI, CLI, MCP, and HTTP for OpenClaw, Hermes Agent, Codex, or other automation agents.

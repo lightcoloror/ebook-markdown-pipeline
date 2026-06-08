@@ -15,6 +15,11 @@ class HeadingDecision:
     parent: str
     reason: str
     signals: list[str]
+    confidence: float = 0.0
+
+    def __post_init__(self) -> None:
+        if not self.confidence:
+            self.confidence = infer_decision_confidence(self.kind, self.signals)
 
 
 @dataclass
@@ -41,15 +46,21 @@ class StructureRepairResult:
         source_counts: dict[str, int] = {}
         for item in candidates:
             source_counts[item.source or "unknown"] = source_counts.get(item.source or "unknown", 0) + 1
+        rendered_decisions = [decision_report_item(item) for item in self.decisions]
+        action_counts: dict[str, int] = {}
+        for item in rendered_decisions:
+            action = str(item.get("action") or "unknown")
+            action_counts[action] = action_counts.get(action, 0) + 1
         return {
             "schema_version": "structure-repair-v1",
             "grammar": "chapter_section_article_clause_item_subitem",
             "decision_count": len(self.decisions),
+            "action_counts": action_counts,
             "candidate_count": len(candidates),
             "candidate_sources": source_counts,
             "candidate_samples": [asdict(item) for item in candidates[:20]],
             "inferred_outline": build_markdown_outline(self.markdown),
-            "decisions": [asdict(item) for item in self.decisions],
+            "decisions": rendered_decisions,
         }
 
 
@@ -416,6 +427,72 @@ def parse_existing_heading(line: str) -> tuple[int, str] | None:
     return len(match.group(1)), match.group(2).strip()
 
 
+def decision_report_item(decision: HeadingDecision) -> dict[str, Any]:
+    item = asdict(decision)
+    item["action"] = classify_decision_action(decision)
+    item["changed"] = decision.original != decision.repaired
+    item["confidence"] = round(float(decision.confidence), 3)
+    return item
+
+
+def classify_decision_action(decision: HeadingDecision) -> str:
+    if decision.original == decision.repaired:
+        return "kept_with_evidence"
+    original_heading = parse_existing_heading(decision.original.strip())
+    repaired_heading = parse_existing_heading(decision.repaired.strip())
+    if original_heading and repaired_heading:
+        return "normalized_heading"
+    if repaired_heading:
+        return "promoted_to_heading"
+    return "changed"
+
+
+def infer_decision_confidence(kind: str, signals: list[str]) -> float:
+    if kind in {"chapter", "section", "article"}:
+        score = 0.82
+    elif kind == "parenthesized_clause":
+        score = 0.76
+    elif kind == "numeric_item":
+        score = 0.72
+    elif kind == "parenthesized_digit_item":
+        score = 0.70
+    elif kind == "external_candidate":
+        score = 0.74
+    elif kind == "existing_heading_with_signal":
+        score = 0.86
+    else:
+        score = 0.65
+
+    joined = "\n".join(signals)
+    if "normalized_existing_heading" in joined:
+        score += 0.06
+    if "candidate_source:pdf_outline" in joined:
+        score += 0.10
+    if "candidate_source:pymupdf_font_jump" in joined:
+        score += 0.08
+    if "candidate_source:mineru_paragraph_title" in joined:
+        score += 0.08
+    if "candidate_source:docling_heading" in joined:
+        score += 0.08
+    if "candidate_source:domain_grammar" in joined:
+        score += 0.04
+    if "nearest_parent:" in joined:
+        score += 0.03
+    candidate_score = max(candidate_scores_from_signals(signals) or [0.0])
+    if candidate_score:
+        score = max(score, min(0.98, 0.62 + candidate_score * 0.35))
+    return round(min(max(score, 0.05), 0.98), 3)
+
+
+def candidate_scores_from_signals(signals: list[str]) -> list[float]:
+    scores: list[float] = []
+    for signal in signals:
+        match = re.match(r"candidate_score:(\d+(?:\.\d+)?)$", signal)
+        if match:
+            scores.append(float(match.group(1)))
+    return scores
+
+
 def build_markdown_outline(text: str) -> list[dict[str, Any]]:
     """Build a compact heading tree view from repaired Markdown.
 
@@ -679,6 +756,8 @@ def candidate_signals(candidate: HeadingCandidate | None) -> list[str]:
         signals.append(f"candidate_source:{candidate.source}")
     if candidate.level:
         signals.append(f"candidate_level:{candidate.level}")
+    if candidate.score:
+        signals.append(f"candidate_score:{candidate.score:g}")
     if candidate.page:
         signals.append(f"candidate_page:{candidate.page}")
     if candidate.font_size:
