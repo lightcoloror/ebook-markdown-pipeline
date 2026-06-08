@@ -116,6 +116,7 @@ def stage2_checks() -> list[Check]:
     run_benchmarks = read_text("scripts/run_benchmarks.py")
     gitignore = read_text(".gitignore")
     quality_test = read_text("scripts/test_quality_gate.py")
+    readme = read_text("README.md")
     return [
         Check(
             "stage2_quality_regression",
@@ -152,6 +153,13 @@ def stage2_checks() -> list[Check]:
             quality_test,
             ["avg_toc_match_ratio", "ocr_characters", "avg_duration_seconds", "Review or poor"],
             "scripts/test_quality_gate.py",
+        ),
+        contains_all(
+            "stage2_quality_regression",
+            "quality comparison docs include fixed metrics",
+            readme,
+            ["benchmark-quality-comparison.json/md", "目录/书签匹配率", "OCR 字符量", "运行时间"],
+            "README.md",
         ),
         contains_all(
             "stage2_quality_regression",

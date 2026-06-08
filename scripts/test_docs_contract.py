@@ -40,6 +40,9 @@ def main() -> int:
             "/contract",
             "ebook-http-contract-v1",
             "--fail-fast",
+            "TOC/bookmark match ratio",
+            "OCR character volume",
+            "duration",
         ],
         "docs/TOOL_CONTRACT.md": [
             "Batch Quality Baselines",
@@ -115,6 +118,7 @@ def main() -> int:
             "目录/书签匹配率",
             "OCR 字符量",
             "运行时间",
+            "benchmark-quality-comparison.json/md",
             "check_project_readiness.py",
             "project-readiness.json/md",
             "test_minimal_entrypoints.py",

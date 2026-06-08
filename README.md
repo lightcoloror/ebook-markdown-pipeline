@@ -359,7 +359,7 @@ python scripts\compare_benchmark_quality.py `
   --fail-on-regression
 ```
 
-该命令兼容 `benchmark-results.json` 和 `quality-regression-summary.json`，会输出 `benchmark-quality-comparison.json/md`，并比较成功率、good 率、review/poor 比例、timeout/failed 比例、平均标题数、页码标题比例和重复噪声行。
+该命令兼容 `benchmark-results.json` 和 `quality-regression-summary.json`，会输出 `benchmark-quality-comparison.json/md`，并比较成功率、good 率、review/poor 比例、timeout/failed 比例、平均标题数、目录/书签匹配率、页码标题比例、OCR 字符量、运行时间和重复噪声行。
 
 对同一个 PDF 比较多条管道：
 

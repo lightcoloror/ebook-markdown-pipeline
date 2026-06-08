@@ -121,7 +121,7 @@ When taking over a previous batch, call `inspect_agent_batch_results` with the p
 
 For legacy batch results that predate top-level handoff actions, `inspect_agent_batch_results` synthesizes missing `read_run_summary`, `inspect_failed_artifacts`, `inspect_review_items`, and quality-comparison read actions from the current summary fields.
 
-For broad real-sample benchmarks outside agent batches, use `scripts/run_benchmarks.py` with quality gates and `scripts/compare_benchmark_quality.py` to compare a baseline `benchmark-results.json` or `quality-regression-summary.json` against a candidate run. This is the preferred evidence path before changing defaults such as PDF pipeline selection, Docling enablement, or OCR cleanup rules.
+For broad real-sample benchmarks outside agent batches, use `scripts/run_benchmarks.py` with quality gates and `scripts/compare_benchmark_quality.py` to compare a baseline `benchmark-results.json` or `quality-regression-summary.json` against a candidate run. The comparison preserves success/good/review/poor rates, heading counts, TOC/bookmark match ratio, page-heading noise, OCR character volume, duration, fallback count, timeout rate, and failed rate. This is the preferred evidence path before changing defaults such as PDF pipeline selection, Docling enablement, or OCR cleanup rules.
 
 ## Docker Agent Integration
 
