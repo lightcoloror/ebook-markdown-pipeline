@@ -1356,6 +1356,10 @@ def text_to_markdown(text: str) -> str:
                 output.append("")
             previous_blank = True
             continue
+        if should_preserve_markdown_line(line):
+            output.append(line)
+            previous_blank = False
+            continue
         heading_level = infer_heading_level(line, previous_blank=previous_blank)
         if heading_level:
             output.append(f"{'#' * heading_level} {line}")
@@ -1363,6 +1367,15 @@ def text_to_markdown(text: str) -> str:
             output.append(line)
         previous_blank = False
     return "\n".join(output).strip()
+
+
+def should_preserve_markdown_line(line: str) -> bool:
+    return bool(
+        re.match(r"^#{1,6}\s+\S+", line)
+        or re.match(r"^>\s+", line)
+        or re.match(r"^(\||[-*+]\s+|\d+[.)]\s+)", line)
+        or re.match(r"^</?\w+[^>]*>$", line)
+    )
 
 
 def remove_repeated_screenshot_noise(text: str) -> str:

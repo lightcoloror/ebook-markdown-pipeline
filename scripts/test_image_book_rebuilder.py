@@ -94,6 +94,11 @@ def main() -> int:
     markdown = text_to_markdown("第一章 开始\n\n1.1 小节\n正文")
     if "## 第一章 开始" not in markdown or "### 1.1 小节" not in markdown:
         raise RuntimeError(f"Expected heading promotion: {markdown}")
+    preserved_markdown = text_to_markdown("## 已有标题\n\n- 已有列表\n\n<div>HTML</div>")
+    if "### ## 已有标题" in preserved_markdown or "## 已有标题" not in preserved_markdown:
+        raise RuntimeError(f"Expected existing Markdown heading preservation: {preserved_markdown}")
+    if "- 已有列表" not in preserved_markdown or "<div>HTML</div>" not in preserved_markdown:
+        raise RuntimeError(f"Expected Markdown/HTML preservation: {preserved_markdown}")
     title_details = detect_title_candidate_details("前言\n\n这是正文。\n\n2.1 关键原则\n继续说明")
     detail_titles = {item["title"] for item in title_details}
     if "前言" not in detail_titles or "2.1 关键原则" not in detail_titles:
