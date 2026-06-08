@@ -37,6 +37,8 @@ from ebook_markdown_pipeline.process_web_archive import process_web_archive as p
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "ebook-markdown-pipeline"
+SERVER_DISPLAY_NAME = "图文材料转换器"
+SERVER_DISPLAY_NAME_EN = "Graphic-Text Material Converter"
 SERVER_VERSION = "0.1.0"
 
 for stream in (sys.stdin, sys.stdout, sys.stderr):
@@ -158,7 +160,12 @@ class McpServer:
             if method == "initialize":
                 result = {
                     "protocolVersion": PROTOCOL_VERSION,
-                    "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+                    "serverInfo": {
+                        "name": SERVER_NAME,
+                        "displayName": SERVER_DISPLAY_NAME,
+                        "displayNameEn": SERVER_DISPLAY_NAME_EN,
+                        "version": SERVER_VERSION,
+                    },
                     "capabilities": {"tools": {}},
                 }
                 return ok(request_id, result)
@@ -609,6 +616,8 @@ def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
     return {
         "schema_version": "ebook-agent-contract-v1",
         "server": SERVER_NAME,
+        "display_name": SERVER_DISPLAY_NAME,
+        "display_name_en": SERVER_DISPLAY_NAME_EN,
         "version": SERVER_VERSION,
         "transport": transport,
         "protocol_version": PROTOCOL_VERSION if transport == "mcp-stdio" else "",

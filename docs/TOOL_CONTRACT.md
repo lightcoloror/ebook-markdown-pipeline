@@ -1,10 +1,12 @@
-# Agent Tool Contract
+# 图文材料转换器 Agent Tool Contract
 
-This document defines the stable calling contract for AI agents using this project as a general document/image material recognition tool.
+This document defines the stable calling contract for AI agents using 图文材料转换器 as a general document/image material recognition tool.
+
+The stable machine-readable server id remains `ebook-markdown-pipeline` for compatibility. User-facing surfaces should display `图文材料转换器` / `Graphic-Text Material Converter`.
 
 ## Stable Entry Points
 
-MCP-native agents can call `get_agent_contract` to retrieve the same stable calling contract in machine-readable form. The response uses `schema_version=ebook-agent-contract-v1` and includes preferred entrypoints, specialist tools, full tool schemas, artifact/error contract versions, and docs pointers.
+MCP-native agents can call `get_agent_contract` to retrieve the same stable calling contract in machine-readable form. The response uses `schema_version=ebook-agent-contract-v1` and includes `display_name=图文材料转换器`, preferred entrypoints, specialist tools, full tool schemas, artifact/error contract versions, and docs pointers.
 
 Preferred order:
 

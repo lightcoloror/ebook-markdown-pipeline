@@ -1,4 +1,6 @@
-# Ebook Markdown Pipeline
+# 图文材料转换器
+
+英文显示名：Graphic-Text Material Converter。稳定内部 ID / 包名仍保留 `ebook-markdown-pipeline` / `ebook_markdown_pipeline`，用于兼容已有 MCP、HTTP、CLI、Docker 和脚本调用。
 
 最稳的本地批量方案：
 
@@ -112,7 +114,7 @@ MCP 工具包括：
 - `read_report`：读取转换 report。
 - `read_pdf_tool_log`：读取 Marker/MinerU 日志尾部。
 
-稳定调用契约见 [docs/TOOL_CONTRACT.md](docs/TOOL_CONTRACT.md)，详细接入说明见 [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md)。支持 skill 的 agent 可参考 [skills/ebook-markdown-pipeline/SKILL.md](skills/ebook-markdown-pipeline/SKILL.md)。
+稳定调用契约见 [docs/TOOL_CONTRACT.md](docs/TOOL_CONTRACT.md)，详细接入说明见 [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md)。支持 skill 的 agent 可参考 [skills/ebook-markdown-pipeline/SKILL.md](skills/ebook-markdown-pipeline/SKILL.md)。其中 `ebook-markdown-pipeline` 是稳定机器 ID，用户可见名称是“图文材料转换器”。
 HTTP、MCP stdio 和 CLI-style 的最小调用示例见 [examples/agent-calls](examples/agent-calls)。
 
 如果要把当前机器环境封装成可复查材料，可导出环境快照：

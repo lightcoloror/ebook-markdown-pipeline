@@ -88,7 +88,7 @@ except ModuleNotFoundError:
 class BookConverterUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("电子书转换器 / Ebook Converter")
+        self.root.title("图文材料转换器 / Graphic-Text Material Converter")
         self.root.geometry("1280x760")
         self.root.minsize(1160, 680)
 
@@ -1116,7 +1116,7 @@ class BookConverterUI:
         if input_path:
             base = input_path if input_path.is_dir() else input_path.parent
             return base / ".reports" / "environment"
-        return Path.home() / "ebook-markdown-pipeline-environment"
+        return Path.home() / "graphic-text-material-converter-environment"
 
     def environment_compare_output_root(self) -> Path:
         output_text = self.output_var.get().strip()

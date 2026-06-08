@@ -13,7 +13,7 @@ import fitz
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Smoke-test the ebook converter MCP stdio server.")
+    parser = argparse.ArgumentParser(description="Smoke-test the graphic-text material converter MCP stdio server.")
     parser.add_argument("--convert", action="store_true", help="Run a tiny real TXT conversion after scan.")
     args = parser.parse_args()
 
@@ -39,6 +39,7 @@ def main() -> int:
         try:
             initialize = call(proc, 1, "initialize")
             assert initialize["result"]["serverInfo"]["name"] == "ebook-markdown-pipeline"
+            assert initialize["result"]["serverInfo"]["displayName"] == "图文材料转换器"
 
             tools = call(proc, 2, "tools/list")
             tool_names = {item["name"] for item in tools["result"]["tools"]}

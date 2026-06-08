@@ -14,6 +14,8 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ebook_markdown_pipeline.ebook_converter_mcp import (  # noqa: E402
+    SERVER_DISPLAY_NAME,
+    SERVER_DISPLAY_NAME_EN,
     SERVER_NAME,
     SERVER_VERSION,
     call_tool,
@@ -37,7 +39,7 @@ def main() -> int:
 
     handler = build_handler(args.token, config=config, bind_host=args.host, bind_port=args.port)
     server = ThreadingHTTPServer((args.host, args.port), handler)
-    print(f"{SERVER_NAME} HTTP bridge listening on http://{args.host}:{args.port}", flush=True)
+    print(f"{SERVER_DISPLAY_NAME} ({SERVER_NAME}) HTTP bridge listening on http://{args.host}:{args.port}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -66,6 +68,8 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
                     {
                         "ok": True,
                         "server": SERVER_NAME,
+                        "display_name": SERVER_DISPLAY_NAME,
+                        "display_name_en": SERVER_DISPLAY_NAME_EN,
                         "version": SERVER_VERSION,
                         "schema_version": SCHEMA_VERSION,
                         "transport": "http",
@@ -185,6 +189,8 @@ def http_contract_payload(config: HttpConfig | None = None, *, bind_host: str | 
     return {
         "schema_version": "ebook-http-contract-v1",
         "server": SERVER_NAME,
+        "display_name": SERVER_DISPLAY_NAME,
+        "display_name_en": SERVER_DISPLAY_NAME_EN,
         "version": SERVER_VERSION,
         "transport": "http",
         "artifact_schema_version": SCHEMA_VERSION,

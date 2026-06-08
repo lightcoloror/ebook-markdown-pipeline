@@ -1,4 +1,6 @@
-# Agent Integration
+# 图文材料转换器 Agent Integration
+
+用户可见名称是“图文材料转换器 / Graphic-Text Material Converter”。稳定机器 ID 仍是 `ebook-markdown-pipeline`，用于兼容已有 MCP 配置、HTTP bridge、Docker smoke 和脚本调用。
 
 This project is designed for stable AI-agent invocation through a layered interface:
 

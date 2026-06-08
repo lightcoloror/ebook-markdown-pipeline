@@ -1,4 +1,6 @@
-# Ebook Markdown Pipeline
+# 图文材料转换器
+
+Stable machine id: `ebook-markdown-pipeline`. User-facing English display name: Graphic-Text Material Converter.
 
 Use this skill when a user asks to convert EPUB, AZW, MOBI, FB2, TXT, RTF, ODT, or PDF files into Markdown, HTML, or plain text with chapter/title structure, reports, and failure recovery. Also use it when the user wants page/image-level location search or screenshot-to-Markdown reconstruction.
 

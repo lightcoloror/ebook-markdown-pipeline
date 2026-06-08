@@ -18,7 +18,7 @@ from ebook_markdown_pipeline.http_config import default_http_url  # noqa: E402
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Smoke-test the ebook converter HTTP bridge.")
+    parser = argparse.ArgumentParser(description="Smoke-test the graphic-text material converter HTTP bridge.")
     parser.add_argument("--url", default="", help=f"Existing bridge URL. If omitted, start an in-process server. Config default: {default_http_url()}")
     parser.add_argument("--token", default="")
     parser.add_argument("--input", default=str(Path(__file__).resolve().parents[1] / "requirements.txt"))
@@ -45,6 +45,8 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     health = request_json(f"{url.rstrip('/')}/health", headers=headers)
     if not health.get("ok"):
         raise RuntimeError(f"Health check failed: {health}")
+    if health.get("display_name") != "图文材料转换器":
+        raise RuntimeError(f"Health response has wrong display name: {health}")
     if not health.get("supports_async_jobs") or not health.get("supports_artifacts"):
         raise RuntimeError(f"Health response is missing capability flags: {health}")
     health_tool_names = set(health.get("tools", []))
@@ -59,6 +61,8 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     contract = request_json(f"{url.rstrip('/')}/contract", headers=headers)
     if contract.get("schema_version") != "ebook-http-contract-v1" or contract.get("transport") != "http":
         raise RuntimeError(f"HTTP contract response has wrong schema: {contract}")
+    if contract.get("display_name") != "图文材料转换器":
+        raise RuntimeError(f"HTTP contract has wrong display name: {contract}")
     if contract.get("entrypoints")[:3] != ["process_material", "get_job_status", "read_artifact"]:
         raise RuntimeError(f"HTTP contract entrypoints are wrong: {contract}")
     if not contract.get("supports_async_jobs") or not contract.get("supports_artifacts"):
