@@ -72,6 +72,18 @@ Do not use this as a blind replacement for rerunning PDFs through MinerU/Docling
 
 Also read the `structure_report` artifact before recommending replacement.
 
+## CLI Flow
+
+For human review or shell-based agents, use the equivalent CLI wrapper:
+
+```powershell
+python scripts\enhance_markdown_structure.py `
+  path\to\generated.md `
+  path\to\.structure-enhanced
+```
+
+The command prints JSON containing `output`, `report`, `review_report`, `artifacts`, and `next_actions`. By default it uses `--model-mode local` and does not overwrite the source Markdown.
+
 ## Optional Provider Enhancement
 
 Only after an explicit user or caller decision, rerun `enhance_markdown_structure` with non-local `model_mode`.

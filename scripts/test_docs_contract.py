@@ -120,6 +120,7 @@ def main() -> int:
         ],
         "examples/agent-recipes/structure-enhancement.md": [
             "enhance_markdown_structure",
+            "enhance_markdown_structure.py",
             "model_mode",
             "local",
             "overwrite",
@@ -127,6 +128,7 @@ def main() -> int:
             ".structure-enhanced",
             "allow_remote=true",
             "local_structure_repair.decisions",
+            "review_report",
         ],
     }
     for relative, needles in required.items():
