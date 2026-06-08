@@ -153,7 +153,7 @@ def stage2_checks() -> list[Check]:
             "stage2_quality_regression",
             "quality metric test coverage",
             quality_test,
-            ["avg_toc_match_ratio", "ocr_characters", "avg_duration_seconds", "Review or poor"],
+            ["required_full_categories", "image_set_duplicates", "avg_toc_match_ratio", "ocr_characters", "avg_duration_seconds", "Review or poor"],
             "scripts/test_quality_gate.py",
         ),
         contains_all(

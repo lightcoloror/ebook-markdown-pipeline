@@ -22,9 +22,26 @@ def main() -> int:
             raise AssertionError(f"Expected minimal fixture samples: {minimal}")
         if len(full.get("samples") or []) <= len(minimal.get("samples") or []):
             raise AssertionError(f"Expected full profile to include extra OCR/image samples: {full}")
-        paths = [str(item.get("path") or "") for item in full.get("samples") or []]
-        if fixtures.resolve().is_relative_to(PROJECT_DIR) and any(Path(path).is_absolute() for path in paths):
-            raise AssertionError(f"Repository fixture manifests must use repository-relative paths: {paths}")
+        required_full_categories = {
+            "ebook_epub",
+            "ebook_azw3_substitute",
+            "pdf_text_layer",
+            "pdf_two_column",
+            "pdf_presentation_like",
+            "scanned_pdf",
+            "image_infographic",
+            "image_set_duplicates",
+        }
+        full_categories = {str(item.get("category") or "") for item in full.get("samples") or []}
+        missing_categories = required_full_categories.difference(full_categories)
+        if missing_categories:
+            raise AssertionError(
+                f"Full public fixture profile missing required categories {sorted(missing_categories)}: {sorted(full_categories)}"
+            )
+        repository_full = json.loads((PROJECT_DIR / "benchmarks" / "fixtures" / "generated" / "quality-full.json").read_text(encoding="utf-8"))
+        repository_paths = [str(item.get("path") or "") for item in repository_full.get("samples") or []]
+        if any(Path(path).is_absolute() for path in repository_paths):
+            raise AssertionError(f"Repository fixture manifests must use repository-relative paths: {repository_paths}")
 
         run(
             "run_quality_gate.py",
