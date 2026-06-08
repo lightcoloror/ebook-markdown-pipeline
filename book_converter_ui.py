@@ -2822,7 +2822,6 @@ class BookConverterUI:
             return
         for key, variable in {
             "input": self.input_var,
-            "output": self.output_var,
             "output_format": self.output_format_var,
             "pdf_mode": self.pdf_mode_var,
             "pandoc": self.pandoc_var,
@@ -2837,8 +2836,10 @@ class BookConverterUI:
         }.items():
             if key in data and data[key] is not None:
                 variable.set(str(data[key]))
-        if self.output_var.get().strip():
-            self.output_manually_selected = True
+        # Do not restore the last output directory as a default. New batches should
+        # follow the selected source path unless the user explicitly browses here.
+        self.output_var.set("")
+        self.output_manually_selected = False
         for key, variable in {
             "recursive": self.recursive_var,
             "include_hidden": self.include_hidden_var,
@@ -2856,7 +2857,6 @@ class BookConverterUI:
     def save_ui_config(self) -> None:
         data = {
             "input": self.input_var.get(),
-            "output": self.output_var.get(),
             "output_format": self.output_format_var.get(),
             "pdf_mode": self.pdf_mode_var.get(),
             "recursive": self.recursive_var.get(),
