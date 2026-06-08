@@ -59,6 +59,8 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"Health response is missing capability/risk summary: {health}")
     if not health.get("config_sources", {}).get("http") or not health.get("config_sources", {}).get("example_env"):
         raise RuntimeError(f"Health response is missing config sources: {health}")
+    if not health.get("config_sources", {}).get("local_env") or "local_env_exists" not in health or "local_env_loaded_keys" not in health:
+        raise RuntimeError(f"Health response is missing local env status: {health}")
     if health.get("route_defaults", {}).get("images") != "start_image_book_rebuild":
         raise RuntimeError(f"Health response should expose recognition-first route defaults: {health}")
     if not health.get("long_task_guidance", {}).get("prefer_async_tools"):
@@ -77,6 +79,8 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"HTTP contract missing tool schemas: {contract}")
     if contract.get("route_defaults", {}).get("location_index") != "requires intent=locate or query":
         raise RuntimeError(f"HTTP contract missing route defaults: {contract}")
+    if not contract.get("config_sources", {}).get("local_env") or "local_env_exists" not in contract:
+        raise RuntimeError(f"HTTP contract missing local env status: {contract}")
     if not contract.get("pipeline_capabilities", {}).get("capabilities"):
         raise RuntimeError(f"HTTP contract missing pipeline capabilities: {contract}")
     if not contract.get("long_task_guidance", {}).get("poll_tool"):

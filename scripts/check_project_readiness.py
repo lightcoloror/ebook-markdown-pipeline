@@ -277,7 +277,7 @@ def stage4_checks() -> list[Check]:
             "stage4_agent_productization",
             "health and contract context",
             mcp,
-            ["config_sources", "pipeline_capabilities", "risk_status", "long_task_guidance", "online_provider_health"],
+            ["config_sources", "local_env_exists", "local_env_loaded_keys", "pipeline_capabilities", "risk_status", "long_task_guidance", "online_provider_health"],
             "ebook_converter_mcp.py",
         ),
         contains_all(

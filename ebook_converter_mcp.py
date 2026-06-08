@@ -32,6 +32,7 @@ from ebook_markdown_pipeline.document_locator import build_location_index, expor
 from ebook_markdown_pipeline.document_inspector import inspect_document  # noqa: E402
 from ebook_markdown_pipeline.environment_report import compare_environment_lock, export_environment_report  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book, rebuild_image_book_from_order  # noqa: E402
+from ebook_markdown_pipeline.local_env import project_env_status  # noqa: E402
 from ebook_markdown_pipeline.online_providers import (  # noqa: E402
     OnlineProviderError,
     fake_provider_for_type,
@@ -697,6 +698,9 @@ def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
         "operating_context": operating_context,
         "pipeline_capabilities": operating_context["pipeline_capabilities"],
         "risk_status": operating_context["risk_status"],
+        "config_sources": operating_context["config_sources"],
+        "local_env_exists": operating_context["local_env_exists"],
+        "local_env_loaded_keys": operating_context["local_env_loaded_keys"],
         "long_task_guidance": operating_context["long_task_guidance"],
         "route_defaults": operating_context["route_defaults"],
         "tool_count": len(tools),
@@ -718,13 +722,17 @@ def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
 
 def agent_operating_context() -> dict[str, Any]:
     capabilities = safe_pipeline_capabilities()
+    env_status = project_env_status()
     return {
         "config_sources": {
             "http": str(Path(__file__).resolve().parent / "config" / "http.env"),
             "example_env": str(Path(__file__).resolve().parent / "config.example.env"),
+            "local_env": env_status["path"],
             "online_providers_example": str(Path(__file__).resolve().parent / "config" / "online_providers.example.json"),
             "online_models_example": str(Path(__file__).resolve().parent / "config" / "online_models.example.json"),
         },
+        "local_env_exists": env_status["exists"],
+        "local_env_loaded_keys": env_status["loaded_keys"],
         "pipeline_capabilities": capabilities,
         "online_provider_health": provider_registry_health(),
         "risk_status": agent_risk_status(capabilities),

@@ -95,6 +95,8 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
                         "risk_status": agent_risk_status(capabilities),
                         "operating_context": operating_context,
                         "config_sources": operating_context.get("config_sources", {}),
+                        "local_env_exists": operating_context.get("local_env_exists", False),
+                        "local_env_loaded_keys": operating_context.get("local_env_loaded_keys", []),
                         "route_defaults": operating_context.get("route_defaults", {}),
                         "long_task_guidance": operating_context.get("long_task_guidance", {}),
                         "uptime_seconds": round(time.time() - started_at, 3),
@@ -216,6 +218,9 @@ def http_contract_payload(config: HttpConfig | None = None, *, bind_host: str | 
         "operating_context": operating_context,
         "pipeline_capabilities": operating_context["pipeline_capabilities"],
         "risk_status": operating_context["risk_status"],
+        "config_sources": operating_context["config_sources"],
+        "local_env_exists": operating_context["local_env_exists"],
+        "local_env_loaded_keys": operating_context["local_env_loaded_keys"],
         "long_task_guidance": operating_context["long_task_guidance"],
         "route_defaults": operating_context["route_defaults"],
         "http_config": {

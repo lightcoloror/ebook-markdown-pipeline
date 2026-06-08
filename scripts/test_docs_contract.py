@@ -75,6 +75,8 @@ def main() -> int:
             "EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG",
             "online_provider_health",
             "without making remote API calls",
+            "local_env_loaded_keys",
+            "must not contain secret values",
         ],
         "examples/agent-batch/README.md": [
             "--baseline-results",

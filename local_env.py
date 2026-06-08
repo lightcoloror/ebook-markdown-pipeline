@@ -6,6 +6,7 @@ from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent
 DEFAULT_ENV_PATH = PROJECT_DIR / ".env"
+LOADED_PROJECT_ENV_KEYS: set[str] = set()
 
 
 def load_project_env(path: str | Path | None = None, *, override: bool = False) -> dict[str, str]:
@@ -27,7 +28,17 @@ def load_project_env(path: str | Path | None = None, *, override: bool = False) 
             continue
         os.environ[key] = value
         loaded[key] = value
+        LOADED_PROJECT_ENV_KEYS.add(key)
     return loaded
+
+
+def project_env_status(path: str | Path | None = None) -> dict[str, object]:
+    env_path = Path(path) if path else DEFAULT_ENV_PATH
+    return {
+        "path": str(env_path),
+        "exists": env_path.exists(),
+        "loaded_keys": sorted(LOADED_PROJECT_ENV_KEYS),
+    }
 
 
 def parse_env_line(line: str) -> tuple[str, str] | None:

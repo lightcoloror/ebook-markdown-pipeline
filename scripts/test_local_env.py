@@ -9,7 +9,7 @@ from pathlib import Path
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR.parent))
 
-from ebook_markdown_pipeline.local_env import load_project_env, parse_env_line  # noqa: E402
+from ebook_markdown_pipeline.local_env import load_project_env, parse_env_line, project_env_status  # noqa: E402
 
 
 def main() -> int:
@@ -68,6 +68,14 @@ def assert_load_project_env() -> None:
             override_loaded = load_project_env(env_path, override=True)
             if os.environ.get("EXISTING_VALUE") != "from-file" or override_loaded.get("EXISTING_VALUE") != "from-file":
                 raise AssertionError(f"Override mode should replace values: {override_loaded}")
+            status = project_env_status(env_path)
+            if status.get("path") != str(env_path) or status.get("exists") is not True:
+                raise AssertionError(f"Expected local env path and existence status: {status}")
+            loaded_keys = set(status.get("loaded_keys") or [])
+            if not {"EBOOK_CONVERTER_TOOL_CACHE", "EBOOK_CONVERTER_UMI_DIR", "EXISTING_VALUE"}.issubset(loaded_keys):
+                raise AssertionError(f"Expected loaded key names in status: {status}")
+            if "C:\\example-tools" in str(status) or "from-file" in str(status):
+                raise AssertionError(f"Local env status must not expose values: {status}")
         finally:
             for key, value in old_values.items():
                 if value is None:

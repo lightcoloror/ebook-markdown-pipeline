@@ -284,8 +284,11 @@ HTTP `/health` returns the transport contract plus lightweight operating status:
   "risk_status": "missing_dependencies",
   "config_sources": {
     "http": "C:\\path\\to\\ebook-markdown-pipeline\\config\\http.env",
-    "example_env": "C:\\path\\to\\ebook-markdown-pipeline\\config.example.env"
+    "example_env": "C:\\path\\to\\ebook-markdown-pipeline\\config.example.env",
+    "local_env": "C:\\path\\to\\ebook-markdown-pipeline\\.env"
   },
+  "local_env_exists": false,
+  "local_env_loaded_keys": [],
   "route_defaults": {
     "process_material": "recognize_or_convert",
     "images": "start_image_book_rebuild",
@@ -325,7 +328,7 @@ Use `risk_status` as a quick preflight:
 
 Agents should use `capabilities` before choosing heavy PDF/OCR routes. For example, if `pdf_structure_recovery` is missing, prefer `pdf_fast_text`, `local_ocr`, or a user-visible health fix instead of blindly launching MinerU.
 
-`get_agent_contract` and HTTP `/contract` also expose the same operating context fields: `pipeline_capabilities`, `risk_status`, `config_sources`, `route_defaults`, and `long_task_guidance`. Agents should use these fields instead of guessing ports, assuming every optional backend is installed, or launching heavy whole-document OCR/VLM jobs synchronously.
+`get_agent_contract` and HTTP `/contract` also expose the same operating context fields: `pipeline_capabilities`, `risk_status`, `config_sources`, `local_env_exists`, `local_env_loaded_keys`, `route_defaults`, and `long_task_guidance`. Agents should use these fields instead of guessing ports, assuming every optional backend is installed, or launching heavy whole-document OCR/VLM jobs synchronously. `local_env_loaded_keys` lists environment variable names only and must not contain secret values.
 
 For persistent handoff, use `export_environment_report`. It writes `environment-report.md`, `environment-report.json`, `environment-lock.json`, and `requirements.lock.txt`, returns their paths, and exposes them as readable artifacts. Use this before large unattended batches or when another agent needs to understand or compare the machine state without shell access.
 

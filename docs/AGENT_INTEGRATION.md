@@ -144,7 +144,7 @@ Container-side health check:
 curl -H "Authorization: Bearer replace-with-a-local-token" "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/health"
 ```
 
-The health response includes `schema_version`, `tool_count`, `tools`, `supports_async_jobs`, `supports_artifacts`, `http_config`, `pipeline_capabilities`, and `risk_status`. Agents should use it for capability discovery before making tool calls and should read `http_config.config_path` instead of guessing ports.
+The health response includes `schema_version`, `tool_count`, `tools`, `supports_async_jobs`, `supports_artifacts`, `http_config`, `config_sources`, `local_env_exists`, `local_env_loaded_keys`, `pipeline_capabilities`, and `risk_status`. Agents should use it for capability discovery before making tool calls and should read `http_config.config_path` and `config_sources.local_env` instead of guessing ports or local override files. `local_env_loaded_keys` contains key names only; it must not expose environment variable values.
 
 For HTTP-native agents, `/contract` is the one-shot discovery endpoint. It returns `schema_version=ebook-http-contract-v1`, preferred entrypoints, specialist tools, full tool schemas, artifact/error contract versions, HTTP config, and docs pointers:
 
