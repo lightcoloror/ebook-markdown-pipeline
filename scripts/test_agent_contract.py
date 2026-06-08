@@ -54,7 +54,7 @@ HEALTH_FIELDS = {
     "degraded_capabilities",
     "missing_capabilities",
 }
-INSPECTION_FIELDS = {"status", "input", "kind", "recommendation", "structure_strategy", "next_actions", "warnings"}
+INSPECTION_FIELDS = {"status", "input", "kind", "recommendation", "structure_strategy", "online_enhancement", "next_actions", "warnings"}
 JOB_FIELDS = {
     "job_id",
     "kind",
@@ -97,7 +97,7 @@ def main() -> int:
             },
         )
         assert_fields("process_material", routed, PROCESS_MATERIAL_FIELDS)
-        if routed["status"] != "routed" or routed["route"] != "start_location_index":
+        if routed["status"] != "routed" or routed["route"] != "start_image_book_rebuild":
             raise AssertionError(f"Unexpected process_material route: {routed}")
 
         job = poll_job(str(routed["job_id"]))
@@ -136,9 +136,9 @@ def main() -> int:
 
         assert_quality_summary_next_actions(tmpdir)
 
-        readable = next(item for item in job["artifacts"] if item["type"] == "location_index_jsonl")
+        readable = next(item for item in job["artifacts"] if item["type"] == "markdown")
         artifact = call_tool("read_artifact", {"path": readable["path"], "artifact_type": readable["type"]})
-        if artifact.get("artifact_type") != "location_index_jsonl" or "text" not in artifact:
+        if artifact.get("artifact_type") != "markdown" or "text" not in artifact:
             raise AssertionError(f"read_artifact contract failed: {artifact}")
         assert_quality_comparison_artifact_read(tmpdir)
 
@@ -301,6 +301,11 @@ def assert_pdf_outline_inspection(tmpdir: Path) -> None:
         raise AssertionError(f"Unexpected first outline item: {inspection}")
     if (inspection.get("structure_strategy") or {}).get("mode") != "bookmark_guided_structure_recovery":
         raise AssertionError(f"Expected bookmark-guided structure strategy: {inspection}")
+    online = inspection.get("online_enhancement") or {}
+    if "text_structure_llm" not in (online.get("recommended_routes") or []):
+        raise AssertionError(f"PDF bookmarks should expose optional text-structure online route: {inspection}")
+    if online.get("remote_call_enabled") is not False:
+        raise AssertionError(f"Inspection must not trigger remote calls: {inspection}")
 
 
 def assert_presentation_pdf_inspection(tmpdir: Path) -> None:
@@ -324,6 +329,9 @@ def assert_presentation_pdf_inspection(tmpdir: Path) -> None:
     actions = inspection.get("next_actions") or []
     if not any(action.get("tool") == "start_location_index" for action in actions):
         raise AssertionError(f"Expected page-level location action for slide PDF: {inspection}")
+    online = inspection.get("online_enhancement") or {}
+    if online.get("recommended") is not True or "vlm_layout" not in (online.get("recommended_routes") or []):
+        raise AssertionError(f"Presentation PDFs should recommend optional VLM layout enhancement: {inspection}")
 
 
 def assert_conversion_report_pdf_outline(tmpdir: Path) -> None:
@@ -560,7 +568,7 @@ def assert_http_contract(input_path: Path, output_path: Path) -> None:
                 },
             },
         )
-        if ok.get("ok") is not True or not isinstance(ok.get("result"), dict) or ok.get("route") != "start_location_index":
+        if ok.get("ok") is not True or not isinstance(ok.get("result"), dict) or ok.get("route") != "start_image_book_rebuild":
             raise AssertionError(f"HTTP ok envelope failed: {ok}")
         http_job = http_poll_job(base, str(ok.get("job_id")))
         if http_job.get("status") != "done":

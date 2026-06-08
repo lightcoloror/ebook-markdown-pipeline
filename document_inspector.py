@@ -30,12 +30,14 @@ def main() -> int:
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument("--include-hidden", action="store_true")
     parser.add_argument("--sample-pages", type=int, default=8)
+    parser.add_argument("--model-mode", choices=["local", "online", "hybrid", "auto"], default="local")
     args = parser.parse_args()
     result = inspect_document(
         args.input,
         recursive=args.recursive,
         include_hidden=args.include_hidden,
         sample_pages=args.sample_pages,
+        model_mode=args.model_mode,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
@@ -47,11 +49,12 @@ def inspect_document(
     recursive: bool = True,
     include_hidden: bool = False,
     sample_pages: int = 8,
+    model_mode: str = "local",
 ) -> dict[str, Any]:
     if input_path.is_dir():
         if is_web_content_archive(input_path):
-            return inspect_web_content_archive(input_path)
-        return inspect_directory(input_path, recursive=recursive, include_hidden=include_hidden, sample_pages=sample_pages)
+            return inspect_web_content_archive(input_path, model_mode=model_mode)
+        return inspect_directory(input_path, recursive=recursive, include_hidden=include_hidden, sample_pages=sample_pages, model_mode=model_mode)
     if not input_path.exists():
         return {
             "status": "missing",
@@ -60,7 +63,7 @@ def inspect_document(
             "recommendation": "check_path",
             "warnings": [f"Input does not exist: {input_path}"],
         }
-    return inspect_file(input_path, sample_pages=sample_pages)
+    return inspect_file(input_path, sample_pages=sample_pages, model_mode=model_mode)
 
 
 def is_web_content_archive(input_path: Path) -> bool:
@@ -75,7 +78,7 @@ def is_web_content_archive(input_path: Path) -> bool:
     return isinstance(inputs, dict) and any(key in inputs for key in {"source_html", "source_markdown", "screenshot"})
 
 
-def inspect_web_content_archive(input_path: Path) -> dict[str, Any]:
+def inspect_web_content_archive(input_path: Path, *, model_mode: str = "local") -> dict[str, Any]:
     manifest_path = input_path / "rebuild_input" / "manifest.json"
     payload = {}
     try:
@@ -106,6 +109,7 @@ def inspect_web_content_archive(input_path: Path) -> dict[str, Any]:
             "confidence": "medium" if screenshot else "low",
             "reason": "Use web-content-fetcher as the source-of-truth archive and add visual OCR/layout/table/image-position evidence under visual_check/.",
         },
+        "online_enhancement": online_enhancement_for_web_archive(has_screenshot=bool(screenshot), model_mode=model_mode),
         "next_actions": [
             {"tool": "process_web_archive", "why": "prepare visual_check artifacts for archive rebuild"},
             {"tool": "read_artifact", "artifact_type": "visual_check_json", "why": "inspect warnings and generated visual-check artifact paths"},
@@ -120,10 +124,11 @@ def inspect_directory(
     recursive: bool,
     include_hidden: bool,
     sample_pages: int,
+    model_mode: str,
 ) -> dict[str, Any]:
     image_sources = collect_image_sources(input_path, recursive=recursive, include_hidden=include_hidden)
     document_sources = collect_document_sources(input_path, recursive=recursive, include_hidden=include_hidden)
-    sample_files = [inspect_file(path, sample_pages=sample_pages) for path in (document_sources + image_sources)[:20]]
+    sample_files = [inspect_file(path, sample_pages=sample_pages, model_mode=model_mode) for path in (document_sources + image_sources)[:20]]
     warnings = []
     if not document_sources and not image_sources:
         warnings.append("No supported document/image files found.")
@@ -146,20 +151,26 @@ def inspect_directory(
         },
         "recommendation": recommendation,
         "structure_strategy": structure_strategy,
+        "online_enhancement": online_enhancement_for_directory(
+            sample_files,
+            document_count=len(document_sources),
+            image_count=len(image_sources),
+            model_mode=model_mode,
+        ),
         "next_actions": directory_next_actions(recommendation, structure_strategy),
         "warnings": warnings,
         "sample_files": sample_files,
     }
 
 
-def inspect_file(input_path: Path, *, sample_pages: int) -> dict[str, Any]:
+def inspect_file(input_path: Path, *, sample_pages: int, model_mode: str = "local") -> dict[str, Any]:
     suffix = input_path.suffix.lower()
     if suffix in PDF_FORMATS:
-        return inspect_pdf(input_path, sample_pages=sample_pages)
+        return inspect_pdf(input_path, sample_pages=sample_pages, model_mode=model_mode)
     if suffix in IMAGE_EXTENSIONS:
-        return inspect_image(input_path)
+        return inspect_image(input_path, model_mode=model_mode)
     if suffix in SUPPORTED_FORMATS:
-        return inspect_supported_document(input_path)
+        return inspect_supported_document(input_path, model_mode=model_mode)
     return {
         "status": "unsupported",
         "input": str(input_path),
@@ -170,7 +181,7 @@ def inspect_file(input_path: Path, *, sample_pages: int) -> dict[str, Any]:
     }
 
 
-def inspect_pdf(input_path: Path, *, sample_pages: int) -> dict[str, Any]:
+def inspect_pdf(input_path: Path, *, sample_pages: int, model_mode: str = "local") -> dict[str, Any]:
     options = normalize_command_options(default_options())
     preflight = inspect_pdf_preflight(input_path, options, sample_pages=sample_pages)
     outline = extract_pdf_outline(input_path)
@@ -194,6 +205,7 @@ def inspect_pdf(input_path: Path, *, sample_pages: int) -> dict[str, Any]:
         "outline": outline,
         "recommendation": recommend_pdf_tool(preflight),
         "structure_strategy": structure_strategy,
+        "online_enhancement": online_enhancement_for_pdf(preflight, model_mode=model_mode),
         "next_actions": pdf_next_actions(preflight, structure_strategy),
         "warnings": warnings,
     }
@@ -224,7 +236,7 @@ def extract_pdf_outline(input_path: Path, limit: int = 80) -> dict[str, Any]:
     }
 
 
-def inspect_image(input_path: Path) -> dict[str, Any]:
+def inspect_image(input_path: Path, *, model_mode: str = "local") -> dict[str, Any]:
     width, height, image_hash = image_metadata(input_path)
     warnings = []
     if width == 0 or height == 0:
@@ -248,6 +260,7 @@ def inspect_image(input_path: Path) -> dict[str, Any]:
             "confidence": "medium" if width and height and min(width, height) >= 600 else "low",
             "reason": "Default recognition should produce Markdown/review artifacts; use location indexing only when a query asks where information appears.",
         },
+        "online_enhancement": online_enhancement_for_image(width=width, height=height, model_mode=model_mode),
         "next_actions": [
             {"tool": "start_image_book_rebuild", "why": "recognize the image into Markdown and review artifacts"},
             {"tool": "start_location_index", "why": "only use when the task is page/image-level keyword location"},
@@ -256,7 +269,7 @@ def inspect_image(input_path: Path) -> dict[str, Any]:
     }
 
 
-def inspect_supported_document(input_path: Path) -> dict[str, Any]:
+def inspect_supported_document(input_path: Path, *, model_mode: str = "local") -> dict[str, Any]:
     suffix = input_path.suffix.lower()
     source_kind = detect_source_kind(input_path)
     if suffix in PANDOC_DIRECT_FORMATS:
@@ -278,6 +291,7 @@ def inspect_supported_document(input_path: Path) -> dict[str, Any]:
         "size_bytes": input_path.stat().st_size,
         "recommendation": recommendation,
         "structure_strategy": supported_document_structure_strategy(suffix),
+        "online_enhancement": online_enhancement_for_document(suffix, model_mode=model_mode),
         "next_actions": supported_document_next_actions(suffix, recommendation),
         "warnings": warnings,
     }
@@ -424,6 +438,153 @@ def supported_document_next_actions(suffix: str, recommendation: str) -> list[di
     else:
         actions.append({"tool": "start_conversion", "why": "run normal conversion and inspect review checklist"})
     return actions
+
+
+def online_enhancement_base(
+    *,
+    model_mode: str,
+    recommended: bool,
+    routes: list[str],
+    reason: str,
+    estimated_pages: int | None = None,
+    estimated_items: int | None = None,
+    cost_risk: str = "low",
+    privacy_risk: str = "medium",
+) -> dict[str, Any]:
+    model_mode = model_mode if model_mode in {"local", "online", "hybrid", "auto"} else "local"
+    return {
+        "model_mode": model_mode,
+        "recommended": recommended,
+        "enabled_by_model_mode": bool(recommended and model_mode in {"online", "hybrid", "auto"}),
+        "remote_call_enabled": False,
+        "recommended_routes": routes if recommended else [],
+        "estimated_pages": estimated_pages,
+        "estimated_items": estimated_items,
+        "estimated_cost_risk": cost_risk if recommended else "none",
+        "privacy_risk": privacy_risk if recommended else "none",
+        "reason": reason,
+        "next_step": "Use model_mode=hybrid or online in a future provider-backed pipeline; current inspection never calls remote APIs.",
+    }
+
+
+def online_cost_risk_for_pages(pages: int) -> str:
+    if pages >= 100:
+        return "high"
+    if pages >= 20:
+        return "medium"
+    return "low"
+
+
+def online_enhancement_for_pdf(preflight, *, model_mode: str) -> dict[str, Any]:
+    pages = int(getattr(preflight, "page_count", 0) or 0)
+    routes: list[str] = []
+    reasons: list[str] = []
+    if getattr(preflight, "presentation_like", False):
+        routes.extend(["vlm_layout", "text_structure_llm"])
+        reasons.append("presentation-like PDF may need slide/page visual layout recovery")
+    if getattr(preflight, "scanned_likely", False):
+        routes.extend(["ocr_layout", "vlm_layout"])
+        reasons.append("weak text layer or scanned pages may need OCR/VLM enhancement")
+    if getattr(preflight, "complex_layout_likely", False):
+        routes.extend(["vlm_layout", "table_repair", "text_structure_llm"])
+        reasons.append("complex layout/tables/multicolumn signals may need layout-aware enhancement")
+    if getattr(preflight, "bookmark_count", 0):
+        routes.append("text_structure_llm")
+        reasons.append("PDF bookmarks can guide low-confidence heading repair after local conversion")
+    routes = unique_strings(routes)
+    recommended = bool(routes)
+    return online_enhancement_base(
+        model_mode=model_mode,
+        recommended=recommended,
+        routes=routes,
+        reason="; ".join(reasons) if reasons else "text-layer PDF usually stays local-first",
+        estimated_pages=pages,
+        cost_risk=online_cost_risk_for_pages(pages),
+        privacy_risk="high" if recommended else "none",
+    )
+
+
+def online_enhancement_for_image(*, width: int, height: int, model_mode: str) -> dict[str, Any]:
+    pixels = max(0, width) * max(0, height)
+    wide = bool(width and height and max(width, height) / max(1, min(width, height)) >= 1.8)
+    layout_heavy = pixels >= 1_800_000 or wide
+    routes = ["vlm_layout", "ocr_layout"] if layout_heavy else []
+    recommended = bool(routes)
+    reason = "large or wide image may be an infographic/layout-heavy screenshot" if layout_heavy else "simple image should use local OCR/image-book recognition first"
+    return online_enhancement_base(
+        model_mode=model_mode,
+        recommended=recommended,
+        routes=routes,
+        reason=reason,
+        estimated_items=1,
+        cost_risk="low" if pixels < 4_000_000 else "medium",
+        privacy_risk="medium" if recommended else "none",
+    )
+
+
+def online_enhancement_for_document(suffix: str, *, model_mode: str) -> dict[str, Any]:
+    structure_risky = suffix in DOCLING_FORMATS
+    recommended = bool(structure_risky)
+    return online_enhancement_base(
+        model_mode=model_mode,
+        recommended=recommended,
+        routes=["text_structure_llm"] if structure_risky else [],
+        reason="Office-like documents may use online text-structure repair only after local conversion reports low confidence."
+        if structure_risky
+        else "ebook/text documents should stay local-first unless quality review flags weak headings",
+        estimated_items=1,
+        cost_risk="low",
+        privacy_risk="medium" if recommended else "none",
+    )
+
+
+def online_enhancement_for_web_archive(*, has_screenshot: bool, model_mode: str) -> dict[str, Any]:
+    recommended = bool(has_screenshot)
+    return online_enhancement_base(
+        model_mode=model_mode,
+        recommended=recommended,
+        routes=["vlm_layout", "table_repair"] if has_screenshot else [],
+        reason="web archive screenshots can use VLM/table repair as a visual-check enhancement" if has_screenshot else "no screenshot available for visual enhancement",
+        estimated_items=1 if has_screenshot else 0,
+        cost_risk="low",
+        privacy_risk="medium" if recommended else "none",
+    )
+
+
+def online_enhancement_for_directory(sample_files: list[dict[str, Any]], *, document_count: int, image_count: int, model_mode: str) -> dict[str, Any]:
+    recommended_samples = [item.get("online_enhancement") or {} for item in sample_files if (item.get("online_enhancement") or {}).get("recommended")]
+    routes = unique_strings(route for item in recommended_samples for route in (item.get("recommended_routes") or []))
+    estimated_pages = sum(int((item.get("online_enhancement") or {}).get("estimated_pages") or 0) for item in sample_files)
+    estimated_items = document_count + image_count
+    recommended = bool(routes)
+    if not routes and image_count and not document_count:
+        reason = "image-only folders should use local image-book recognition first; online enhancement is only for layout-heavy samples"
+    elif routes:
+        reason = "one or more sampled files look suitable for optional online enhancement"
+    else:
+        reason = "sampled files do not need online enhancement before local conversion"
+    return online_enhancement_base(
+        model_mode=model_mode,
+        recommended=recommended,
+        routes=routes,
+        reason=reason,
+        estimated_pages=estimated_pages or None,
+        estimated_items=estimated_items,
+        cost_risk=online_cost_risk_for_pages(estimated_pages) if estimated_pages else ("medium" if estimated_items >= 50 else "low"),
+        privacy_risk="high" if recommended and document_count else ("medium" if recommended else "none"),
+    )
+
+
+def unique_strings(values) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
 
 
 def collect_document_sources(input_path: Path, *, recursive: bool, include_hidden: bool) -> list[Path]:

@@ -39,10 +39,13 @@ Optional:
 - `output_format`: `markdown`, `html`, or `text`.
 - `image_book_threshold`: retained for compatibility; auto routing now recognizes image folders by default.
 - `ocr`: `auto`, `always`, or `never`.
+- `model_mode`: `local`, `online`, `hybrid`, or `auto`. Current implementation uses this for recommendation/risk reporting only; default conversion remains local-first.
 
-Planned online-model option:
+Online-model option:
 
-- `model_mode`: planned values `local`, `online`, `hybrid`, or `auto`. This is not yet part of the stable implementation. When added, it should route through provider adapters for OCR layout, VLM layout, text structure repair, and embeddings instead of exposing vendor-specific API calls to agents.
+- `inspect_document` returns `online_enhancement` with `recommended`, `enabled_by_model_mode`, `remote_call_enabled`, `recommended_routes`, `estimated_pages`, `estimated_items`, `estimated_cost_risk`, `privacy_risk`, `reason`, and `next_step`.
+- `remote_call_enabled` is currently always `false` in inspection. The field exists so future provider-backed pipelines can become explicit and auditable.
+- Agents should not call vendor APIs directly even when `online_enhancement.recommended=true`; wait for this project to expose the provider-backed action.
 
 Routing rules:
 
@@ -336,6 +339,17 @@ Use `compare_environment_lock` with a prior `environment-lock.json` to detect dr
     "mode": "layout_aware_structure_recovery",
     "confidence": "medium",
     "preferred_tools": ["mineru", "docling", "marker"]
+  },
+  "online_enhancement": {
+    "model_mode": "hybrid",
+    "recommended": true,
+    "enabled_by_model_mode": true,
+    "remote_call_enabled": false,
+    "recommended_routes": ["vlm_layout", "table_repair", "text_structure_llm"],
+    "estimated_pages": 32,
+    "estimated_cost_risk": "medium",
+    "privacy_risk": "high",
+    "reason": "complex layout/tables/multicolumn signals may need layout-aware enhancement"
   },
   "next_actions": [
     {

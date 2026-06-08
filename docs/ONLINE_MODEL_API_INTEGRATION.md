@@ -103,14 +103,14 @@
 
 - Agent 仍然优先调用 `process_material`。
 - Agent 不直接调用 OpenAI、Qwen、Claude、Gemini、Paddle 官方 API 或其他供应商 API。
-- `process_material` 后续增加 `model_mode=local|online|hybrid|auto`。当前还不会自动调用在线 API。
+- `process_material` 和 `inspect_document` 已接受 `model_mode=local|online|hybrid|auto`。当前只影响 `online_enhancement` 推荐/风险字段，不会自动调用在线 API。
 - `health_check` 已暴露 online provider 配置健康和缺失密钥状态；真实连通性、预算和隐私确认仍待接入。
-- `inspect_document` 后续返回 `online_api_recommended`、`estimated_pages`、`estimated_cost_risk` 和 `privacy_risk`。
+- `inspect_document` 已返回 `online_enhancement`，包括 `recommended`、`enabled_by_model_mode`、`remote_call_enabled=false`、`recommended_routes`、`estimated_pages`、`estimated_items`、`estimated_cost_risk` 和 `privacy_risk`。
 
 ## 开发顺序
 
 1. 已完成：provider 抽象、fake provider 测试、OpenAI-compatible adapter、配置健康检查。
-2. 下一步：扩展 `inspect_document`，返回 `online_api_recommended`、`estimated_pages`、`estimated_cost_risk` 和 `privacy_risk`。
+2. 已完成：`inspect_document` / `process_material` 的 `model_mode` 推荐层和 `online_enhancement` 风险字段。
 3. 下一步：在 `structure_repair` 低置信度片段中可选调用 OpenAI-compatible `TextStructureProvider`。
 4. 下一步：在信息图、PPT PDF、截图书疑难页中可选调用 OpenAI-compatible `VlmLayoutProvider`。
 5. 下一步：接入 `OcrLayoutProvider`，用于云 OCR/layout 替代本地 OCR。

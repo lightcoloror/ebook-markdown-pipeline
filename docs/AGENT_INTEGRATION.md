@@ -23,6 +23,8 @@ MCP-native agents can call `get_agent_contract` first to retrieve `schema_versio
 
 The contract and HTTP `/health` also expose operating context: config sources, pipeline capabilities, `risk_status`, recognition-first route defaults, and long-task guidance. Agents should inspect those fields before choosing heavy PDF/OCR/VLM routes.
 
+`inspect_document` and `process_material` accept `model_mode=local|online|hybrid|auto`. In the current implementation this only adds `online_enhancement` recommendations and risk fields; it does not call remote providers. Agents should treat `online_enhancement.remote_call_enabled=false` as a hard stop and must not call vendor APIs directly.
+
 ## Recommended Integration
 
 Use MCP for OpenClaw, Hermes Agent, Codex, Claude Code, or other agents that support tool schemas.

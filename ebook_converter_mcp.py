@@ -292,6 +292,7 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "recursive": {"type": "boolean", "default": True},
                     "include_hidden": {"type": "boolean", "default": False},
                     "sample_pages": {"type": "integer", "default": 8},
+                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto"], "default": "local"},
                 },
                 "required": ["input"],
             },
@@ -310,6 +311,7 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "include_hidden": {"type": "boolean", "default": False},
                     "output_format": {"type": "string", "enum": ["markdown", "html", "text"], "default": "markdown"},
                     "pdf_pipeline_mode": {"type": "string", "enum": ["auto", "marker", "mineru", "pymupdf4llm", "umi", "docling"], "default": "auto"},
+                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto"], "default": "local"},
                     "image_book_threshold": {"type": "integer", "default": 8},
                     "sample_pages": {"type": "integer", "default": 8},
                     "ocr": {"type": "string", "enum": ["auto", "always", "never"], "default": "auto"},
@@ -878,6 +880,7 @@ def inspect_document_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         recursive=bool(arguments.get("recursive", True)),
         include_hidden=bool(arguments.get("include_hidden", False)),
         sample_pages=int(arguments.get("sample_pages") or 8),
+        model_mode=str(arguments.get("model_mode") or "local"),
     )
 
 
@@ -894,6 +897,7 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
         recursive=recursive,
         include_hidden=include_hidden,
         sample_pages=int(arguments.get("sample_pages") or 8),
+        model_mode=str(arguments.get("model_mode") or "local"),
     )
 
     route = choose_material_route(inspection, intent=intent, query=query, image_book_threshold=image_book_threshold)
@@ -901,6 +905,7 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
     delegated_arguments.pop("intent", None)
     delegated_arguments.pop("query", None)
     delegated_arguments.pop("image_book_threshold", None)
+    delegated_arguments.pop("model_mode", None)
 
     if route == "start_location_index":
         delegated_arguments["ocr"] = str(arguments.get("ocr") or "auto")
