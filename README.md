@@ -10,6 +10,29 @@
 - Docling 文档转换默认在独立子进程中运行，超过 45 秒会中止；DOCX/HTML/Markdown/CSV 会自动降级到 Pandoc 或轻量文本输出，并在 report 中记录 `docling(fallback)`
 - `PDF` 自动模式下短文档用 `Marker`，长文档自动使用 `MinerU pipeline` 做结构化解析；`Umi-OCR` 仅作为手动兜底模式
 
+## 快速使用
+
+适合只想把 PDF、电子书、Office 文档或一组截图转成 Markdown 的用户：
+
+1. 安装 Python 3.10+，并准备常用依赖：`pandoc` 用于 EPUB/文本类转换，`calibre` 用于 AZW/AZW3/MOBI 转换。
+2. 下载或克隆本仓库后，双击 [start_ui.cmd](start_ui.cmd)，或在仓库目录运行：
+
+```powershell
+python book_converter_ui.py
+```
+
+3. 把文件或文件夹拖进窗口，也可以点击 `文件 / Files` 或 `文件夹 / Folder` 选择输入。
+4. 输出文件夹默认跟随源文件所在目录；如果要集中保存，可以点 `浏览 / Browse` 手动选择。
+5. 点击 `扫描 / Scan` 查看每个文件推荐使用的管道，再点击 `开始 / Start` 批量转换。
+6. 转换完成后，Markdown 会输出到目标目录；质量报告、复查清单和日志会放在输出目录下的 `.reports` 文件夹。
+
+常见建议：
+
+- 普通电子书优先用默认设置即可。
+- 长 PDF 或扫描 PDF 可能比较慢，建议先用少量文件测试。
+- 如果输出标题层级不理想，优先查看 `.reports/summary.md` 和 `.reports/review-checklist.md`，再按推荐管道重跑。
+- 只想知道关键词在哪一页或哪张图时，不要点 `开始 / Start`，改用高级功能里的 `定位索引 / Location Index`。
+
 脚本文件：
 
 - [batch_convert_books.py](D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py)
