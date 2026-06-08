@@ -45,7 +45,7 @@ def main() -> int:
             },
         )
         assert_fields("process_material", routed, PROCESS_MATERIAL_FIELDS)
-        if routed["status"] != "routed" or routed["route"] != "start_location_index":
+        if routed["status"] != "routed" or routed["route"] != "start_image_book_rebuild":
             raise AssertionError(f"Unexpected process_material route: {routed}")
 
         job = poll_job(str(routed["job_id"]))
@@ -67,11 +67,28 @@ def main() -> int:
         assert_fields("inspect_document", inspection, INSPECTION_FIELDS)
         if not isinstance(inspection.get("next_actions"), list) or "mode" not in inspection.get("structure_strategy", {}):
             raise AssertionError(f"inspect_document must expose structure strategy and next actions: {inspection}")
+        if inspection.get("structure_strategy", {}).get("mode") != "image_book_recognition":
+            raise AssertionError(f"Image folders should inspect as recognition-first: {inspection}")
+        if (inspection.get("next_actions") or [{}])[0].get("tool") != "start_image_book_rebuild":
+            raise AssertionError(f"Image folder next action should prefer recognition: {inspection}")
 
-        readable = next(item for item in job["artifacts"] if item["type"] == "location_index_jsonl")
+        readable = next(item for item in job["artifacts"] if item["type"] == "markdown")
         artifact = call_tool("read_artifact", {"path": readable["path"], "artifact_type": readable["type"]})
-        if artifact.get("artifact_type") != "location_index_jsonl" or "text" not in artifact:
+        if artifact.get("artifact_type") != "markdown" or "text" not in artifact:
             raise AssertionError(f"read_artifact contract failed: {artifact}")
+
+        routed_query = call_tool(
+            "process_material",
+            {
+                "input": str(image_dir),
+                "output": str(tmpdir / "query-out"),
+                "recursive": False,
+                "ocr": "never",
+                "query": "anything",
+            },
+        )
+        if routed_query["route"] != "start_location_index" or not routed_query.get("next_actions"):
+            raise AssertionError(f"Query process_material route should still use location index: {routed_query}")
 
         assert_quality_summary_next_actions(tmpdir)
         assert_quality_comparison_artifact_read(tmpdir)

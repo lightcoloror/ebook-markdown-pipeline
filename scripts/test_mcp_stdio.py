@@ -138,22 +138,22 @@ def main() -> int:
             if inspected_image_dir["kind"] != "directory" or inspected_image_dir["counts"]["images"] != 1:
                 raise RuntimeError(f"Image directory inspection failed: {inspected_image_dir}")
 
-            routed_location = call_tool(
+            routed_image_book = call_tool(
                 proc,
                 34,
                 "process_material",
                 {
                     "input": str(image_dir),
-                    "output": str(tmpdir / "routed-location"),
+                    "output": str(tmpdir / "routed-image-book"),
                     "recursive": False,
                     "ocr": "never",
                 },
             )
-            if routed_location["route"] != "start_location_index" or not routed_location.get("job_id"):
-                raise RuntimeError(f"process_material did not route small image folder to location index: {routed_location}")
-            routed_location_final = poll_job(proc, routed_location["job_id"])
-            if routed_location_final["status"] != "done":
-                raise RuntimeError(f"Routed location job failed: {routed_location_final}")
+            if routed_image_book["route"] != "start_image_book_rebuild" or not routed_image_book.get("job_id"):
+                raise RuntimeError(f"process_material should route image folders to recognition by default: {routed_image_book}")
+            routed_image_book_final = poll_job(proc, routed_image_book["job_id"])
+            if routed_image_book_final["status"] != "done":
+                raise RuntimeError(f"Routed image-book job failed: {routed_image_book_final}")
 
             routed_query = call_tool(
                 proc,

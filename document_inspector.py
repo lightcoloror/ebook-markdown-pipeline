@@ -242,15 +242,15 @@ def inspect_image(input_path: Path) -> dict[str, Any]:
             "height": height,
             "hash": image_hash,
         },
-        "recommendation": "build_location_index_or_rebuild_image_book",
+        "recommendation": "recognize_image_as_markdown",
         "structure_strategy": {
-            "mode": "single_image_location",
+            "mode": "single_image_recognition",
             "confidence": "medium" if width and height and min(width, height) >= 600 else "low",
-            "reason": "Single images can be indexed or grouped with neighboring screenshots, but one image alone cannot infer book structure.",
+            "reason": "Default recognition should produce Markdown/review artifacts; use location indexing only when a query asks where information appears.",
         },
         "next_actions": [
-            {"tool": "start_location_index", "why": "find whether this image contains a query"},
-            {"tool": "start_image_book_rebuild", "why": "use the parent folder when this image is part of a screenshot sequence"},
+            {"tool": "start_image_book_rebuild", "why": "recognize the image into Markdown and review artifacts"},
+            {"tool": "start_location_index", "why": "only use when the task is page/image-level keyword location"},
         ],
         "warnings": warnings,
     }
@@ -286,9 +286,9 @@ def inspect_supported_document(input_path: Path) -> dict[str, Any]:
 def directory_structure_strategy(*, document_count: int, image_count: int) -> dict[str, Any]:
     if image_count and not document_count:
         return {
-            "mode": "image_book_or_location_index",
+            "mode": "image_book_recognition",
             "confidence": "medium" if image_count >= 8 else "low",
-            "reason": "Image folders need OCR plus ordering/deduplication; small sets are usually better treated as page/image location indexes.",
+            "reason": "Image folders default to OCR plus ordering/deduplication for Markdown recognition; use location indexing only when a query asks where information appears.",
         }
     if document_count and image_count:
         return {
@@ -307,10 +307,10 @@ def directory_structure_strategy(*, document_count: int, image_count: int) -> di
 
 def directory_next_actions(recommendation: str, strategy: dict[str, Any]) -> list[dict[str, str]]:
     mode = str(strategy.get("mode") or "")
-    if mode == "image_book_or_location_index":
+    if mode in {"image_book_or_location_index", "image_book_recognition"}:
         return [
-            {"tool": "start_image_book_rebuild", "why": "recover Markdown order from screenshots when there are enough images"},
-            {"tool": "start_location_index", "why": "use page/image-level search when exact full Markdown is not needed"},
+            {"tool": "start_image_book_rebuild", "why": "recognize screenshots/images into Markdown and review artifacts"},
+            {"tool": "start_location_index", "why": "only use page/image-level search when exact location is requested"},
         ]
     if recommendation == "inspect_then_route":
         return [{"tool": "process_material", "why": "let the router split mixed material by intent and file type"}]

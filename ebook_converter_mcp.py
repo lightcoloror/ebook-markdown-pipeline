@@ -297,7 +297,7 @@ def tool_schemas() -> list[dict[str, Any]]:
         },
         {
             "name": "process_material",
-            "description": "High-level router for agents. Inspects input and starts the right job for conversion, location indexing, image-book rebuilding, or web archive visual checking.",
+            "description": "High-level router for agents. Inspects input and starts the right recognition job. Conversion/image-book rebuilding is the default; location indexing requires intent=locate or query.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -886,6 +886,8 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def choose_material_route(inspection: dict[str, Any], *, intent: str, query: str, image_book_threshold: int) -> str:
+    # Kept for API compatibility; auto mode now recognizes images by default.
+    _ = image_book_threshold
     if inspection.get("status") in {"missing", "unsupported"}:
         return "unsupported"
     if intent == "locate" or query:
@@ -900,16 +902,14 @@ def choose_material_route(inspection: dict[str, Any], *, intent: str, query: str
         counts = inspection.get("counts") or {}
         images = int(counts.get("images") or 0)
         documents = int(counts.get("documents") or 0)
-        if images and not documents and images >= image_book_threshold:
-            return "start_image_book_rebuild"
         if images and not documents:
-            return "start_location_index"
+            return "start_image_book_rebuild"
         if documents:
             return "start_conversion"
     if kind == "web_archive":
         return "process_web_archive"
     if kind == "image":
-        return "start_location_index"
+        return "start_image_book_rebuild"
     if kind in {"pdf", "pandoc", "calibre", "docling"}:
         return "start_conversion"
     return "unsupported"

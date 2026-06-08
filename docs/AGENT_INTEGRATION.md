@@ -163,7 +163,7 @@ One-shot discovery tool for MCP-native agents. It returns `schema_version=ebook-
 
 High-level router for unknown inputs. It calls lightweight inspection, chooses the next tool, starts a background job when needed, and returns `job_id`, `route`, `inspection`, `warnings`, `errors`, and `next_actions`.
 
-Use this as the default entry point for agents.
+Use this as the default entry point for agents. In `intent=auto`, the router recognizes/converts by default: documents and PDFs go to conversion, while single images and image folders go to image-book recognition. Page/image location indexing is only selected when the caller passes `intent=locate` or a non-empty `query`.
 
 For `web-content-fetcher` archive folders, `process_material` routes to `process_web_archive` and returns `visual_check/` artifacts directly. It does not start a background job in that route.
 
@@ -239,8 +239,8 @@ Lightweight preflight inspection for a file or folder. It does not run heavy doc
 Use it to decide the next tool:
 
 - PDF: returns page count, text-layer ratio, image/layout/table/two-column signals, scanned likelihood, and recommended PDF route.
-- Image: returns dimensions, hash, OCR risk warnings, and whether to use location indexing or image-book rebuilding.
-- Folder: returns supported document/image counts and sample inspection results.
+- Image: returns dimensions, hash, OCR risk warnings, and recognition-first next actions. Location indexing remains available for explicit locate/query tasks.
+- Folder: returns supported document/image counts and sample inspection results. Pure image folders default to image-book recognition unless the caller explicitly asks to locate a query.
 
 ### `start_conversion`
 

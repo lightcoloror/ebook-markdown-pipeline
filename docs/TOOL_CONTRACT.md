@@ -35,7 +35,7 @@ Optional:
 - `recursive`: default `true`.
 - `include_hidden`: default `false`.
 - `output_format`: `markdown`, `html`, or `text`.
-- `image_book_threshold`: default `8`.
+- `image_book_threshold`: retained for compatibility; auto routing now recognizes image folders by default.
 - `ocr`: `auto`, `always`, or `never`.
 
 Planned online-model option:
@@ -46,10 +46,9 @@ Routing rules:
 
 - Documents and ebooks route to `start_conversion`.
 - PDFs route to `start_conversion` with a PDF pipeline selected from preflight signals.
-- Image folders below `image_book_threshold` route to `start_location_index`.
-- Image folders at or above `image_book_threshold` route to `start_image_book_rebuild`.
+- Single images and image folders route to `start_image_book_rebuild` by default so the output is recognized Markdown plus review artifacts.
 - `web-content-fetcher` archive folders with `rebuild_input/manifest.json` route to `process_web_archive`.
-- Any input with `query` routes to `start_location_index`, then returns a `next_actions` entry for `query_location_index`.
+- Any input with `intent=locate` or `query` routes to `start_location_index`, then returns a `next_actions` entry for `query_location_index` when a query is present.
 - Unsupported or missing inputs return `status=unsupported` and do not start a job.
 
 Return shape:
@@ -57,7 +56,7 @@ Return shape:
 ```json
 {
   "status": "routed",
-  "route": "start_location_index",
+  "route": "start_image_book_rebuild",
   "inspection": {},
   "delegated": {},
   "job_id": "job-...",
