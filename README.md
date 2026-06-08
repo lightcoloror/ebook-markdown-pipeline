@@ -4,7 +4,7 @@ Graphic-Text Material Converter is a local-first converter for ebooks, PDFs, Off
 
 Stable internal id: `ebook-markdown-pipeline`. The Python package is still `ebook_markdown_pipeline` for compatibility with existing MCP, HTTP, CLI, Docker, and script integrations.
 
-Start with [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) for the public-facing project summary, GitHub About text, architecture diagram, and reuse boundary. Installation steps are in [docs/INSTALLATION.md](docs/INSTALLATION.md). Full architecture diagrams and module boundaries are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Third-party tools, reuse boundaries, and license notes are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md).
+Start with [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) for the public-facing project summary, GitHub About text, architecture diagram, and reuse boundary. Installation steps are in [docs/INSTALLATION.md](docs/INSTALLATION.md). A shareable architecture diagram is in [docs/ARCHITECTURE_DIAGRAM.md](docs/ARCHITECTURE_DIAGRAM.md), while full architecture diagrams and module boundaries are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Third-party tools, reuse boundaries, and license notes are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md).
 
 ## Quick Flow
 
@@ -42,6 +42,8 @@ flowchart TD
 
 For the full architecture, PDF/image routing diagram, module map, and third-party boundary, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+For a single-page shareable architecture map, see [docs/ARCHITECTURE_DIAGRAM.md](docs/ARCHITECTURE_DIAGRAM.md).
+
 For a concise repository overview that can be shared with new users or agents, see [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md).
 
 ## Highlights
@@ -71,7 +73,7 @@ This project follows a tool-first integration principle: use mature tools direct
 | Umi-OCR / PaddleOCR-json | Local OCR blocks for images and scanned pages. |
 | PaddleOCR-VL / Qwen-VL / MinerU VLM | Optional layout-heavy image or infographic enhancement. |
 
-Several design ideas are also documented as architectural references: Marker-style pluggable LLM services, MinerU-style local/remote VLM backend split, PaddleOCR MCP-style stable tool contracts, and Docling-style artifact boundaries. See [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the detailed boundary and license notes.
+Several design ideas are also documented as architectural references: Marker-style pluggable LLM services, MinerU-style local/remote VLM backend split, PaddleOCR MCP-style stable tool contracts, and Docling-style artifact boundaries. These are reference patterns, not copied upstream source code. See [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the detailed boundary and license notes.
 
 ## Project Status
 

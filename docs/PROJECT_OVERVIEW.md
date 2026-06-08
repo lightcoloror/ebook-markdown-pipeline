@@ -63,11 +63,16 @@ flowchart TD
     artifacts --> handoff["Agent handoff\nnext_actions / run_summary / bundles"]
 ```
 
-For the detailed system diagram, PDF/image routing diagram, online provider boundary, and module map, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For a one-page shareable diagram, see [ARCHITECTURE_DIAGRAM.md](ARCHITECTURE_DIAGRAM.md). For the detailed system diagram, PDF/image routing diagram, online provider boundary, and module map, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Referenced And Reused Open-Source Tools
 
 The project follows a tool-first integration principle: use mature tools directly, keep their ownership boundaries clear, and write glue code only where it improves reliability, observability, or agent usability.
+
+There are two different relationships:
+
+- Direct integration: the project calls the tool as a command, Python package, local backend, or configured wrapper.
+- Architecture reference: the project borrows a design pattern, such as a stable tool contract or pluggable provider boundary, without copying upstream source code.
 
 | Tool / Project | How It Is Used | Boundary |
 | --- | --- | --- |
