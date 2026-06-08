@@ -636,9 +636,9 @@ class BookConverterUI:
         options = self.build_options()
         input_root, sources = self.resolve_sources(options)
         if not sources:
-            _, location_sources = self.resolve_location_sources()
-            if location_sources:
-                self.scan_location_inputs()
+            image_root, image_sources = self.resolve_image_sources()
+            if image_sources:
+                self.scan_image_book_inputs(image_root, image_sources)
                 return
             messagebox.showerror("缺少输入 / Input missing", "请选择存在的输入文件或文件夹。/ Please choose an existing input file or folder.")
             return
@@ -709,6 +709,37 @@ class BookConverterUI:
         self.write_log(
             f"已扫描定位文件 {len(sources)} 个：PDF {pdf_count}，图片 {image_count}。/ "
             f"Scanned {len(sources)} location file(s): {pdf_count} PDF, {image_count} image(s)."
+        )
+
+    def scan_image_book_inputs(self, input_root: Path, sources: list[Path]) -> None:
+        if not sources:
+            messagebox.showerror("没有图片 / No images", "未找到可识别的图片。/ No image files were found.")
+            return
+        if not self.output_var.get().strip():
+            self.set_default_output(str(input_root if input_root.is_dir() else input_root.parent))
+        output_path = Path(self.output_var.get().strip())
+
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        book_path = output_path / "book.md"
+        for source in sources:
+            self.tree.insert(
+                "",
+                "end",
+                values=(
+                    str(source),
+                    "IMAGE",
+                    "image-book",
+                    "",
+                    "",
+                    "Image OCR, dedupe/order, Markdown",
+                    "markdown",
+                    str(book_path),
+                ),
+            )
+        self.write_log(
+            f"已扫描图片识别输入 {len(sources)} 张，默认将生成 Markdown。/ "
+            f"Scanned {len(sources)} image recognition input(s); default output is Markdown."
         )
 
     def health_check(self) -> None:
@@ -1580,13 +1611,9 @@ class BookConverterUI:
             options.manifest = output_path / "manifest.json"
         input_root, sources = self.resolve_sources(options)
         if not sources:
-            _, location_sources = self.resolve_location_sources()
-            if location_sources:
-                messagebox.showinfo(
-                    "这是定位索引输入 / Location index input",
-                    "当前选择的是 PDF/图片定位索引输入，请点击“定位索引 / Location Index”。/ "
-                    "The current input is for PDF/image location indexing. Please click Location Index.",
-                )
+            _, image_sources = self.resolve_image_sources()
+            if image_sources:
+                self.start_image_book_rebuild()
                 return
             messagebox.showerror("没有文件 / No files", "未找到支持的文件。/ No supported files were found.")
             return
