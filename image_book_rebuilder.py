@@ -1388,6 +1388,15 @@ def render_book_markdown(title: str | Path, pages: list[ScreenshotPage], *, pref
             lines.append("<!-- Infographic/layout-heavy page: linear OCR may lose visual relationships. See layout.md. -->")
         if enhanced_text:
             lines.append("<!-- enhanced-layout-source: automatic VLM/layout backend -->")
+            visual_tables = infer_visual_tables(page)
+            if visual_tables:
+                lines.append("## 视觉表格候选")
+                lines.append("")
+                lines.append("<!-- visual-table-candidates: inferred from OCR block coordinates; review against source image -->")
+                lines.append("")
+                for table in visual_tables:
+                    lines.extend(table.splitlines())
+                    lines.append("")
             lines.extend(text_to_markdown(enhanced_text, promote_short_headings=False).splitlines())
             lines.append("")
             lines.append("<!-- original-umi-ocr-text -->")
@@ -1432,6 +1441,15 @@ def render_layout_markdown(pages: list[ScreenshotPage]) -> str:
         lines.append("")
         blocks = page.ocr_blocks or []
         if blocks:
+            visual_tables = infer_visual_tables(page)
+            if visual_tables:
+                lines.append("### 视觉表格候选 / Visual Table Candidates")
+                lines.append("")
+                lines.append("These tables are inferred from OCR block coordinates. Review them against the source image before treating them as final structure.")
+                lines.append("")
+                for table in visual_tables:
+                    lines.extend(table.splitlines())
+                    lines.append("")
             lines.append("| # | Region | BBox | Score | Text |")
             lines.append("| --- | --- | --- | --- | --- |")
             for block in blocks[:120]:
@@ -1456,6 +1474,189 @@ def selected_enhancement_text(page: ScreenshotPage) -> str:
         if enhancement.get("status") == "ok" and enhancement.get("text"):
             return str(enhancement.get("text") or "").strip()
     return ""
+
+
+def infer_visual_tables(page: ScreenshotPage) -> list[str]:
+    blocks = normalized_ocr_blocks(page)
+    if len(blocks) < 4:
+        return []
+    row_groups = group_blocks_into_visual_rows(blocks)
+    candidate_rows = [row for row in row_groups if is_visual_table_row(row, page.width)]
+    runs = group_visual_table_rows(candidate_rows)
+    tables = []
+    for run in runs:
+        table = visual_run_to_markdown_table(run)
+        if table:
+            tables.append(table)
+    return tables[:8]
+
+
+def normalized_ocr_blocks(page: ScreenshotPage) -> list[dict]:
+    items = []
+    for block in page.ocr_blocks or []:
+        text = str(block.get("text") or "").strip()
+        bbox = block.get("bbox") or block.get("bbox_unit")
+        if not text or not isinstance(bbox, list) or len(bbox) < 4:
+            continue
+        try:
+            x1, y1, x2, y2 = [float(value) for value in bbox[:4]]
+        except Exception:
+            continue
+        if x2 <= x1 or y2 <= y1:
+            continue
+        width = x2 - x1
+        height = y2 - y1
+        items.append(
+            {
+                "text": compact_visual_cell_text(text),
+                "x1": x1,
+                "y1": y1,
+                "x2": x2,
+                "y2": y2,
+                "cx": (x1 + x2) / 2,
+                "cy": (y1 + y2) / 2,
+                "width": width,
+                "height": height,
+            }
+        )
+    return sorted(items, key=lambda item: (item["cy"], item["x1"]))
+
+
+def group_blocks_into_visual_rows(blocks: list[dict]) -> list[list[dict]]:
+    rows: list[list[dict]] = []
+    for block in blocks:
+        matched = None
+        for row in rows:
+            row_cy = sum(item["cy"] for item in row) / len(row)
+            tolerance = max(34.0, min(70.0, max(item["height"] for item in row) * 0.95))
+            if abs(block["cy"] - row_cy) <= tolerance:
+                matched = row
+                break
+        if matched is None:
+            rows.append([block])
+        else:
+            matched.append(block)
+    for row in rows:
+        row.sort(key=lambda item: item["x1"])
+    return rows
+
+
+def is_visual_table_row(row: list[dict], page_width: int) -> bool:
+    if len(row) < 2:
+        return False
+    if page_width <= 0:
+        page_width = int(max(item["x2"] for item in row))
+    narrow_items = [item for item in row if item["width"] <= page_width * 0.58]
+    if len(narrow_items) < 2:
+        return False
+    x_span = max(item["x2"] for item in row) - min(item["x1"] for item in row)
+    if x_span < page_width * 0.28:
+        return False
+    shortish = sum(1 for item in row if len(item["text"]) <= 70)
+    return shortish >= 2
+
+
+def group_visual_table_rows(rows: list[list[dict]]) -> list[list[list[dict]]]:
+    if not rows:
+        return []
+    rows = sorted(rows, key=lambda row: min(item["cy"] for item in row))
+    runs: list[list[list[dict]]] = []
+    current: list[list[dict]] = []
+    previous_y = None
+    previous_cols = None
+    for row in rows:
+        row_y = sum(item["cy"] for item in row) / len(row)
+        col_count = len(row)
+        gap = 0 if previous_y is None else row_y - previous_y
+        compatible_cols = previous_cols is None or col_count == previous_cols
+        if current and (gap > 230 or not compatible_cols):
+            runs.append(current)
+            current = []
+        current.append(row)
+        previous_y = row_y
+        previous_cols = col_count
+    if current:
+        runs.append(current)
+    filtered = []
+    for run in runs:
+        max_cols = max(len(row) for row in run)
+        if max_cols < 2:
+            continue
+        if len(run) == 1 and max_cols == 2:
+            continue
+        filtered.append(run)
+    return filtered
+
+
+def visual_run_to_markdown_table(run: list[list[dict]]) -> str:
+    col_count = max(len(row) for row in run)
+    if col_count < 2:
+        return ""
+    rows = compact_visual_table_rows(run, col_count)
+    if not rows:
+        return ""
+    if len(rows) == 1 and col_count == 2:
+        return ""
+    if len(rows) == 1:
+        header = [f"列{i}" for i in range(1, col_count + 1)]
+        body = rows
+    else:
+        header = rows[0]
+        body = rows[1:]
+    lines = [
+        "| " + " | ".join(markdown_cell(cell) for cell in header) + " |",
+        "| " + " | ".join("---" for _ in range(col_count)) + " |",
+    ]
+    for row in body:
+        lines.append("| " + " | ".join(markdown_cell(cell) for cell in row) + " |")
+    return "\n".join(lines)
+
+
+def compact_visual_table_rows(run: list[list[dict]], col_count: int) -> list[list[str]]:
+    rows: list[list[str]] = []
+    previous_y = None
+    for row in run:
+        cells = [item["text"] for item in row]
+        if len(cells) < col_count:
+            cells.extend([""] * (col_count - len(cells)))
+        cells = cells[:col_count]
+        row_y = sum(item["cy"] for item in row) / len(row)
+        gap = 999 if previous_y is None else row_y - previous_y
+        if len(rows) >= 2 and gap <= 85 and should_merge_visual_continuation(rows[-1], cells):
+            rows[-1] = [merge_visual_cell(left, right) for left, right in zip(rows[-1], cells)]
+        else:
+            rows.append(cells)
+        previous_y = row_y
+    return rows
+
+
+def should_merge_visual_continuation(previous: list[str], current: list[str]) -> bool:
+    if is_identifier_row(previous):
+        return False
+    if not any(current):
+        return False
+    non_empty_current = [cell for cell in current if cell]
+    if non_empty_current and all(len(cell) <= 8 for cell in non_empty_current):
+        return True
+    return any(len(cell) > 28 for cell in previous)
+
+
+def is_identifier_row(row: list[str]) -> bool:
+    return bool(row) and all(re.fullmatch(r"[A-Z]|\d{1,2}|[①-⑳]", cell.strip()) for cell in row if cell.strip())
+
+
+def merge_visual_cell(left: str, right: str) -> str:
+    if not right:
+        return left
+    if not left:
+        return right
+    if right in left:
+        return left
+    return f"{left} / {right}"
+
+
+def compact_visual_cell_text(text: str) -> str:
+    return " ".join(str(text).replace("\r", "\n").split())
 
 
 def trim_repeated_enhanced_prefix(previous_text: str, current_text: str) -> str:
