@@ -8,6 +8,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR.parent))
 
 from ebook_markdown_pipeline.batch_convert_books import analyze_markdown_quality, clean_generic_markdown, clean_umi_ocr_markdown  # noqa: E402
+from ebook_markdown_pipeline.structure_repair import repair_markdown_structure  # noqa: E402
 
 
 def main() -> int:
@@ -50,15 +51,17 @@ def main() -> int:
     if "## 出版者的话" not in real_heading:
         raise AssertionError(f"Real OCR page title should still be promoted:\n{real_heading}")
 
-    numbered_heading = clean_generic_markdown(
+    numbered_heading = repair_markdown_structure(clean_generic_markdown(
         "## 保险责任\n\n"
         "第五条 在保险期间内，被保险人于旅游期间因遭受意外伤害而身故或者伤残的，保险人按下列约定承担保险责任：\n\n"
         "（一）旅游意外身故\n\n"
         "被保险人自遭受该意外之日起一百八十日内以该意外为直接、完全原因而身故，保险人按本合同载明的保险金额给付保险金。\n\n"
         "这是一段普通正文（不会被提升）因为它不独占编号标题格式。\n"
-    )
-    if "## （一）旅游意外身故" not in numbered_heading:
-        raise AssertionError(f"Expected Chinese numbered subheading promotion:\n{numbered_heading}")
+    )).markdown
+    if "### 第五条 在保险期间内" not in numbered_heading:
+        raise AssertionError(f"Expected Chinese article heading promotion:\n{numbered_heading}")
+    if "#### （一）旅游意外身故" not in numbered_heading:
+        raise AssertionError(f"Expected Chinese numbered subheading promotion under article:\n{numbered_heading}")
     if "## 这是一段普通正文" in numbered_heading:
         raise AssertionError(f"Expected ordinary body text not to be promoted:\n{numbered_heading}")
 

@@ -25,8 +25,10 @@ from typing import Iterable
 
 try:
     from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
+    from ebook_markdown_pipeline.structure_repair import repair_markdown_structure
 except ModuleNotFoundError:  # Allows running this file directly by absolute path.
     from docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
+    from structure_repair import repair_markdown_structure
 
 
 PANDOC_DIRECT_FORMATS = {".epub", ".fb2", ".odt", ".txt"}
@@ -2112,6 +2114,14 @@ def postprocess_text_output(
             text = inject_markdown_footnotes(text, notes)
     else:
         text = clean_generic_markdown(text)
+        repair = repair_markdown_structure(text, source_kind=source_kind)
+        text = repair.markdown
+        if repair.decisions:
+            reports = getattr(args, "_structure_repair_reports", None)
+            if reports is None:
+                reports = {}
+                setattr(args, "_structure_repair_reports", reports)
+            reports[str(output_path)] = repair.report()
         if source_kind == "umi_pdf":
             text = clean_umi_ocr_markdown(text)
     output_path.write_text(text, encoding="utf-8")
@@ -2381,50 +2391,13 @@ def clean_generic_markdown(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = normalize_footnote_references(text)
     text = unwrap_hard_wrapped_paragraphs(text)
-    text = promote_structural_numbered_headings(text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]+\n", "\n", text)
     return text.strip() + "\n"
 
 
 def promote_structural_numbered_headings(text: str) -> str:
-    lines = text.split("\n")
-    promoted: list[str] = []
-    for idx, line in enumerate(lines):
-        stripped = line.strip()
-        if should_promote_structural_numbered_heading(lines, idx):
-            promoted.append(f"## {stripped}")
-        else:
-            promoted.append(line)
-    return "\n".join(promoted)
-
-
-def should_promote_structural_numbered_heading(lines: list[str], idx: int) -> bool:
-    line = lines[idx].strip()
-    if not line or line.startswith(("#", "-", "*", ">", "|", "<!--")):
-        return False
-    if len(line) > 48:
-        return False
-    if re.search(r"[。！？!?；;，,：:]$", line):
-        return False
-    if not is_structural_numbered_heading_line(line):
-        return False
-    if idx > 0 and lines[idx - 1].strip():
-        return False
-    if idx + 1 < len(lines) and lines[idx + 1].strip():
-        return False
-    next_line = next_nonempty_line(lines, idx + 1)
-    if not next_line or next_line.strip().startswith(("#", "-", "*", ">", "|", "<!--")):
-        return False
-    return len(next_line.strip()) >= 12
-
-
-def is_structural_numbered_heading_line(line: str) -> bool:
-    return bool(
-        re.match(r"^（[一二三四五六七八九十百零〇]+）\S", line)
-        or re.match(r"^\([一二三四五六七八九十百零〇]+\)\S", line)
-        or re.match(r"^第[一二三四五六七八九十百零〇\d]+条\s*\S", line)
-    )
+    return repair_markdown_structure(text).markdown
 
 
 def clean_umi_ocr_markdown(text: str) -> str:
@@ -3016,6 +2989,10 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
         quality = analyze_markdown_quality(Path(result.output))
         if quality:
             payload["quality"] = asdict(quality)
+        structure_reports = getattr(args, "_structure_repair_reports", {})
+        structure_report = structure_reports.get(str(Path(result.output)))
+        if structure_report:
+            payload["structure_repair"] = structure_report
     if Path(result.source).suffix.lower() == ".pdf":
         payload["pdf_preflight"] = asdict(pdf_preflight(Path(result.source), args))
         payload["pdf_outline"] = extract_pdf_outline(Path(result.source))
