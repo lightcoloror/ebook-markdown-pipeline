@@ -2381,9 +2381,50 @@ def clean_generic_markdown(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = normalize_footnote_references(text)
     text = unwrap_hard_wrapped_paragraphs(text)
+    text = promote_structural_numbered_headings(text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]+\n", "\n", text)
     return text.strip() + "\n"
+
+
+def promote_structural_numbered_headings(text: str) -> str:
+    lines = text.split("\n")
+    promoted: list[str] = []
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if should_promote_structural_numbered_heading(lines, idx):
+            promoted.append(f"## {stripped}")
+        else:
+            promoted.append(line)
+    return "\n".join(promoted)
+
+
+def should_promote_structural_numbered_heading(lines: list[str], idx: int) -> bool:
+    line = lines[idx].strip()
+    if not line or line.startswith(("#", "-", "*", ">", "|", "<!--")):
+        return False
+    if len(line) > 48:
+        return False
+    if re.search(r"[。！？!?；;，,：:]$", line):
+        return False
+    if not is_structural_numbered_heading_line(line):
+        return False
+    if idx > 0 and lines[idx - 1].strip():
+        return False
+    if idx + 1 < len(lines) and lines[idx + 1].strip():
+        return False
+    next_line = next_nonempty_line(lines, idx + 1)
+    if not next_line or next_line.strip().startswith(("#", "-", "*", ">", "|", "<!--")):
+        return False
+    return len(next_line.strip()) >= 12
+
+
+def is_structural_numbered_heading_line(line: str) -> bool:
+    return bool(
+        re.match(r"^（[一二三四五六七八九十百零〇]+）\S", line)
+        or re.match(r"^\([一二三四五六七八九十百零〇]+\)\S", line)
+        or re.match(r"^第[一二三四五六七八九十百零〇\d]+条\s*\S", line)
+    )
 
 
 def clean_umi_ocr_markdown(text: str) -> str:
