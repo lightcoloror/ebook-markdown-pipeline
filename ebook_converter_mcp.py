@@ -40,6 +40,7 @@ from ebook_markdown_pipeline.online_providers import (  # noqa: E402
     provider_registry_health,
 )
 from ebook_markdown_pipeline.process_web_archive import process_web_archive as process_web_archive_core  # noqa: E402
+from ebook_markdown_pipeline.structure_repair import repair_markdown_structure  # noqa: E402
 
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -369,6 +370,25 @@ def tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "enhance_markdown_structure",
+            "description": "Repair an existing Markdown file's heading hierarchy with local rules, then optionally apply explicit TextStructureProvider enhancement. Writes versioned Markdown and reports without overwriting by default.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"},
+                    "output": {"type": "string"},
+                    "source_kind": {"type": "string", "default": "markdown"},
+                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto"], "default": "local"},
+                    "provider_mode": {"type": "string", "enum": ["fake", "openai_compatible"], "default": "fake"},
+                    "provider": {"type": "string"},
+                    "config": {"type": "string"},
+                    "allow_remote": {"type": "boolean", "default": False},
+                    "overwrite": {"type": "boolean", "default": False},
+                },
+                "required": ["input", "output"],
+            },
+        },
+        {
             "name": "start_conversion",
             "description": "Start a background conversion job. Poll with get_job_status.",
             "inputSchema": {
@@ -613,6 +633,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return process_web_archive_tool(arguments)
     if name == "run_online_enhancement":
         return run_online_enhancement(arguments)
+    if name == "enhance_markdown_structure":
+        return enhance_markdown_structure(arguments)
     if name == "start_conversion":
         return start_conversion(arguments)
     if name == "get_job_status":
@@ -1151,6 +1173,140 @@ def read_texts_input(arguments: dict[str, Any]) -> list[str]:
             chunks = [chunk.strip() for chunk in content.splitlines() if chunk.strip()]
             return chunks or [content]
     raise ValueError("input_texts, input_text, or input_path is required for embedding.")
+
+
+def enhance_markdown_structure(arguments: dict[str, Any]) -> dict[str, Any]:
+    input_path = Path(str(arguments.get("input") or ""))
+    if not input_path.is_file():
+        return {"error": True, "message": "enhance_markdown_structure requires input pointing to a Markdown file."}
+    output_dir = Path(str(arguments.get("output") or ""))
+    output_dir.mkdir(parents=True, exist_ok=True)
+    source_text = input_path.read_text(encoding="utf-8", errors="replace")
+    local_repair = repair_markdown_structure(source_text, source_kind=str(arguments.get("source_kind") or "markdown"))
+    model_mode = str(arguments.get("model_mode") or "local")
+    online_payload: dict[str, Any] | None = None
+    final_markdown = local_repair.markdown
+    if model_mode != "local":
+        online_arguments = {
+            "task": "text_structure",
+            "input_text": local_repair.markdown,
+            "provider_mode": str(arguments.get("provider_mode") or "fake"),
+            "model_mode": model_mode,
+            "allow_remote": bool(arguments.get("allow_remote", False)),
+            "context": {
+                "source": input_path.name,
+                "local_structure_decision_count": len(local_repair.decisions),
+                "local_structure_report_schema": "structure-repair-v1",
+            },
+            "output": str(output_dir / "online-enhancement"),
+        }
+        if arguments.get("provider"):
+            online_arguments["provider"] = arguments["provider"]
+        if arguments.get("config"):
+            online_arguments["config"] = arguments["config"]
+        online_payload = run_online_enhancement(online_arguments)
+        online_markdown = ((online_payload.get("result") or {}) if isinstance(online_payload, dict) else {}).get("markdown")
+        if isinstance(online_markdown, str) and online_markdown.strip() and not online_payload.get("error"):
+            final_markdown = online_markdown
+
+    overwrite = bool(arguments.get("overwrite", False))
+    markdown_path = output_dir / f"{input_path.stem}.structure-enhanced.md"
+    report_path = output_dir / f"{input_path.stem}.structure-enhanced.report.json"
+    review_path = output_dir / f"{input_path.stem}.structure-enhanced.report.md"
+    if not overwrite:
+        markdown_path = unique_output_path(markdown_path)
+        report_path = markdown_path.with_suffix(".report.json")
+        review_path = markdown_path.with_suffix(".report.md")
+    report = {
+        "schema_version": "markdown-structure-enhancement-v1",
+        "input": str(input_path),
+        "output": str(markdown_path),
+        "source_kind": str(arguments.get("source_kind") or "markdown"),
+        "model_mode": model_mode,
+        "provider_mode": str(arguments.get("provider_mode") or "fake"),
+        "local_structure_repair": local_repair.report(),
+        "online_enhancement": online_payload,
+        "final_source": "online_enhancement" if online_payload and not online_payload.get("error") and final_markdown != local_repair.markdown else "local_structure_repair",
+    }
+    markdown_path.write_text(final_markdown, encoding="utf-8", newline="\n")
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+    review_path.write_text(render_markdown_structure_enhancement_report(report), encoding="utf-8", newline="\n")
+    artifacts = [
+        artifact("markdown", markdown_path, label="Structure-enhanced Markdown", media_type="text/markdown"),
+        artifact("structure_json", report_path, label="Structure enhancement report JSON", media_type="application/json"),
+        artifact("structure_report", review_path, label="Structure enhancement report", media_type="text/markdown"),
+    ]
+    if online_payload and online_payload.get("artifacts"):
+        artifacts.extend(online_payload.get("artifacts") or [])
+    return {
+        "status": "ok",
+        "input": str(input_path),
+        "output": str(markdown_path),
+        "report": str(report_path),
+        "review_report": str(review_path),
+        "model_mode": model_mode,
+        "final_source": report["final_source"],
+        "local_decision_count": len(local_repair.decisions),
+        "online_status": (online_payload or {}).get("status") or ("skipped" if model_mode == "local" else "unknown"),
+        "artifacts": artifacts,
+        "next_actions": artifact_next_actions(artifacts),
+    }
+
+
+def unique_output_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+    stem = path.stem
+    suffix = path.suffix
+    for index in range(2, 1000):
+        candidate = path.with_name(f"{stem}-{index}{suffix}")
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError(f"Could not find available output path for {path}")
+
+
+def render_markdown_structure_enhancement_report(report: dict[str, Any]) -> str:
+    local = report.get("local_structure_repair") if isinstance(report.get("local_structure_repair"), dict) else {}
+    online = report.get("online_enhancement") if isinstance(report.get("online_enhancement"), dict) else {}
+    lines = [
+        "# Markdown Structure Enhancement Report",
+        "",
+        f"- Input: {report.get('input', '')}",
+        f"- Output: {report.get('output', '')}",
+        f"- Model mode: {report.get('model_mode', '')}",
+        f"- Provider mode: {report.get('provider_mode', '')}",
+        f"- Final source: {report.get('final_source', '')}",
+        f"- Local decision count: {local.get('decision_count', 0)}",
+        f"- Online status: {online.get('status', 'skipped')}",
+        "",
+    ]
+    action_counts = local.get("action_counts") if isinstance(local.get("action_counts"), dict) else {}
+    if action_counts:
+        lines.append("## Local Rule Actions")
+        lines.append("")
+        for name, count in sorted(action_counts.items()):
+            lines.append(f"- {name}: {count}")
+        lines.append("")
+    decisions = local.get("decisions") if isinstance(local.get("decisions"), list) else []
+    if decisions:
+        lines.append("## Local Decisions")
+        lines.append("")
+        for idx, decision in enumerate(decisions[:30], start=1):
+            if isinstance(decision, dict):
+                lines.append(f"{idx}. L{decision.get('line_number')}: {decision.get('action')} -> {decision.get('repaired')}")
+                if decision.get("reason"):
+                    lines.append(f"   Reason: {decision.get('reason')}")
+        lines.append("")
+    if online:
+        lines.append("## Online/Fake Enhancement")
+        lines.append("")
+        lines.append(f"- Error: {bool(online.get('error'))}")
+        lines.append(f"- Provider: {online.get('provider', '')}")
+        lines.append(f"- Remote call enabled: {bool(online.get('remote_call_enabled'))}")
+        if online.get("message"):
+            lines.append(f"- Message: {online.get('message')}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def write_online_enhancement_artifacts(payload: dict[str, Any], arguments: dict[str, Any]) -> list[dict[str, Any]]:

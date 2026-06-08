@@ -27,6 +27,7 @@ REQUIRED_TOOLS = {
     "process_material",
     "process_web_archive",
     "run_online_enhancement",
+    "enhance_markdown_structure",
     "get_job_status",
     "read_artifact",
     "inspect_agent_batch_results",
@@ -135,6 +136,7 @@ def main() -> int:
         assert_review_decisions_report(tmpdir)
         assert_web_archive_route(tmpdir)
         assert_online_enhancement_tool(tmpdir)
+        assert_markdown_structure_enhancement_tool(tmpdir)
 
         assert_quality_summary_next_actions(tmpdir)
 
@@ -618,6 +620,42 @@ def assert_online_enhancement_tool(tmpdir: Path) -> None:
     )
     if needs_permission.get("error") is not True or "allow_remote=true" not in needs_permission.get("message", ""):
         raise AssertionError(f"Expected explicit remote permission requirement: {needs_permission}")
+
+
+def assert_markdown_structure_enhancement_tool(tmpdir: Path) -> None:
+    source = tmpdir / "weak-structure.md"
+    source.write_text(
+        "第一章 总则\n\n第五条 保险责任\n\n（一）旅游意外身故\n\n正文内容。\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    output_dir = tmpdir / "structure-enhanced"
+    local = call_tool(
+        "enhance_markdown_structure",
+        {"input": str(source), "output": str(output_dir), "model_mode": "local"},
+    )
+    if local.get("status") != "ok" or local.get("final_source") != "local_structure_repair":
+        raise AssertionError(f"Expected local structure enhancement success: {local}")
+    enhanced = Path(local.get("output") or "")
+    if not enhanced.exists() or "### 第五条" not in enhanced.read_text(encoding="utf-8"):
+        raise AssertionError(f"Expected local repaired Markdown output: {local}")
+    if Path(local.get("output") or "") == source:
+        raise AssertionError(f"Structure enhancement must not overwrite source: {local}")
+    artifact_types = {item.get("type") for item in local.get("artifacts") or []}
+    if not {"markdown", "structure_json", "structure_report"}.issubset(artifact_types):
+        raise AssertionError(f"Expected structure enhancement artifacts: {local}")
+
+    hybrid = call_tool(
+        "enhance_markdown_structure",
+        {"input": str(source), "output": str(output_dir), "model_mode": "hybrid", "provider_mode": "fake"},
+    )
+    if hybrid.get("status") != "ok" or hybrid.get("final_source") != "online_enhancement":
+        raise AssertionError(f"Expected fake provider to enhance final Markdown: {hybrid}")
+    if Path(hybrid.get("output") or "") == enhanced:
+        raise AssertionError(f"Expected versioned output path when overwrite=false: {hybrid}")
+    hybrid_report = json.loads(Path(hybrid.get("report") or "").read_text(encoding="utf-8"))
+    if (hybrid_report.get("online_enhancement") or {}).get("status") != "ok":
+        raise AssertionError(f"Expected online enhancement payload in report: {hybrid_report}")
 
 
 def assert_http_contract(input_path: Path, output_path: Path) -> None:

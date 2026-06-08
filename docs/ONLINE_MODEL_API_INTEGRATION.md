@@ -121,8 +121,9 @@
 1. 已完成：provider 抽象、fake provider 测试、OpenAI-compatible adapter、配置健康检查。
 2. 已完成：`inspect_document` / `process_material` 的 `model_mode` 推荐层和 `online_enhancement` 风险字段。
 3. 已完成：显式 `run_online_enhancement` 入口，支持 fake / OpenAI-compatible 的 `ocr_layout`、`vlm_layout`、`text_structure`、`table_repair`、`embedding`。
-4. 下一步：把 `structure_repair` 低置信度片段接到可选 `TextStructureProvider`，并写入 report。
-5. 下一步：把信息图、PPT PDF、截图书疑难页接到可选 `VlmLayoutProvider`，并写入增强 artifact。
-6. 下一步：把 `OcrLayoutProvider` 接入实际 OCR fallback/疑难页流程，用于云 OCR/layout 替代本地 OCR。
-7. 下一步：把 `EmbeddingProvider` 接入定位索引和语义检索 sidecar。
-8. 下一步：加入预算、并发、重试、超时、隐私确认和 report 记录。
+4. 已完成：`enhance_markdown_structure` 可对已有 Markdown 先跑本地 `structure_repair`，再显式调用可选 `TextStructureProvider`，并写入版本化 Markdown 与 report。
+5. 下一步：把 `structure_repair` 低置信度片段接入默认转换后的建议动作，而不是自动远程调用。
+6. 下一步：把信息图、PPT PDF、截图书疑难页接到可选 `VlmLayoutProvider`，并写入增强 artifact。
+7. 下一步：把 `OcrLayoutProvider` 接入实际 OCR fallback/疑难页流程，用于云 OCR/layout 替代本地 OCR。
+8. 下一步：把 `EmbeddingProvider` 接入定位索引和语义检索 sidecar。
+9. 下一步：加入预算、并发、重试、超时、隐私确认和 report 记录。

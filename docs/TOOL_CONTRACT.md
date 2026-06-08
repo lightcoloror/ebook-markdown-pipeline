@@ -13,7 +13,7 @@ Preferred order:
 1. `process_material`
 2. `get_job_status`
 3. `read_artifact`
-4. Specialist tools only when needed
+4. Specialist tools only when needed, such as `enhance_markdown_structure` for a completed Markdown file that still has weak hierarchy.
 
 Agents should not directly parse PDFs, images, temporary directories, SQLite files, or model outputs when a tool exists for that purpose.
 
@@ -195,6 +195,8 @@ Important fields:
 - `inferred_outline`: repaired heading hierarchy with `level`, `title`, `parent`, and `path`.
 
 Low-confidence or surprising repairs should be treated as review cues, not as silent final truth.
+
+Use `enhance_markdown_structure` when a Markdown file already exists but its heading hierarchy needs a safe second pass. It always writes a new `*.structure-enhanced.md` plus `*.structure-enhanced.report.json/md`; it does not overwrite the source unless `overwrite=true` is explicitly passed. With `model_mode=local`, it only uses local rules. With `model_mode=hybrid|online|auto`, it can call `TextStructureProvider` through the same `provider_mode` / `allow_remote` safety rules as `run_online_enhancement`.
 
 ## Batch Quality Baselines
 

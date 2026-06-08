@@ -29,6 +29,8 @@ When an explicit online/fake enhancement is required, use `run_online_enhancemen
 
 Pass `output` when the enhancement result should survive handoff to another agent or human reviewer. The tool writes `online-enhancement-<task>.json/md` artifacts and returns `next_actions` for reading them.
 
+For an already converted Markdown file with weak headings, call `enhance_markdown_structure`. It runs local structure repair first, writes a versioned `*.structure-enhanced.md` plus reports, and only invokes `TextStructureProvider` when `model_mode` is explicitly non-local.
+
 ## Recommended Integration
 
 Use MCP for OpenClaw, Hermes Agent, Codex, Claude Code, or other agents that support tool schemas.
