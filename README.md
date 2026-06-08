@@ -4,6 +4,22 @@ Graphic-Text Material Converter is a local-first converter for ebooks, PDFs, Off
 
 Stable internal id: `ebook-markdown-pipeline`. The Python package is still `ebook_markdown_pipeline` for compatibility with existing MCP, HTTP, CLI, Docker, and script integrations.
 
+Start with [docs/INSTALLATION.md](docs/INSTALLATION.md) for the four install levels. Architecture diagrams and module boundaries are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Third-party tools and license boundaries are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Quick Flow
+
+```mermaid
+flowchart LR
+    input["Input materials\nEPUB / AZW3 / MOBI / PDF / Office / images / web archives"]
+    entry["Entry points\nDesktop UI / CLI / HTTP API / MCP"]
+    route["Auto inspection and routing\nformat, PDF preflight, OCR/layout risk"]
+    backends["Existing specialist tools\nPandoc / Calibre / PyMuPDF4LLM / MinerU / Marker / Docling / Umi-OCR / VLM wrappers"]
+    output["Outputs\nMarkdown / HTML / text\n.reports / logs / review checklist"]
+    agent["Agent handoff\nartifacts + next_actions + run_summary"]
+
+    input --> entry --> route --> backends --> output --> agent
+```
+
 ## Highlights
 
 - Converts `EPUB / AZW3 / MOBI / FB2 / TXT / RTF / ODT / PDF / DOCX / PPTX / XLSX / HTML / CSV / images` to Markdown-oriented outputs.
@@ -17,6 +33,15 @@ Stable internal id: `ebook-markdown-pipeline`. The Python package is still `eboo
 ## Project Status
 
 This project is already useful as a local personal workflow tool, but the public packaging is still early. Expect sharp edges around optional heavyweight backends, GPU/model setup, and platform-specific OCR tools. Start with the minimal setup, then add Docling, MinerU, Marker, Umi-OCR, or VLM wrappers only when your documents need them.
+
+## Install At A Glance
+
+- **Minimal**: Python dependencies plus Pandoc for common ebooks and text-layer PDFs.
+- **PDF enhanced**: add MinerU, Marker, Umi-OCR, or Docling only when your PDFs need structure/OCR/layout recovery.
+- **Local VLM/image layout**: add PaddleOCR-VL or Qwen-VL wrappers only for infographics and layout-heavy screenshots.
+- **Agent/API**: use MCP or HTTP after the local CLI/UI path works.
+
+See [docs/INSTALLATION.md](docs/INSTALLATION.md) for commands, optional environment variables, and troubleshooting.
 
 ## 5-Minute Start
 
@@ -74,6 +99,16 @@ You do not need to install every backend on day one.
 - **Messy screenshot set**: use `截图成书 / Image Book` or `image_book_rebuilder.py`.
 - **Agent integration**: call `process_material` first, then poll `get_job_status`, then read artifacts with `read_artifact`.
 - **Online model API integration**: see [docs/ONLINE_MODEL_API_INTEGRATION.md](docs/ONLINE_MODEL_API_INTEGRATION.md) for the planned provider abstraction.
+
+## Quality Gate
+
+Before and after ordinary changes, run the public lightweight regression gate:
+
+```powershell
+python scripts\run_quality_gate.py
+```
+
+It generates small public fixtures under `benchmarks/fixtures/generated`, runs the minimal benchmark profile, and writes `benchmark-summary.md` plus `quality-regression-summary.md` under `benchmarks/runs/quality-gate/`. Use `--profile full` when you intentionally want to include OCR/image-heavy fixtures.
 
 ## CLI Examples
 

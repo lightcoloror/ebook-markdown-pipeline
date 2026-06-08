@@ -2,6 +2,34 @@
 
 This folder defines repeatable real-sample evaluation for the converter.
 
+## Public Quality Gate
+
+The repository includes generated public fixtures for lightweight regression checks. They contain only synthetic text, EPUB, PDF, and image materials; no copyrighted books are required.
+
+Generate fixtures only:
+
+```powershell
+python scripts\generate_quality_fixtures.py
+```
+
+Run the default lightweight gate:
+
+```powershell
+python scripts\run_quality_gate.py
+```
+
+The default `minimal` profile covers `TXT`, `EPUB`, an `AZW3 substitute` sample, text-layer PDF, two-column PDF, and PPT-exported slide-like PDF. It is intended for ordinary development before/after checks.
+
+Use the full profile when you intentionally want OCR/image-heavy coverage:
+
+```powershell
+python scripts\run_quality_gate.py --profile full
+```
+
+The `full` profile additionally includes a scanned image-only PDF, an infographic PNG, and an unordered/duplicate screenshot folder. It may require local OCR/VLM dependencies depending on the pipeline choices.
+
+## Private Real-Sample Manifests
+
 Local files are not committed. Use:
 
 ```powershell

@@ -1,0 +1,36 @@
+{
+  "schema_version": "benchmark-samples-v1",
+  "description": "Minimal public quality-gate fixtures.",
+  "samples": [
+    {
+      "id": "txt-01",
+      "path": "benchmarks/fixtures/generated/text/sample.txt",
+      "category": "text_doc"
+    },
+    {
+      "id": "epub-01",
+      "path": "benchmarks/fixtures/generated/ebooks/sample.epub",
+      "category": "ebook_epub"
+    },
+    {
+      "id": "azw3-substitute-01",
+      "path": "benchmarks/fixtures/generated/ebooks/sample.epub",
+      "category": "ebook_azw3_substitute"
+    },
+    {
+      "id": "pdf-text-01",
+      "path": "benchmarks/fixtures/generated/pdf/text-layer.pdf",
+      "category": "pdf_text_layer"
+    },
+    {
+      "id": "pdf-two-column-01",
+      "path": "benchmarks/fixtures/generated/pdf/two-column.pdf",
+      "category": "pdf_two_column"
+    },
+    {
+      "id": "pdf-ppt-export-01",
+      "path": "benchmarks/fixtures/generated/pdf/ppt-exported.pdf",
+      "category": "pdf_presentation_like"
+    }
+  ]
+}

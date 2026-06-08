@@ -1,0 +1,9 @@
+# Public Quality Fixture
+
+## Chapter One
+
+This small text fixture is generated for regression tests.
+
+## Chapter Two
+
+It contains headings, body text, and enough structure for Markdown quality scoring.

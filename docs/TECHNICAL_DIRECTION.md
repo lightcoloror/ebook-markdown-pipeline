@@ -4,6 +4,8 @@
 
 本项目的长期定位是：面向 AI agent 调用的通用图文材料识别工具，而不是单一电子书转换工具。
 
+当前架构图、管道路由图和模块边界见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
 核心策略：
 
 - 以本项目作为稳定调度层、复查层、artifact 管理层和 agent 接口层。
