@@ -1,3 +1,7 @@
+from .local_env import load_project_env
+
+load_project_env()
+
 from .batch_convert_books import (
     OUTPUT_FORMATS,
     PDF_PIPELINE_MODES,

@@ -24,11 +24,15 @@ from types import SimpleNamespace
 from typing import Iterable
 
 try:
+    from ebook_markdown_pipeline.local_env import load_project_env
     from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
     from ebook_markdown_pipeline.structure_repair import HeadingCandidate, repair_markdown_structure
 except ModuleNotFoundError:  # Allows running this file directly by absolute path.
+    from local_env import load_project_env
     from docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
     from structure_repair import HeadingCandidate, repair_markdown_structure
+
+load_project_env()
 
 
 PANDOC_DIRECT_FORMATS = {".epub", ".fb2", ".odt", ".txt"}

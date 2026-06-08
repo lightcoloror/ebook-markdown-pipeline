@@ -75,6 +75,8 @@ Copy-Item config.example.env .env
 notepad .env
 ```
 
+The UI, CLI, HTTP, and MCP entrypoints automatically load `.env` from the project root. Existing shell, CI, Docker, or agent-provided environment variables take priority and are not overwritten.
+
 Set one or more of:
 
 ```powershell

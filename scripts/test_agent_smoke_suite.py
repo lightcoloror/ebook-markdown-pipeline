@@ -11,6 +11,7 @@ from pathlib import Path
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 
 FAST_TESTS = [
+    "scripts/test_local_env.py",
     "scripts/test_agent_call_helpers.py",
     "scripts/test_minimal_entrypoints.py",
     "scripts/test_agent_batch_runner.py",

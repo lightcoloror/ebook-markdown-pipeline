@@ -58,6 +58,7 @@ def stage1_checks() -> list[Check]:
     install = read_text("docs/INSTALLATION.md")
     env = read_text("config.example.env")
     minimal_test = read_text("scripts/test_minimal_entrypoints.py")
+    local_env_test = read_text("scripts/test_local_env.py")
     return [
         contains_all(
             "stage1_open_source_usability",
@@ -76,14 +77,16 @@ def stage1_checks() -> list[Check]:
         contains_all(
             "stage1_open_source_usability",
             "example environment paths",
-            env,
+            env + "\n" + local_env_test,
             [
                 "EBOOK_CONVERTER_UMI_DIR",
                 "EBOOK_CONVERTER_TOOL_CACHE",
                 "EBOOK_CONVERTER_VLM_PYTHON",
                 "EBOOK_CONVERTER_PADDLEOCR_COMMAND",
+                "load_project_env",
+                "Existing environment values must win by default",
             ],
-            "config.example.env",
+            "config.example.env; scripts/test_local_env.py",
         ),
         contains_all(
             "stage1_open_source_usability",

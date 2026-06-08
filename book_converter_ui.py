@@ -24,6 +24,8 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
+    from ebook_markdown_pipeline.local_env import load_project_env  # noqa: E402
+    load_project_env()
     from ebook_markdown_pipeline.document_locator import (  # noqa: E402
         IMAGE_EXTENSIONS,
         SUPPORTED_LOCATION_EXTENSIONS,
@@ -54,6 +56,8 @@ try:
         recommended_action_for_plan as plan_recommended_action,
     )
 except ModuleNotFoundError:
+    from local_env import load_project_env  # noqa: E402
+    load_project_env()
     from document_locator import (  # noqa: E402
         IMAGE_EXTENSIONS,
         SUPPORTED_LOCATION_EXTENSIONS,
