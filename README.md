@@ -23,18 +23,25 @@ This project is already useful as a local personal workflow tool, but the public
 This is the smallest useful setup for common ebooks and text-layer PDFs.
 
 1. Install Python 3.10+.
-2. Install the lightweight Python dependencies:
+2. Clone the repository and enter the project folder:
+
+```powershell
+git clone https://github.com/lightcoloror/ebook-markdown-pipeline.git
+cd ebook-markdown-pipeline
+```
+
+3. Install the lightweight Python dependencies:
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-3. Install optional command-line tools as needed:
+4. Install optional command-line tools as needed:
 
 - `pandoc`: recommended for EPUB, FB2, TXT, ODT, and Markdown conversion.
 - `calibre` / `ebook-convert`: recommended for AZW, AZW3, MOBI, and RTF.
 
-4. Start the desktop UI:
+5. Start the desktop UI:
 
 ```powershell
 python book_converter_ui.py
@@ -42,7 +49,7 @@ python book_converter_ui.py
 
 On Windows you can also double-click [start_ui.cmd](start_ui.cmd).
 
-5. Drag files or folders into the window, click `扫描 / Scan`, then click `开始 / Start`.
+6. Drag files or folders into the window, click `扫描 / Scan`, then click `开始 / Start`.
 
 Output Markdown files are written to the selected output folder. Reports, logs, and review checklists are written under `.reports/`.
 
