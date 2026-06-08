@@ -25,10 +25,10 @@ from typing import Iterable
 
 try:
     from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
-    from ebook_markdown_pipeline.structure_repair import repair_markdown_structure
+    from ebook_markdown_pipeline.structure_repair import HeadingCandidate, repair_markdown_structure
 except ModuleNotFoundError:  # Allows running this file directly by absolute path.
     from docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
-    from structure_repair import repair_markdown_structure
+    from structure_repair import HeadingCandidate, repair_markdown_structure
 
 
 PANDOC_DIRECT_FORMATS = {".epub", ".fb2", ".odt", ".txt"}
@@ -1385,6 +1385,7 @@ def run_docling_convert(
             args,
             source_kind="docling",
             note_source_path=source,
+            heading_candidates=result.get("heading_candidates") or [],
             progress_callback=progress_callback,
             progress_source=source,
             progress_index=progress_index,
@@ -1738,6 +1739,8 @@ def run_single_mineru_pdf_convert(
                 output_path,
                 args,
                 source_kind="pdf",
+                note_source_path=source,
+                structure_artifact_path=artifact_root,
                 progress_callback=progress_callback,
                 progress_source=source,
                 progress_index=progress_index,
@@ -2090,6 +2093,8 @@ def postprocess_text_output(
     args: argparse.Namespace,
     source_kind: str,
     note_source_path: Path | None = None,
+    structure_artifact_path: Path | None = None,
+    heading_candidates: list[HeadingCandidate | dict[str, object]] | None = None,
     progress_callback=None,
     progress_source: Path | None = None,
     progress_index: int | None = None,
@@ -2114,7 +2119,10 @@ def postprocess_text_output(
             text = inject_markdown_footnotes(text, notes)
     else:
         text = clean_generic_markdown(text)
-        repair = repair_markdown_structure(text, source_kind=source_kind)
+        collected_candidates = collect_structure_heading_candidates(note_source_path, structure_artifact_path)
+        if heading_candidates:
+            collected_candidates.extend(heading_candidates)
+        repair = repair_markdown_structure(text, source_kind=source_kind, heading_candidates=collected_candidates)
         text = repair.markdown
         if repair.decisions:
             reports = getattr(args, "_structure_repair_reports", None)
@@ -2394,6 +2402,203 @@ def clean_generic_markdown(text: str) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]+\n", "\n", text)
     return text.strip() + "\n"
+
+
+def collect_structure_heading_candidates(
+    source_path: Path | None,
+    artifact_path: Path | None = None,
+) -> list[HeadingCandidate]:
+    candidates: list[HeadingCandidate] = []
+    if source_path is not None and source_path.suffix.lower() == ".pdf" and source_path.exists():
+        candidates.extend(pdf_outline_heading_candidates(source_path))
+        candidates.extend(pymupdf_font_heading_candidates(source_path))
+    if artifact_path is not None and artifact_path.exists():
+        candidates.extend(mineru_heading_candidates_from_artifacts(artifact_path))
+    return candidates
+
+
+def pdf_outline_heading_candidates(source: Path, limit: int = 120) -> list[HeadingCandidate]:
+    outline = extract_pdf_outline(source, limit=limit)
+    items = outline.get("items", []) if isinstance(outline, dict) else []
+    candidates: list[HeadingCandidate] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        candidates.append(
+            HeadingCandidate(
+                title=title,
+                level=int(item.get("level") or 1),
+                source="pdf_outline",
+                page=int(item["page"]) if item.get("page") else None,
+                score=0.95,
+                reason="PDF bookmark/outline title",
+            )
+        )
+    return candidates
+
+
+def pymupdf_font_heading_candidates(source: Path, *, max_pages: int = 40, limit: int = 180) -> list[HeadingCandidate]:
+    try:
+        import pymupdf
+    except Exception:
+        return []
+    try:
+        with pymupdf.open(str(source)) as doc:
+            page_count = min(len(doc), max_pages)
+            line_items = []
+            body_sizes = []
+            for page_index in range(page_count):
+                page = doc[page_index]
+                for item in pymupdf_page_line_items(page, page_index + 1):
+                    if not item["text"]:
+                        continue
+                    line_items.append(item)
+                    if len(item["text"]) >= 20:
+                        body_sizes.append(float(item["font_size"]))
+    except Exception:
+        return []
+    if not line_items:
+        return []
+    body_size = median_number(body_sizes or [float(item["font_size"]) for item in line_items])
+    candidates = []
+    for item in line_items:
+        text = item["text"]
+        font_size = float(item["font_size"])
+        ratio = font_size / max(body_size, 1.0)
+        bold = "bold" in str(item.get("font") or "").lower()
+        if not is_pymupdf_heading_candidate_text(text):
+            continue
+        if ratio < 1.18 and not (bold and ratio >= 1.08):
+            continue
+        level = 1 if ratio >= 1.55 else 2 if ratio >= 1.32 else 3
+        candidates.append(
+            HeadingCandidate(
+                title=text,
+                level=level,
+                source="pymupdf_font_jump",
+                page=int(item["page"]),
+                bbox=[float(value) for value in item["bbox"]],
+                font_size=round(font_size, 2),
+                font=str(item.get("font") or ""),
+                score=min(0.92, 0.55 + (ratio - 1.0) * 0.7 + (0.08 if bold else 0.0)),
+                reason=f"font size {font_size:.1f} vs body median {body_size:.1f}",
+            )
+        )
+    candidates.sort(key=lambda candidate: candidate.score, reverse=True)
+    return candidates[:limit]
+
+
+def mineru_heading_candidates_from_artifacts(artifact_root: Path, limit: int = 240) -> list[HeadingCandidate]:
+    try:
+        from ebook_markdown_pipeline.analyze_mineru_difficult_pages import extract_text, find_middle_json, flatten_blocks
+    except Exception:
+        try:
+            from analyze_mineru_difficult_pages import extract_text, find_middle_json, flatten_blocks
+        except Exception:
+            return []
+    try:
+        middle_json = find_middle_json(artifact_root)
+        payload = json.loads(middle_json.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    candidates: list[HeadingCandidate] = []
+    for page_index, page_info in enumerate(payload.get("pdf_info", [])):
+        if not isinstance(page_info, dict):
+            continue
+        for block in flatten_blocks(page_info):
+            kind = str(block.get("type") or block.get("label") or "").lower()
+            if kind not in {"title", "doc_title", "paragraph_title"}:
+                continue
+            title = re.sub(r"\s+", " ", extract_text(block)).strip()
+            if not is_mineru_heading_candidate_text(title):
+                continue
+            candidates.append(
+                HeadingCandidate(
+                    title=title,
+                    level=mineru_heading_level(kind, title),
+                    source=f"mineru_{kind}",
+                    page=page_index + 1,
+                    bbox=[float(value) for value in block.get("bbox") or []] or None,
+                    score=0.9 if kind in {"doc_title", "title"} else 0.82,
+                    reason=f"MinerU middle.json block type={kind}",
+                )
+            )
+    return candidates[:limit]
+
+
+def is_mineru_heading_candidate_text(text: str) -> bool:
+    if not text or len(text) > 120:
+        return False
+    if re.search(r"[。！？!?；;，,]$", text):
+        return False
+    return True
+
+
+def mineru_heading_level(kind: str, title: str) -> int:
+    if kind == "doc_title":
+        return 1
+    if re.match(r"^第[一二三四五六七八九十百零〇\d]+[章节篇部卷]\s*\S", title):
+        return 2
+    if re.match(r"^第[一二三四五六七八九十百零〇\d]+条\s*\S", title):
+        return 3
+    if re.match(r"^（[一二三四五六七八九十百零〇]+）\S", title):
+        return 4
+    return 2 if kind == "title" else 3
+
+
+def pymupdf_page_line_items(page, page_number: int) -> list[dict[str, object]]:
+    raw = page.get_text("dict")
+    items = []
+    for block in raw.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            spans = [span for span in line.get("spans", []) if str(span.get("text") or "").strip()]
+            if not spans:
+                continue
+            text = "".join(str(span.get("text") or "") for span in spans).strip()
+            text = re.sub(r"\s+", " ", text)
+            if not text:
+                continue
+            sizes = [float(span.get("size") or 0.0) for span in spans if span.get("size")]
+            fonts = [str(span.get("font") or "") for span in spans if span.get("font")]
+            bbox = line.get("bbox") or block.get("bbox") or [0, 0, 0, 0]
+            items.append(
+                {
+                    "text": text,
+                    "page": page_number,
+                    "bbox": bbox,
+                    "font_size": max(sizes) if sizes else 0.0,
+                    "font": fonts[0] if fonts else "",
+                }
+            )
+    return items
+
+
+def is_pymupdf_heading_candidate_text(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped or len(stripped) > 80:
+        return False
+    if stripped.startswith(("-", "*", ">", "|")):
+        return False
+    if re.match(r"^\d{1,4}$", stripped):
+        return False
+    if re.search(r"[。！？!?；;，,]$", stripped):
+        return False
+    return True
+
+
+def median_number(values: list[float]) -> float:
+    cleaned = sorted(float(value) for value in values if value and value > 0)
+    if not cleaned:
+        return 10.0
+    middle = len(cleaned) // 2
+    if len(cleaned) % 2:
+        return cleaned[middle]
+    return (cleaned[middle - 1] + cleaned[middle]) / 2
 
 
 def promote_structural_numbered_headings(text: str) -> str:

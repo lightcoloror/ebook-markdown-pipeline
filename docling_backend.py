@@ -39,10 +39,77 @@ def convert_with_docling(source: Path) -> dict[str, Any]:
     markdown = document.export_to_markdown()
     return {
         "markdown": markdown,
+        "heading_candidates": extract_docling_heading_candidates(document),
         "status": str(getattr(result, "status", "")),
         "errors": serialize_docling_errors(getattr(result, "errors", [])),
         "timings": serialize_docling_value(getattr(result, "timings", None)),
     }
+
+
+def extract_docling_heading_candidates(document: Any) -> list[dict[str, Any]]:
+    """Best-effort extraction of Docling section headers for structure repair.
+
+    Docling's public document model can expose headings through Pydantic
+    objects, dict exports, or lightweight item objects depending on version.
+    Keep this adapter permissive so the main pipeline can reuse Docling without
+    pinning itself to one internal representation.
+    """
+    payload = serialize_docling_value(document)
+    if not isinstance(payload, dict):
+        return []
+    texts = payload.get("texts") or []
+    candidates: list[dict[str, Any]] = []
+    for item in texts:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or item.get("type") or item.get("name") or "").lower()
+        if "section" not in label and "heading" not in label and "title" not in label:
+            continue
+        title = str(item.get("text") or item.get("orig") or item.get("content") or "").strip()
+        if not title:
+            continue
+        level = item.get("level") or item.get("heading_level")
+        candidates.append(
+            {
+                "title": title,
+                "level": int(level) if str(level or "").isdigit() else None,
+                "source": "docling_heading",
+                "page": docling_page_number(item),
+                "bbox": docling_bbox(item),
+                "score": 0.86,
+                "reason": f"Docling text item label={label or 'unknown'}",
+            }
+        )
+    return candidates
+
+
+def docling_page_number(item: dict[str, Any]) -> int | None:
+    provenance = item.get("prov") or item.get("provenance") or []
+    if isinstance(provenance, list) and provenance:
+        first = provenance[0]
+        if isinstance(first, dict):
+            page = first.get("page_no") or first.get("page") or first.get("page_number")
+            return int(page) if str(page or "").isdigit() else None
+    page = item.get("page_no") or item.get("page") or item.get("page_number")
+    return int(page) if str(page or "").isdigit() else None
+
+
+def docling_bbox(item: dict[str, Any]) -> list[float] | None:
+    provenance = item.get("prov") or item.get("provenance") or []
+    bbox = None
+    if isinstance(provenance, list) and provenance and isinstance(provenance[0], dict):
+        bbox = provenance[0].get("bbox")
+    bbox = bbox or item.get("bbox")
+    if isinstance(bbox, dict):
+        values = [bbox.get(key) for key in ("l", "t", "r", "b")]
+        if all(value is not None for value in values):
+            return [float(value) for value in values]
+        values = [bbox.get(key) for key in ("left", "top", "right", "bottom")]
+        if all(value is not None for value in values):
+            return [float(value) for value in values]
+    if isinstance(bbox, list) and len(bbox) >= 4:
+        return [float(value) for value in bbox[:4]]
+    return None
 
 
 def suppress_requests_dependency_warning() -> None:
