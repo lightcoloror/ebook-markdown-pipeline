@@ -11,7 +11,9 @@ from typing import Any, Callable, Protocol
 
 
 PROVIDER_CONFIG_SCHEMA_VERSION = "online-model-providers-v1"
-DEFAULT_PROVIDER_CONFIG = Path(__file__).resolve().parent / "config" / "online_models.example.json"
+CONFIG_DIR = Path(__file__).resolve().parent / "config"
+DEFAULT_PROVIDER_CONFIG = CONFIG_DIR / "online_providers.example.json"
+LEGACY_PROVIDER_CONFIG = CONFIG_DIR / "online_models.example.json"
 
 
 @dataclass(frozen=True)
@@ -278,8 +280,19 @@ class OpenAICompatibleProvider:
         return f"{self.config.base_url.rstrip('/')}{endpoint}"
 
 
+def resolve_provider_config_path(path: str | Path | None = None) -> Path:
+    if path:
+        return Path(path)
+    env_path = os.environ.get("EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG") or os.environ.get("EBOOK_CONVERTER_ONLINE_MODELS_CONFIG")
+    if env_path:
+        return Path(env_path)
+    if DEFAULT_PROVIDER_CONFIG.exists():
+        return DEFAULT_PROVIDER_CONFIG
+    return LEGACY_PROVIDER_CONFIG
+
+
 def load_provider_registry(path: str | Path | None = None) -> ProviderRegistry:
-    config_path = Path(path) if path else Path(os.environ.get("EBOOK_CONVERTER_ONLINE_MODELS_CONFIG") or DEFAULT_PROVIDER_CONFIG)
+    config_path = resolve_provider_config_path(path)
     payload = json.loads(config_path.read_text(encoding="utf-8"))
     schema_version = str(payload.get("schema_version") or PROVIDER_CONFIG_SCHEMA_VERSION)
     providers: dict[str, ProviderConfig] = {}

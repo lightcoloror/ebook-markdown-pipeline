@@ -19,7 +19,7 @@ Agents should not directly parse PDFs, images, temporary directories, SQLite fil
 
 Agents should also not call online model providers directly for document recognition. Online API support must remain behind this project's provider abstraction so that privacy, cost, retry, fallback, artifact schema, and report logging stay consistent.
 
-`get_agent_contract` and `health_check` expose `online_provider_health` when `config/online_models.example.json` or `EBOOK_CONVERTER_ONLINE_MODELS_CONFIG` is readable. This is configuration health only: it reports provider names, types, models, configured base URLs, key environment variable names, and missing-key status without making remote API calls.
+`get_agent_contract` and `health_check` expose `online_provider_health` when `config/online_providers.example.json`, legacy `config/online_models.example.json`, `EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG`, or legacy `EBOOK_CONVERTER_ONLINE_MODELS_CONFIG` is readable. This is configuration health only: it reports provider names, types, models, configured base URLs, key environment variable names, and missing-key status without making remote API calls.
 
 ## Main Router: `process_material`
 
@@ -386,7 +386,7 @@ Safety rules:
 - `provider_mode=fake` is the default and is used for dry-run contracts and tests.
 - `provider_mode=openai_compatible` requires `model_mode=hybrid|online|auto`.
 - Remote calls also require `allow_remote=true`.
-- API keys are read only from environment variables named in `config/online_models.example.json`.
+- API keys are read only from environment variables named in `config/online_providers.example.json` or the explicitly selected local provider config.
 
 Example fake call:
 

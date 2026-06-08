@@ -10,6 +10,8 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR.parent))
 
 from ebook_markdown_pipeline.online_providers import (  # noqa: E402
+    DEFAULT_PROVIDER_CONFIG,
+    LEGACY_PROVIDER_CONFIG,
     OnlineProviderError,
     ProviderConfig,
     build_openai_compatible_chat_payload,
@@ -17,6 +19,7 @@ from ebook_markdown_pipeline.online_providers import (  # noqa: E402
     load_provider_registry,
     openai_compatible_provider,
     provider_registry_health,
+    resolve_provider_config_path,
 )
 
 
@@ -31,7 +34,14 @@ def main() -> int:
 
 
 def assert_example_registry_loads() -> None:
-    registry = load_provider_registry(PROJECT_DIR / "config" / "online_models.example.json")
+    if DEFAULT_PROVIDER_CONFIG.name != "online_providers.example.json":
+        raise AssertionError(f"Unexpected default provider config: {DEFAULT_PROVIDER_CONFIG}")
+    if LEGACY_PROVIDER_CONFIG.name != "online_models.example.json":
+        raise AssertionError(f"Unexpected legacy provider config: {LEGACY_PROVIDER_CONFIG}")
+    if resolve_provider_config_path() != DEFAULT_PROVIDER_CONFIG:
+        raise AssertionError(f"Default resolver should prefer the new provider config: {resolve_provider_config_path()}")
+
+    registry = load_provider_registry(PROJECT_DIR / "config" / "online_providers.example.json")
     if registry.schema_version != "online-model-providers-v1":
         raise AssertionError(f"Unexpected registry schema: {registry}")
     if registry.default_mode != "hybrid":
@@ -45,6 +55,34 @@ def assert_example_registry_loads() -> None:
         raise AssertionError(f"Unexpected registry health: {health}")
     if health["missing_key_count"] < 1:
         raise AssertionError(f"Example config should report missing keys without secrets: {health}")
+
+    legacy_registry = load_provider_registry(PROJECT_DIR / "config" / "online_models.example.json")
+    if legacy_registry.routing != registry.routing:
+        raise AssertionError("Legacy online_models example should remain route-compatible with online_providers example.")
+    new_template = json.loads(DEFAULT_PROVIDER_CONFIG.read_text(encoding="utf-8"))
+    legacy_template = json.loads(LEGACY_PROVIDER_CONFIG.read_text(encoding="utf-8"))
+    if new_template != legacy_template:
+        raise AssertionError("New and legacy online provider example templates should stay identical.")
+
+    old_new = os.environ.get("EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG")
+    old_legacy = os.environ.get("EBOOK_CONVERTER_ONLINE_MODELS_CONFIG")
+    try:
+        os.environ["EBOOK_CONVERTER_ONLINE_MODELS_CONFIG"] = str(LEGACY_PROVIDER_CONFIG)
+        os.environ["EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG"] = str(DEFAULT_PROVIDER_CONFIG)
+        if resolve_provider_config_path() != DEFAULT_PROVIDER_CONFIG:
+            raise AssertionError("New provider config env var should take priority over legacy env var.")
+        os.environ.pop("EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG", None)
+        if resolve_provider_config_path() != LEGACY_PROVIDER_CONFIG:
+            raise AssertionError("Legacy env var should still be honored when the new env var is unset.")
+    finally:
+        if old_new is None:
+            os.environ.pop("EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG", None)
+        else:
+            os.environ["EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG"] = old_new
+        if old_legacy is None:
+            os.environ.pop("EBOOK_CONVERTER_ONLINE_MODELS_CONFIG", None)
+        else:
+            os.environ["EBOOK_CONVERTER_ONLINE_MODELS_CONFIG"] = old_legacy
 
 
 def assert_fake_providers() -> None:

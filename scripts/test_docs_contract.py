@@ -68,6 +68,10 @@ def main() -> int:
             "inspect_agent_batch_results",
             "list_agent_batch_results",
             "completed-with-review",
+            "online_providers.example.json",
+            "EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG",
+            "online_provider_health",
+            "without making remote API calls",
         ],
         "examples/agent-batch/README.md": [
             "--baseline-results",
@@ -126,6 +130,7 @@ def main() -> int:
         "docs/ARCHITECTURE.md": [
             "System Overview",
             "Online Provider Boundary",
+            "config/online_providers.example.json",
             "PDF And Image Routing",
             "Third-Party Boundary",
             "Pandoc",
@@ -147,6 +152,23 @@ def main() -> int:
             "Docling",
             "Umi-OCR",
             "does not vendor",
+        ],
+        "docs/ONLINE_MODEL_API_INTEGRATION.md": [
+            "online_providers.example.json",
+            "online_models.example.json",
+            "OpenAI-compatible adapter",
+            "OcrLayoutProvider",
+            "VlmLayoutProvider",
+            "TextStructureProvider",
+            "EmbeddingProvider",
+        ],
+        "docs/INSTALLATION.md": [
+            "online_providers.example.json",
+            "EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG",
+            "online_models.example.json",
+            "OCR_LAYOUT_API_KEY",
+            "TABLE_LLM_API_KEY",
+            "EMBEDDING_API_KEY",
         ],
         "examples/agent-calls/README.md": [
             "Agent Batch Handoff",

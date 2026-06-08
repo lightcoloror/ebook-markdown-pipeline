@@ -25,7 +25,7 @@
 
 ## 配置草案
 
-仓库已提供 [../config/online_models.example.json](../config/online_models.example.json) 作为配置模板，只保存 provider 配置和环境变量名，不保存密钥。当前已实现 OpenAI-compatible adapter；模板用于固定配置形状和 route 名称：
+仓库已提供 [../config/online_providers.example.json](../config/online_providers.example.json) 作为配置模板，只保存 provider 配置和环境变量名，不保存密钥。[../config/online_models.example.json](../config/online_models.example.json) 作为旧命名兼容入口保留。当前已实现 OpenAI-compatible adapter；模板用于固定配置形状和 route 名称：
 
 ```json
 {

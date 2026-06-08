@@ -142,7 +142,7 @@ This keeps the default path local and rule-first while leaving a clear future ho
 | Document inspection | `document_inspector.py` |
 | Location index | `document_locator.py` |
 | Screenshot/image book rebuilding | `image_book_rebuilder.py` |
-| Online model provider abstraction | `online_providers.py`, `config/online_models.example.json` |
+| Online model provider abstraction | `online_providers.py`, `config/online_providers.example.json`, legacy `config/online_models.example.json` |
 | Web archive visual check | `process_web_archive.py`, `process-web-archive.cmd` |
 | Structure repair | `structure_repair.py` |
 | Artifact schema | `artifact_schema.py` |

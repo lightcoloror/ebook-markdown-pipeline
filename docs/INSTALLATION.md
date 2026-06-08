@@ -159,11 +159,13 @@ Heavy local VLM backends may download large models on first use. Keep them optio
 If you plan to test future online-model integration, start from the template:
 
 ```powershell
-copy config\online_models.example.json config\online_models.local.json
-$env:EBOOK_CONVERTER_ONLINE_MODELS_CONFIG = "config\online_models.local.json"
+copy config\online_providers.example.json config\online_providers.local.json
+$env:EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG = "config\online_providers.local.json"
 ```
 
-The current default conversion flow does not call remote APIs. `online_providers.py` provides provider health checks, fake-provider tests, and an optional OpenAI-compatible adapter for future text structure, VLM layout, table repair, and embedding work. Keep API keys in environment variables such as `VLM_API_KEY`, `TEXT_LLM_API_KEY`, `TABLE_LLM_API_KEY`, and `EMBEDDING_API_KEY`; do not write real keys into the JSON file.
+`config\online_models.example.json` is kept as a legacy-compatible alias for older local setups. New setups should prefer `config\online_providers.example.json` and `EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG`.
+
+The current default conversion flow does not call remote APIs. `online_providers.py` provides provider health checks, fake-provider tests, and an optional OpenAI-compatible adapter for future text structure, OCR layout, VLM layout, table repair, and embedding work. Keep API keys in environment variables such as `VLM_API_KEY`, `OCR_LAYOUT_API_KEY`, `TEXT_LLM_API_KEY`, `TABLE_LLM_API_KEY`, and `EMBEDDING_API_KEY`; do not write real keys into the JSON file.
 
 ## 4. Agent / API Setup
 
