@@ -62,11 +62,11 @@ flowchart LR
 
 Current provider interfaces are:
 
-- `OcrLayoutProvider`: OCR blocks with coordinates, intended for future local/cloud OCR unification.
+- `OcrLayoutProvider`: OCR blocks with coordinates, available through the explicit online/fake enhancement entrypoint.
 - `VlmLayoutProvider`: image or page layout description for infographic and layout-heavy pages.
 - `TextStructureProvider`: Markdown hierarchy and heading repair.
 - `TableRepairProvider`: table-only repair without forcing card/step layouts into tables.
-- `EmbeddingProvider`: future semantic location/search support.
+- `EmbeddingProvider`: optional embeddings for future semantic location/search support, available through the explicit online/fake enhancement entrypoint.
 
 The default conversion path remains local-first. Real remote calls require explicit `provider_mode=openai_compatible`, non-local `model_mode`, and `allow_remote=true`.
 

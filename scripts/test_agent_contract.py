@@ -574,6 +574,21 @@ def assert_online_enhancement_tool(tmpdir: Path) -> None:
     if visual.get("status") != "ok" or "# Fake Layout" not in (visual.get("result") or {}).get("markdown", ""):
         raise AssertionError(f"Expected fake VLM layout enhancement: {visual}")
 
+    ocr = call_tool(
+        "run_online_enhancement",
+        {"task": "ocr_layout", "input_path": str(image), "provider_mode": "fake"},
+    )
+    if ocr.get("status") != "ok" or not (ocr.get("result") or {}).get("blocks"):
+        raise AssertionError(f"Expected fake OCR layout enhancement: {ocr}")
+
+    embedding = call_tool(
+        "run_online_enhancement",
+        {"task": "embedding", "input_texts": ["alpha", "beta"], "provider_mode": "fake"},
+    )
+    vectors = (embedding.get("result") or {}).get("vectors") or []
+    if embedding.get("status") != "ok" or len(vectors) != 2:
+        raise AssertionError(f"Expected fake embedding enhancement: {embedding}")
+
     blocked = call_tool(
         "run_online_enhancement",
         {

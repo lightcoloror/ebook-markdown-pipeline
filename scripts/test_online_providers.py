@@ -38,8 +38,10 @@ def assert_example_registry_loads() -> None:
         raise AssertionError(f"Unexpected default mode: {registry}")
     if not registry.provider_for_route("layout_heavy_images"):
         raise AssertionError(f"Expected layout route provider: {registry}")
+    if not registry.provider_for_route("ocr_layout"):
+        raise AssertionError(f"Expected OCR layout route provider: {registry}")
     health = registry.health()
-    if health["provider_count"] < 4 or "providers" not in health:
+    if health["provider_count"] < 5 or "providers" not in health:
         raise AssertionError(f"Unexpected registry health: {health}")
     if health["missing_key_count"] < 1:
         raise AssertionError(f"Example config should report missing keys without secrets: {health}")
@@ -86,9 +88,12 @@ def assert_openai_adapter_contract() -> None:
         calls.append({"url": url, "headers": headers, "payload": payload, "timeout_seconds": timeout_seconds})
         if url.endswith("/embeddings"):
             return {"data": [{"embedding": [0.1, 0.2]}, {"embedding": [0.3, 0.4]}]}
-        if "image_url" in json.dumps(payload, ensure_ascii=False):
+        payload_text = json.dumps(payload, ensure_ascii=False)
+        if "Run OCR with layout" in payload_text:
+            content = {"markdown": "OCR text", "blocks": [{"text": "OCR text", "bbox": [0, 0, 10, 10]}], "warnings": []}
+        elif "image_url" in payload_text:
             content = {"markdown": "# Visual", "blocks": [{"text": "Visual"}], "tables": [], "warnings": []}
-        elif "Repair only true tables" in json.dumps(payload, ensure_ascii=False):
+        elif "Repair only true tables" in payload_text:
             content = {"markdown": "| A | B |\n| --- | --- |\n| 1 | 2 |", "tables": [{"markdown": "table"}], "decisions": [], "confidence": 0.9}
         else:
             content = {"markdown": "# Title\n\nBody", "decisions": [{"action": "promoted_to_heading"}], "confidence": 0.8}
@@ -120,6 +125,9 @@ def assert_openai_adapter_contract() -> None:
         visual = provider.describe_layout(b"png", mime_type="image/png")
         if visual["blocks"][0]["text"] != "Visual":
             raise AssertionError(f"Unexpected VLM response: {visual}")
+        ocr = provider.recognize_layout(b"png", mime_type="image/png")
+        if ocr["blocks"][0]["text"] != "OCR text":
+            raise AssertionError(f"Unexpected OCR layout response: {ocr}")
         table = provider.repair_table("| A | B |\n| --- | --- |\n| 1 | 2 |")
         if not table["tables"] or table["confidence"] != 0.9:
             raise AssertionError(f"Unexpected table repair response: {table}")

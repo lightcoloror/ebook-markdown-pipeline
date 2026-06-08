@@ -369,9 +369,11 @@ Use this when deciding whether to convert, build a location index, rebuild an im
 
 Supported tasks:
 
+- `ocr_layout`: run OCR with coordinates/layout blocks for an image or rendered page.
 - `text_structure`: repair low-confidence Markdown heading hierarchy.
 - `vlm_layout`: extract image/infographic visual layout into Markdown and blocks.
 - `table_repair`: repair true table candidates without forcing card layouts into tables.
+- `embedding`: create embeddings for text chunks for optional semantic search/indexing.
 
 Safety rules:
 
@@ -405,6 +407,19 @@ Example remote-gated call:
     "allow_remote": true,
     "input_path": "path/to/infographic.png",
     "mime_type": "image/png"
+  }
+}
+```
+
+Example fake embedding call:
+
+```json
+{
+  "name": "run_online_enhancement",
+  "arguments": {
+    "task": "embedding",
+    "provider_mode": "fake",
+    "input_texts": ["chapter title", "important paragraph"]
   }
 }
 ```

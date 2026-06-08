@@ -10,6 +10,14 @@
       "timeout_seconds": 120,
       "max_concurrency": 1
     },
+    "openai_compatible_ocr": {
+      "type": "ocr_layout",
+      "base_url": "https://example.com/v1",
+      "model": "qwen-vl-ocr",
+      "api_key_env": "OCR_LAYOUT_API_KEY",
+      "timeout_seconds": 120,
+      "max_concurrency": 1
+    },
     "openai_compatible_text": {
       "type": "text_structure_llm",
       "base_url": "https://example.com/v1",
@@ -36,6 +44,7 @@
     }
   },
   "routing": {
+    "ocr_layout": "openai_compatible_ocr",
     "text_structure_repair": "openai_compatible_text",
     "layout_heavy_images": "openai_compatible_vlm",
     "table_repair": "openai_compatible_table",

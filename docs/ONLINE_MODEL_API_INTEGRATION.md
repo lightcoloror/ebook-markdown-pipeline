@@ -25,7 +25,7 @@
 
 ## 配置草案
 
-仓库已提供 [../config/online_models.example.json](../config/online_models.example.json) 作为配置模板，只保存 provider 配置和环境变量名，不保存密钥。真实 provider adapter 尚未实现；当前模板用于提前固定配置形状：
+仓库已提供 [../config/online_models.example.json](../config/online_models.example.json) 作为配置模板，只保存 provider 配置和环境变量名，不保存密钥。当前已实现 OpenAI-compatible adapter；模板用于固定配置形状和 route 名称：
 
 ```json
 {
@@ -36,6 +36,13 @@
       "base_url": "https://example.com/v1",
       "model": "qwen-vl-ocr",
       "api_key_env": "VLM_API_KEY",
+      "timeout_seconds": 120
+    },
+    "openai_compatible_ocr": {
+      "type": "ocr_layout",
+      "base_url": "https://example.com/v1",
+      "model": "qwen-vl-ocr",
+      "api_key_env": "OCR_LAYOUT_API_KEY",
       "timeout_seconds": 120
     },
     "openai_compatible_text": {
@@ -112,9 +119,9 @@
 
 1. 已完成：provider 抽象、fake provider 测试、OpenAI-compatible adapter、配置健康检查。
 2. 已完成：`inspect_document` / `process_material` 的 `model_mode` 推荐层和 `online_enhancement` 风险字段。
-3. 已完成：显式 `run_online_enhancement` 入口，支持 fake / OpenAI-compatible 的 `text_structure`、`vlm_layout`、`table_repair`。
+3. 已完成：显式 `run_online_enhancement` 入口，支持 fake / OpenAI-compatible 的 `ocr_layout`、`vlm_layout`、`text_structure`、`table_repair`、`embedding`。
 4. 下一步：把 `structure_repair` 低置信度片段接到可选 `TextStructureProvider`，并写入 report。
 5. 下一步：把信息图、PPT PDF、截图书疑难页接到可选 `VlmLayoutProvider`，并写入增强 artifact。
-6. 下一步：接入 `OcrLayoutProvider`，用于云 OCR/layout 替代本地 OCR。
-7. 下一步：接入 `EmbeddingProvider`，增强定位索引和语义检索。
+6. 下一步：把 `OcrLayoutProvider` 接入实际 OCR fallback/疑难页流程，用于云 OCR/layout 替代本地 OCR。
+7. 下一步：把 `EmbeddingProvider` 接入定位索引和语义检索 sidecar。
 8. 下一步：加入预算、并发、重试、超时、隐私确认和 report 记录。

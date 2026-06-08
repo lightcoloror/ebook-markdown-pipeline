@@ -347,17 +347,18 @@ def tool_schemas() -> list[dict[str, Any]]:
         },
         {
             "name": "run_online_enhancement",
-            "description": "Explicit optional provider-backed enhancement for text structure, image/VLM layout, or table repair. Defaults to fake provider; real remote calls require allow_remote=true.",
+            "description": "Explicit optional provider-backed enhancement for OCR layout, VLM layout, text structure, table repair, or embeddings. Defaults to fake provider; real remote calls require allow_remote=true.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "task": {"type": "string", "enum": ["text_structure", "vlm_layout", "table_repair"]},
+                    "task": {"type": "string", "enum": ["ocr_layout", "vlm_layout", "text_structure", "table_repair", "embedding"]},
                     "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto"], "default": "local"},
                     "provider_mode": {"type": "string", "enum": ["fake", "openai_compatible"], "default": "fake"},
                     "provider": {"type": "string"},
                     "config": {"type": "string"},
                     "allow_remote": {"type": "boolean", "default": False},
                     "input_text": {"type": "string"},
+                    "input_texts": {"type": "array", "items": {"type": "string"}},
                     "input_path": {"type": "string"},
                     "mime_type": {"type": "string", "default": "image/png"},
                     "prompt": {"type": "string"},
@@ -997,9 +998,11 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 ONLINE_ENHANCEMENT_TASKS = {
+    "ocr_layout": {"route": "ocr_layout", "provider_type": "ocr_layout"},
     "text_structure": {"route": "text_structure_repair", "provider_type": "text_structure_llm"},
     "vlm_layout": {"route": "layout_heavy_images", "provider_type": "vlm_layout"},
     "table_repair": {"route": "table_repair", "provider_type": "table_repair"},
+    "embedding": {"route": "semantic_location_index", "provider_type": "embedding"},
 }
 
 
@@ -1093,6 +1096,14 @@ def run_enhancement_provider_task(
         if not image_path.is_file():
             return {"error": True, "message": "vlm_layout requires input_path pointing to an image file."}
         result = provider.describe_layout(image_path.read_bytes(), mime_type=str(arguments.get("mime_type") or "image/png"), prompt=prompt)
+    elif task == "ocr_layout":
+        image_path = Path(str(arguments.get("input_path") or ""))
+        if not image_path.is_file():
+            return {"error": True, "message": "ocr_layout requires input_path pointing to an image file."}
+        result = provider.recognize_layout(image_path.read_bytes(), mime_type=str(arguments.get("mime_type") or "image/png"), prompt=prompt)
+    elif task == "embedding":
+        texts = read_texts_input(arguments)
+        result = provider.embed_texts(texts)
     else:
         return {"error": True, "message": f"Unsupported task: {task}"}
     return {
@@ -1115,6 +1126,25 @@ def read_text_input(arguments: dict[str, Any], *, label: str) -> str:
         if path.is_file():
             return path.read_text(encoding="utf-8", errors="replace")
     raise ValueError(f"{label} or input_path is required for this enhancement task.")
+
+
+def read_texts_input(arguments: dict[str, Any]) -> list[str]:
+    values = arguments.get("input_texts")
+    if isinstance(values, list):
+        texts = [str(item) for item in values if str(item)]
+        if texts:
+            return texts
+    text = arguments.get("input_text")
+    if isinstance(text, str) and text:
+        return [text]
+    path_value = str(arguments.get("input_path") or "")
+    if path_value:
+        path = Path(path_value)
+        if path.is_file():
+            content = path.read_text(encoding="utf-8", errors="replace")
+            chunks = [chunk.strip() for chunk in content.splitlines() if chunk.strip()]
+            return chunks or [content]
+    raise ValueError("input_texts, input_text, or input_path is required for embedding.")
 
 
 def choose_material_route(inspection: dict[str, Any], *, intent: str, query: str, image_book_threshold: int) -> str:

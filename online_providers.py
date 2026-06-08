@@ -233,6 +233,14 @@ class OpenAICompatibleProvider:
         response = self.chat(user_prompt, image=image, mime_type=mime_type)
         return normalize_vlm_layout_response(response, provider=self.config.name)
 
+    def recognize_layout(self, image: bytes, *, mime_type: str = "image/png", prompt: str = "") -> dict[str, Any]:
+        user_prompt = prompt or (
+            "Run OCR with layout. Return JSON with keys: blocks, markdown, warnings. "
+            "Each block should include text, bbox, page, block_type, confidence, and reading_order when possible."
+        )
+        response = self.chat(user_prompt, image=image, mime_type=mime_type)
+        return normalize_ocr_layout_response(response, provider=self.config.name)
+
     def repair_table(self, table_markdown: str, *, context: dict[str, Any] | None = None) -> dict[str, Any]:
         prompt = (
             "Repair only true tables. Return JSON with keys: markdown, tables, decisions, confidence. "
@@ -359,6 +367,21 @@ def normalize_vlm_layout_response(response: dict[str, Any], *, provider: str) ->
         "markdown": markdown,
         "blocks": blocks,
         "tables": tables,
+        "warnings": warnings,
+        "raw": response,
+    }
+
+
+def normalize_ocr_layout_response(response: dict[str, Any], *, provider: str) -> dict[str, Any]:
+    content = extract_openai_message_content(response)
+    parsed = parse_json_object(content)
+    blocks = parsed.get("blocks") if isinstance(parsed.get("blocks"), list) else []
+    markdown = str(parsed.get("markdown") or content or "")
+    warnings = parsed.get("warnings") if isinstance(parsed.get("warnings"), list) else []
+    return {
+        "provider": provider,
+        "markdown": markdown,
+        "blocks": blocks,
         "warnings": warnings,
         "raw": response,
     }
