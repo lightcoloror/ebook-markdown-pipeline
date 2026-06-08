@@ -56,6 +56,7 @@ def stage1_checks() -> list[Check]:
     readme = read_text("README.md")
     install = read_text("docs/INSTALLATION.md")
     env = read_text("config.example.env")
+    minimal_test = read_text("scripts/test_minimal_entrypoints.py")
     return [
         contains_all(
             "stage1_open_source_usability",
@@ -89,6 +90,13 @@ def stage1_checks() -> list[Check]:
             readme,
             ["```mermaid", "Input materials", "Desktop UI / CLI / HTTP API / MCP", "Outputs"],
             "README.md",
+        ),
+        contains_all(
+            "stage1_open_source_usability",
+            "minimal entrypoint smoke",
+            minimal_test,
+            ["book_converter_ui.py", "batch_convert_books.py", "--help", "Minimal TXT conversion"],
+            "scripts/test_minimal_entrypoints.py",
         ),
     ]
 

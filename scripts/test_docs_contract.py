@@ -117,6 +117,8 @@ def main() -> int:
             "运行时间",
             "check_project_readiness.py",
             "project-readiness.json/md",
+            "test_minimal_entrypoints.py",
+            "公开 TXT fixture",
         ],
         "docs/PROJECT_OVERVIEW.md": [
             "GitHub About Text",
