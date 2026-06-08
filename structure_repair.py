@@ -43,10 +43,12 @@ class StructureRepairResult:
             source_counts[item.source or "unknown"] = source_counts.get(item.source or "unknown", 0) + 1
         return {
             "schema_version": "structure-repair-v1",
+            "grammar": "chapter_section_article_clause_item_subitem",
             "decision_count": len(self.decisions),
             "candidate_count": len(candidates),
             "candidate_sources": source_counts,
             "candidate_samples": [asdict(item) for item in candidates[:20]],
+            "inferred_outline": build_markdown_outline(self.markdown),
             "decisions": [asdict(item) for item in self.decisions],
         }
 
@@ -410,6 +412,36 @@ def parse_existing_heading(line: str) -> tuple[int, str] | None:
     if not match:
         return None
     return len(match.group(1)), match.group(2).strip()
+
+
+def build_markdown_outline(text: str) -> list[dict[str, Any]]:
+    """Build a compact heading tree view from repaired Markdown.
+
+    The repair decisions explain why individual lines changed; this outline
+    makes the resulting hierarchy auditable by agents and humans without
+    reparsing the Markdown themselves.
+    """
+    stack: list[dict[str, Any]] = []
+    outline: list[dict[str, Any]] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        parsed = parse_existing_heading(line.strip())
+        if not parsed:
+            continue
+        level, title = parsed
+        while stack and int(stack[-1]["level"]) >= level:
+            stack.pop()
+        parent = str(stack[-1]["title"]) if stack else ""
+        path = [str(item["title"]) for item in stack] + [title]
+        node = {
+            "line_number": line_number,
+            "level": level,
+            "title": title,
+            "parent": parent,
+            "path": path,
+        }
+        outline.append(node)
+        stack.append(node)
+    return outline
 
 
 def should_promote_article_heading(lines: list[str], idx: int) -> bool:

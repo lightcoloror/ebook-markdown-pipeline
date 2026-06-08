@@ -23,8 +23,7 @@ from ebook_markdown_pipeline.structure_repair import HeadingCandidate, repair_ma
 def main() -> int:
     source = (
         "第一章 总则\n\n"
-        "第一节 保险合同\n\n"
-        "## 保险责任\n\n"
+        "第一节 保险责任\n\n"
         "第五条 在保险期间内，被保险人于旅游期间因遭受意外伤害（亦简称“意外”）而身故或者伤残的，保险人按下列约定承担保险责任：\n\n"
         "（一）旅游意外身故\n\n"
         "被保险人自遭受该意外之日起一百八十日内以该意外为直接、完全原因而身故。\n\n"
@@ -41,7 +40,7 @@ def main() -> int:
     )
     result = repair_markdown_structure(source, source_kind="pdf")
     markdown = result.markdown
-    if "# 第一章 总则" not in markdown or "## 第一节 保险合同" not in markdown:
+    if "# 第一章 总则" not in markdown or "## 第一节 保险责任" not in markdown:
         raise AssertionError(f"Expected chapter/section hierarchy:\n{markdown}")
     if "### 第五条 在保险期间内" not in markdown:
         raise AssertionError(f"Expected 第五条 as article heading:\n{markdown}")
@@ -54,6 +53,15 @@ def main() -> int:
     if "#### （一）投保人的故意行为；" in markdown:
         raise AssertionError(f"Expected semicolon-ended list item not to be promoted:\n{markdown}")
     report = result.report()
+    if report.get("grammar") != "chapter_section_article_clause_item_subitem":
+        raise AssertionError(f"Expected grammar name in report: {report}")
+    outline = report.get("inferred_outline") or []
+    subitem = next((item for item in outline if item.get("title") == "（1）一级伤残"), None)
+    if not subitem:
+        raise AssertionError(f"Expected inferred outline to include subitem: {report}")
+    expected_path = ["第一章 总则", "第一节 保险责任", "第五条 在保险期间内，被保险人于旅游期间因遭受意外伤害（亦简称“意外”）而身故或者伤残的，保险人按下列约定承担保险责任：", "（二）旅游意外伤残", "1. 伤残等级", "（1）一级伤残"]
+    if subitem.get("path") != expected_path:
+        raise AssertionError(f"Expected full hierarchy path, got {subitem}")
     decisions = report.get("decisions") or []
     fifth_children = [
         item
