@@ -334,7 +334,24 @@ python D:\used-by-codex\ebook_markdown_pipeline\image_book_rebuilder.py build `
   --recursive
 ```
 
-输出包括 `book.md`、`order.md`、`structure.md/json`、`review.md`、`pages.jsonl`、`clusters.json`。排序会综合图片内页码、文件名数字、文件时间、文本前后重叠和重复截图分组；`order.md` 会写明排序置信度和排序依据，`structure.md` 会汇总标题候选和推断层级，重复截图会作为排序和复查依据保留在 `review.md`，不会静默丢弃。
+输出包括 `book.md`、`enhanced.md`、`order.md`、`structure.md/json`、`layout.md`、`enhancement.md/json`、`review.md`、`pages.jsonl`、`clusters.json`。排序会综合图片内页码、文件名数字、文件时间、文本前后重叠和重复截图分组；`order.md` 会写明排序置信度和排序依据，`structure.md` 会汇总标题候选和推断层级，重复截图会作为排序和复查依据保留在 `review.md`，不会静默丢弃。
+
+图片管道默认先用 Umi-OCR/PaddleOCR-json 做快速文字识别，并把 OCR 坐标块写入 `pages.jsonl`。如果检测到疑似信息图、宽图、多栏短标签密集页或复杂版面，会在 `layout.md` 标记为 `layout-heavy`，再按 `mineru-vlm,paddleocr-vl,qwen-vl` 顺序自动尝试补强。稳定的 Umi-OCR 主结果仍写入 `book.md`；重后端成功时，补强版写入 `enhanced.md`，每次尝试的成功、缺失、超时或失败原因写入 `enhancement.md/json`。
+
+可用参数：
+
+```powershell
+python D:\used-by-codex\ebook_markdown_pipeline\image_book_rebuilder.py build `
+  D:\screenshots `
+  D:\screenshots-md `
+  --enhance-layout-heavy auto `
+  --layout-enhancer-order mineru-vlm,paddleocr-vl,qwen-vl `
+  --layout-enhancer-timeout 180 `
+  --paddleocr-vl-command "python D:\tools\paddleocr_vl_cli.py --input {input} --output {output}" `
+  --qwen-vl-command "python D:\tools\qwen_vl_cli.py --input {input} --output {output}"
+```
+
+如果只想做轻量 OCR，不调用重后端，可以加 `--enhance-layout-heavy never`。
 
 如果自动排序不满意，可以直接调整 `order.md` 表格行顺序，然后不重新 OCR、只按人工顺序重建：
 

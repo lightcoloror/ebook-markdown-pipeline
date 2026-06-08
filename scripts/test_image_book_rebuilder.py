@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from ebook_markdown_pipeline.image_book_rebuilder import (  # noqa: E402
     ScreenshotPage,
+    build_layout_profile,
     build_structure_outline,
     detect_title_candidate_details,
     extract_page_number,
@@ -15,6 +16,9 @@ from ebook_markdown_pipeline.image_book_rebuilder import (  # noqa: E402
     mark_duplicates,
     rebuild_image_book_from_order,
     render_book_markdown,
+    render_layout_markdown,
+    run_layout_heavy_enhancements,
+    selected_enhancement_text,
     text_to_markdown,
     write_pages_jsonl,
 )
@@ -35,6 +39,34 @@ def make_page(source: str, text: str, filename_number: int | None = None) -> Scr
         image_hash=source,
         title_candidates=[],
     )
+
+
+def make_infographic_page() -> ScreenshotPage:
+    blocks = []
+    labels = [
+        ("目标", 50, 30, 140, 60),
+        ("用户", 60, 95, 150, 125),
+        ("渠道", 70, 160, 160, 190),
+        ("收入", 650, 40, 740, 70),
+        ("成本", 660, 110, 750, 140),
+        ("指标", 670, 180, 760, 210),
+        ("流程", 350, 65, 440, 95),
+        ("输入", 340, 130, 430, 160),
+        ("输出", 345, 195, 435, 225),
+        ("复盘", 350, 260, 440, 290),
+        ("风险", 70, 250, 160, 280),
+        ("机会", 660, 260, 750, 290),
+    ]
+    for index, (text, x1, y1, x2, y2) in enumerate(labels, start=1):
+        blocks.append({"index": index, "text": text, "bbox": [x1, y1, x2, y2], "score": 0.9})
+    text = "\n".join(label[0] for label in labels)
+    page = make_page("infographic.png", text, 1)
+    page.width = 800
+    page.height = 400
+    page.ocr_blocks = blocks
+    page.layout_profile = build_layout_profile(text, blocks, width=page.width, height=page.height)
+    page.order_index = 1
+    return page
 
 
 def main() -> int:
@@ -78,6 +110,64 @@ def main() -> int:
     book = render_book_markdown(Path("截图集"), ordered)
     if "<!-- source: b.png -->" not in book or "## 第一章 开始" not in book:
         raise RuntimeError(f"Expected traceable rebuilt Markdown: {book}")
+    infographic_page = make_infographic_page()
+    if not infographic_page.layout_profile or not infographic_page.layout_profile.get("likely_infographic"):
+        raise RuntimeError(f"Expected infographic profile: {infographic_page.layout_profile}")
+    infographic_book = render_book_markdown("信息图测试", [infographic_page])
+    if "likely-infographic" not in infographic_book or "![source image]" not in infographic_book:
+        raise RuntimeError(f"Expected infographic warning in book Markdown: {infographic_book}")
+    layout_report = render_layout_markdown([infographic_page])
+    if "Likely infographic/layout-heavy pages: 1" not in layout_report or "multi_region_ocr_blocks" not in layout_report:
+        raise RuntimeError(f"Expected layout report signals: {layout_report}")
+    with tempfile.TemporaryDirectory(prefix="image-book-enhancement-") as tmp:
+        enhancement_output = Path(tmp)
+        missing = run_layout_heavy_enhancements(
+            [infographic_page],
+            enhancement_output,
+            mode="auto",
+            order="mineru-vlm,paddleocr-vl,qwen-vl",
+            timeout_seconds=1,
+            mineru_command="definitely-missing-mineru",
+            mineru_method="auto",
+            mineru_backend="vlm-transformers",
+            mineru_lang="ch",
+            paddleocr_vl_command="",
+            qwen_vl_command="",
+            progress_callback=None,
+        )
+        if missing.get("status") != "failed" or not missing.get("items"):
+            raise RuntimeError(f"Expected unavailable enhancement report: {missing}")
+
+        import ebook_markdown_pipeline.image_book_rebuilder as rebuilder  # noqa: PLC0415
+
+        original_backend = rebuilder.run_layout_enhancer_backend
+        try:
+            def fake_backend(backend: str, page: ScreenshotPage, output_root: Path, **kwargs) -> dict:
+                return {"backend": backend, "status": "ok", "text": "增强标题\n增强后的信息图说明"}
+
+            rebuilder.run_layout_enhancer_backend = fake_backend
+            enhanced_page = make_infographic_page()
+            enhanced = rebuilder.run_layout_heavy_enhancements(
+                [enhanced_page],
+                enhancement_output,
+                mode="auto",
+                order="mineru-vlm",
+                timeout_seconds=1,
+                mineru_command="definitely-missing-mineru",
+                mineru_method="auto",
+                mineru_backend="vlm-transformers",
+                mineru_lang="ch",
+                paddleocr_vl_command="",
+                qwen_vl_command="",
+                progress_callback=None,
+            )
+            if enhanced.get("status") != "ok" or selected_enhancement_text(enhanced_page) != "增强标题\n增强后的信息图说明":
+                raise RuntimeError(f"Expected selected enhanced text: {enhanced}")
+            enhanced_book = render_book_markdown("增强测试", [enhanced_page], prefer_enhanced=True)
+            if "enhanced-layout-source" not in enhanced_book or "增强后的信息图说明" not in enhanced_book:
+                raise RuntimeError(f"Expected enhanced Markdown: {enhanced_book}")
+        finally:
+            rebuilder.run_layout_enhancer_backend = original_backend
 
     events = []
     from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book_from_sources  # noqa: PLC0415
@@ -92,7 +182,19 @@ def main() -> int:
     if not Path(result["book"]).exists():
         raise RuntimeError(f"Expected output files from empty rebuild: {result}")
     artifact_types = {item["type"] for item in result.get("artifacts", [])}
-    expected_artifacts = {"markdown", "pages_jsonl", "clusters_json", "order_report", "structure_report", "structure_json", "review_report"}
+    expected_artifacts = {
+        "markdown",
+        "pages_jsonl",
+        "clusters_json",
+        "order_report",
+        "structure_report",
+        "structure_json",
+        "layout_report",
+        "enhancement_report",
+        "enhancement_json",
+        "enhanced_markdown",
+        "review_report",
+    }
     if not expected_artifacts.issubset(artifact_types):
         raise RuntimeError(f"Expected image book artifacts: {result}")
     if not {"ocr", "dedupe", "order", "write"}.issubset({event["stage"] for event in events}):
@@ -170,7 +272,7 @@ def main() -> int:
         if "第一章 开始" not in structure_text or "Title confidence" not in structure_text:
             raise RuntimeError(f"Expected inferred structure outline to include title candidates: {structure_text}")
         manual_artifacts = {item["type"] for item in manual.get("artifacts", [])}
-        if not {"markdown", "order_report", "structure_report", "structure_json", "review_report"}.issubset(manual_artifacts):
+        if not {"markdown", "order_report", "structure_report", "structure_json", "layout_report", "enhancement_report", "enhancement_json", "enhanced_markdown", "review_report"}.issubset(manual_artifacts):
             raise RuntimeError(f"Expected manual rebuild artifacts: {manual}")
 
     print("Image book rebuilder smoke test passed.")

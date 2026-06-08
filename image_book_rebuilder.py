@@ -5,7 +5,11 @@ import hashlib
 import json
 import os
 import re
+import shlex
+import shutil
+import subprocess
 import sys
+import tempfile
 from dataclasses import asdict, dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -19,6 +23,7 @@ from ebook_markdown_pipeline.batch_convert_books import (  # noqa: E402
     create_umi_paddle_engine,
     default_options,
     normalize_command_options,
+    mineru_environment,
     suggested_umi_paddle_exe,
     suggested_umi_paddle_module,
     umi_ocr_image,
@@ -49,6 +54,9 @@ class ScreenshotPage:
     previous_overlap_chars: int = 0
     order_reason: str = ""
     title_candidates: list[str] | None = None
+    ocr_blocks: list[dict] | None = None
+    layout_profile: dict | None = None
+    layout_enhancements: list[dict] | None = None
 
 
 ProgressCallback = Callable[[dict], None]
@@ -66,6 +74,15 @@ def main() -> int:
     build_parser.add_argument("--include-hidden", action="store_true")
     build_parser.add_argument("--umi-paddle-exe", default=suggested_umi_paddle_exe())
     build_parser.add_argument("--umi-paddle-module", default=suggested_umi_paddle_module())
+    build_parser.add_argument("--enhance-layout-heavy", choices=["auto", "never"], default="auto")
+    build_parser.add_argument("--layout-enhancer-order", default="mineru-vlm,paddleocr-vl,qwen-vl")
+    build_parser.add_argument("--layout-enhancer-timeout", type=float, default=180.0)
+    build_parser.add_argument("--mineru-command", default="mineru")
+    build_parser.add_argument("--mineru-method", default="auto")
+    build_parser.add_argument("--mineru-backend", default="vlm-transformers")
+    build_parser.add_argument("--mineru-lang", default="ch")
+    build_parser.add_argument("--paddleocr-vl-command", default=os.environ.get("PADDLEOCR_VL_COMMAND", ""))
+    build_parser.add_argument("--qwen-vl-command", default=os.environ.get("QWEN_VL_COMMAND", ""))
 
     reorder_parser = subparsers.add_parser("rebuild-from-order", help="Rebuild Markdown from pages.jsonl and a manually edited order.md.")
     reorder_parser.add_argument("pages", type=Path)
@@ -83,6 +100,15 @@ def main() -> int:
             ocr_mode=args.ocr,
             umi_paddle_exe=args.umi_paddle_exe,
             umi_paddle_module=args.umi_paddle_module,
+            enhance_layout_heavy=args.enhance_layout_heavy,
+            layout_enhancer_order=args.layout_enhancer_order,
+            layout_enhancer_timeout=args.layout_enhancer_timeout,
+            mineru_command=args.mineru_command,
+            mineru_method=args.mineru_method,
+            mineru_backend=args.mineru_backend,
+            mineru_lang=args.mineru_lang,
+            paddleocr_vl_command=args.paddleocr_vl_command,
+            qwen_vl_command=args.qwen_vl_command,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
@@ -102,6 +128,15 @@ def rebuild_image_book(
     ocr_mode: str = "auto",
     umi_paddle_exe: str | None = None,
     umi_paddle_module: str | None = None,
+    enhance_layout_heavy: str = "auto",
+    layout_enhancer_order: str = "mineru-vlm,paddleocr-vl,qwen-vl",
+    layout_enhancer_timeout: float = 180.0,
+    mineru_command: str = "mineru",
+    mineru_method: str = "auto",
+    mineru_backend: str = "vlm-transformers",
+    mineru_lang: str = "ch",
+    paddleocr_vl_command: str = "",
+    qwen_vl_command: str = "",
     progress_callback: ProgressCallback | None = None,
 ) -> dict:
     emit_progress(progress_callback, "collect", f"Collected image sources from {input_path}")
@@ -114,6 +149,15 @@ def rebuild_image_book(
         ocr_mode=ocr_mode,
         umi_paddle_exe=umi_paddle_exe,
         umi_paddle_module=umi_paddle_module,
+        enhance_layout_heavy=enhance_layout_heavy,
+        layout_enhancer_order=layout_enhancer_order,
+        layout_enhancer_timeout=layout_enhancer_timeout,
+        mineru_command=mineru_command,
+        mineru_method=mineru_method,
+        mineru_backend=mineru_backend,
+        mineru_lang=mineru_lang,
+        paddleocr_vl_command=paddleocr_vl_command,
+        qwen_vl_command=qwen_vl_command,
         progress_callback=progress_callback,
     )
 
@@ -127,6 +171,15 @@ def rebuild_image_book_from_sources(
     ocr_mode: str = "auto",
     umi_paddle_exe: str | None = None,
     umi_paddle_module: str | None = None,
+    enhance_layout_heavy: str = "auto",
+    layout_enhancer_order: str = "mineru-vlm,paddleocr-vl,qwen-vl",
+    layout_enhancer_timeout: float = 180.0,
+    mineru_command: str = "mineru",
+    mineru_method: str = "auto",
+    mineru_backend: str = "vlm-transformers",
+    mineru_lang: str = "ch",
+    paddleocr_vl_command: str = "",
+    qwen_vl_command: str = "",
     progress_callback: ProgressCallback | None = None,
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -148,6 +201,20 @@ def rebuild_image_book_from_sources(
     representatives = choose_representatives(pages)
     emit_progress(progress_callback, "order", "Infer screenshot order")
     ordered_pages = infer_page_order(representatives)
+    enhancement_payload = run_layout_heavy_enhancements(
+        ordered_pages,
+        output_dir,
+        mode=enhance_layout_heavy,
+        order=layout_enhancer_order,
+        timeout_seconds=layout_enhancer_timeout,
+        mineru_command=mineru_command,
+        mineru_method=mineru_method,
+        mineru_backend=mineru_backend,
+        mineru_lang=mineru_lang,
+        paddleocr_vl_command=paddleocr_vl_command,
+        qwen_vl_command=qwen_vl_command,
+        progress_callback=progress_callback,
+    )
 
     pages_jsonl = output_dir / "pages.jsonl"
     clusters_json = output_dir / "clusters.json"
@@ -155,6 +222,10 @@ def rebuild_image_book_from_sources(
     review_md = output_dir / "review.md"
     structure_md = output_dir / "structure.md"
     structure_json = output_dir / "structure.json"
+    layout_md = output_dir / "layout.md"
+    enhancement_md = output_dir / "enhancement.md"
+    enhancement_json = output_dir / "enhancement.json"
+    enhanced_md = output_dir / "enhanced.md"
     book_md = output_dir / "book.md"
 
     emit_progress(progress_callback, "write", f"Write outputs to {output_dir}")
@@ -165,7 +236,11 @@ def rebuild_image_book_from_sources(
     structure_payload = build_structure_outline(ordered_pages)
     structure_json.write_text(json.dumps(structure_payload, ensure_ascii=False, indent=2), encoding="utf-8")
     structure_md.write_text(render_structure_markdown(structure_payload), encoding="utf-8")
+    layout_md.write_text(render_layout_markdown(ordered_pages), encoding="utf-8")
+    enhancement_json.write_text(json.dumps(enhancement_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    enhancement_md.write_text(render_enhancement_markdown(enhancement_payload), encoding="utf-8")
     book_md.write_text(render_book_markdown(title, ordered_pages), encoding="utf-8")
+    enhanced_md.write_text(render_book_markdown(title, ordered_pages, prefer_enhanced=True), encoding="utf-8")
 
     return with_artifacts(
         {
@@ -182,6 +257,10 @@ def rebuild_image_book_from_sources(
         "review": str(review_md),
         "structure": str(structure_md),
         "structure_json": str(structure_json),
+        "layout": str(layout_md),
+        "enhancement": str(enhancement_md),
+        "enhancement_json": str(enhancement_json),
+        "enhanced_book": str(enhanced_md),
         },
         [
             artifact("markdown", book_md, label="Rebuilt Markdown", media_type="text/markdown"),
@@ -190,6 +269,10 @@ def rebuild_image_book_from_sources(
             artifact("order_report", order_md, label="Inferred order report", media_type="text/markdown"),
             artifact("structure_report", structure_md, label="Inferred structure outline", media_type="text/markdown"),
             artifact("structure_json", structure_json, label="Inferred structure outline JSON", media_type="application/json"),
+            artifact("layout_report", layout_md, label="Image layout and infographic review", media_type="text/markdown"),
+            artifact("enhancement_report", enhancement_md, label="Layout-heavy enhancement report", media_type="text/markdown"),
+            artifact("enhancement_json", enhancement_json, label="Layout-heavy enhancement JSON", media_type="application/json"),
+            artifact("enhanced_markdown", enhanced_md, label="Enhanced Markdown", media_type="text/markdown"),
             artifact("review_report", review_md, label="Image book review checklist", media_type="text/markdown"),
         ],
     )
@@ -234,13 +317,22 @@ def rebuild_image_book_from_order(
     review_md = output_dir / "review.md"
     structure_md = output_dir / "structure.md"
     structure_json = output_dir / "structure.json"
+    layout_md = output_dir / "layout.md"
+    enhancement_md = output_dir / "enhancement.md"
+    enhancement_json = output_dir / "enhancement.json"
+    enhanced_md = output_dir / "enhanced.md"
     book_title = title or output_dir.name or "Rebuilt Image Book"
     book_md.write_text(render_book_markdown(book_title, ordered_pages), encoding="utf-8", newline="\n")
+    enhanced_md.write_text(render_book_markdown(book_title, ordered_pages, prefer_enhanced=True), encoding="utf-8", newline="\n")
     order_md.write_text(render_order_markdown(ordered_pages), encoding="utf-8", newline="\n")
     review_md.write_text(render_manual_order_review_markdown(pages_jsonl, order_markdown, ordered_pages, missing_sources, remaining_pages), encoding="utf-8", newline="\n")
     structure_payload = build_structure_outline(ordered_pages)
     structure_json.write_text(json.dumps(structure_payload, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
     structure_md.write_text(render_structure_markdown(structure_payload), encoding="utf-8", newline="\n")
+    layout_md.write_text(render_layout_markdown(ordered_pages), encoding="utf-8", newline="\n")
+    enhancement_payload = build_existing_enhancement_payload(ordered_pages)
+    enhancement_json.write_text(json.dumps(enhancement_payload, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+    enhancement_md.write_text(render_enhancement_markdown(enhancement_payload), encoding="utf-8", newline="\n")
 
     return with_artifacts(
         {
@@ -257,6 +349,10 @@ def rebuild_image_book_from_order(
             "review": str(review_md),
             "structure": str(structure_md),
             "structure_json": str(structure_json),
+            "layout": str(layout_md),
+            "enhancement": str(enhancement_md),
+            "enhancement_json": str(enhancement_json),
+            "enhanced_book": str(enhanced_md),
             "warnings": manual_order_warnings(missing_sources, remaining_pages),
         },
         [
@@ -264,6 +360,10 @@ def rebuild_image_book_from_order(
             artifact("order_report", order_md, label="Rebuilt order report", media_type="text/markdown"),
             artifact("structure_report", structure_md, label="Inferred structure outline", media_type="text/markdown"),
             artifact("structure_json", structure_json, label="Inferred structure outline JSON", media_type="application/json"),
+            artifact("layout_report", layout_md, label="Image layout and infographic review", media_type="text/markdown"),
+            artifact("enhancement_report", enhancement_md, label="Layout-heavy enhancement report", media_type="text/markdown"),
+            artifact("enhancement_json", enhancement_json, label="Layout-heavy enhancement JSON", media_type="application/json"),
+            artifact("enhanced_markdown", enhanced_md, label="Enhanced Markdown", media_type="text/markdown"),
             artifact("review_report", review_md, label="Manual order review", media_type="text/markdown"),
         ],
     )
@@ -413,16 +513,19 @@ def ocr_screenshot_pages(
         for index, source in enumerate(source_list, start=1):
             emit_progress(progress_callback, "ocr_page", f"OCR image {index}/{len(source_list)}: {source.name}", index=index, total=len(source_list), source=source)
             text = ""
+            ocr_blocks: list[dict] = []
             ocr_status = "skipped" if ocr_engine is None else "ok"
             ocr_message = ""
             if ocr_engine is not None:
                 try:
-                    text = umi_ocr_image(source, ocr_engine).strip()
+                    text, ocr_blocks = umi_ocr_image_with_blocks(source, ocr_engine)
+                    text = text.strip()
                 except Exception as exc:  # noqa: BLE001
                     first_error = str(exc)
                     try:
                         reset_ocr_engine()
-                        text = umi_ocr_image(source, ocr_engine).strip()
+                        text, ocr_blocks = umi_ocr_image_with_blocks(source, ocr_engine)
+                        text = text.strip()
                         ocr_message = f"Recovered after OCR engine restart: {first_error}"
                     except Exception as retry_exc:  # noqa: BLE001
                         ocr_status = "failed"
@@ -431,6 +534,7 @@ def ocr_screenshot_pages(
             normalized_text = normalize_text_for_hash(text)
             titles = detect_title_candidates(text)
             filename_number = extract_filename_number(source)
+            layout_profile = build_layout_profile(text, ocr_blocks, width=width, height=height)
             pages.append(
                 ScreenshotPage(
                     source=str(source),
@@ -447,6 +551,8 @@ def ocr_screenshot_pages(
                     ocr_status=ocr_status,
                     ocr_message=ocr_message,
                     title_candidates=titles,
+                    ocr_blocks=ocr_blocks,
+                    layout_profile=layout_profile,
                 )
             )
     finally:
@@ -465,6 +571,434 @@ def image_metadata(path: Path) -> tuple[int, int, str]:
     except Exception:
         stat = path.stat()
         return 0, 0, short_hash(f"{path.name}:{stat.st_size}:{stat.st_mtime}")
+
+
+def run_layout_heavy_enhancements(
+    pages: list[ScreenshotPage],
+    output_dir: Path,
+    *,
+    mode: str,
+    order: str,
+    timeout_seconds: float,
+    mineru_command: str,
+    mineru_method: str,
+    mineru_backend: str,
+    mineru_lang: str,
+    paddleocr_vl_command: str,
+    qwen_vl_command: str,
+    progress_callback: ProgressCallback | None,
+) -> dict:
+    targets = [page for page in pages if is_likely_infographic(page)]
+    payload = {
+        "schema_version": "image-layout-enhancement-v1",
+        "mode": mode,
+        "target_count": len(targets),
+        "timeout_seconds": timeout_seconds,
+        "backends": parse_enhancer_order(order),
+        "items": [],
+    }
+    if mode == "never" or not targets:
+        payload["status"] = "skipped"
+        payload["reason"] = "disabled" if mode == "never" else "no layout-heavy pages"
+        return payload
+
+    enhancement_root = output_dir / "layout_enhancement"
+    enhancement_root.mkdir(parents=True, exist_ok=True)
+    for index, page in enumerate(targets, start=1):
+        emit_progress(
+            progress_callback,
+            "layout_enhance",
+            f"Enhance layout-heavy image {index}/{len(targets)}: {Path(page.source).name}",
+            index=index,
+            total=len(targets),
+            source=Path(page.source),
+        )
+        item = {
+            "source": page.source,
+            "file_name": page.file_name,
+            "signals": (page.layout_profile or {}).get("signals") or [],
+            "attempts": [],
+            "status": "skipped",
+        }
+        page.layout_enhancements = []
+        for backend in payload["backends"]:
+            attempt = run_layout_enhancer_backend(
+                backend,
+                page,
+                enhancement_root,
+                timeout_seconds=timeout_seconds,
+                mineru_command=mineru_command,
+                mineru_method=mineru_method,
+                mineru_backend=mineru_backend,
+                mineru_lang=mineru_lang,
+                paddleocr_vl_command=paddleocr_vl_command,
+                qwen_vl_command=qwen_vl_command,
+            )
+            item["attempts"].append(attempt)
+            page.layout_enhancements.append(attempt)
+            if attempt.get("status") == "ok" and attempt.get("text"):
+                item["status"] = "ok"
+                item["selected_backend"] = backend
+                break
+            if attempt.get("status") == "ok":
+                item["status"] = "ok_empty"
+                item["selected_backend"] = backend
+                break
+        if item["status"] == "skipped":
+            item["status"] = "unavailable_or_failed"
+        payload["items"].append(item)
+    ok_count = sum(1 for item in payload["items"] if item.get("status") in {"ok", "ok_empty"})
+    payload["status"] = "ok" if ok_count == len(targets) else "partial" if ok_count else "failed"
+    payload["ok_count"] = ok_count
+    return payload
+
+
+def parse_enhancer_order(order: str) -> list[str]:
+    aliases = {
+        "mineru": "mineru-vlm",
+        "mineru-vlm": "mineru-vlm",
+        "paddle": "paddleocr-vl",
+        "paddleocr": "paddleocr-vl",
+        "paddleocr-vl": "paddleocr-vl",
+        "qwen": "qwen-vl",
+        "qwen-vl": "qwen-vl",
+    }
+    parsed = []
+    for raw in re.split(r"[,;\s]+", order or ""):
+        key = raw.strip().lower()
+        if not key:
+            continue
+        backend = aliases.get(key)
+        if backend and backend not in parsed:
+            parsed.append(backend)
+    return parsed or ["mineru-vlm", "paddleocr-vl", "qwen-vl"]
+
+
+def run_layout_enhancer_backend(
+    backend: str,
+    page: ScreenshotPage,
+    output_root: Path,
+    *,
+    timeout_seconds: float,
+    mineru_command: str,
+    mineru_method: str,
+    mineru_backend: str,
+    mineru_lang: str,
+    paddleocr_vl_command: str,
+    qwen_vl_command: str,
+) -> dict:
+    backend_dir = output_root / safe_name(Path(page.source).stem) / backend
+    backend_dir.mkdir(parents=True, exist_ok=True)
+    if backend == "mineru-vlm":
+        return run_mineru_vlm_image_enhancer(
+            page,
+            backend_dir,
+            timeout_seconds=timeout_seconds,
+            mineru_command=mineru_command,
+            mineru_method=mineru_method,
+            mineru_backend=mineru_backend,
+            mineru_lang=mineru_lang,
+        )
+    if backend == "paddleocr-vl":
+        return run_template_image_enhancer("paddleocr-vl", paddleocr_vl_command, page, backend_dir, timeout_seconds)
+    if backend == "qwen-vl":
+        return run_template_image_enhancer("qwen-vl", qwen_vl_command, page, backend_dir, timeout_seconds)
+    return {"backend": backend, "status": "skipped", "reason": "unknown backend"}
+
+
+def run_mineru_vlm_image_enhancer(
+    page: ScreenshotPage,
+    output_dir: Path,
+    *,
+    timeout_seconds: float,
+    mineru_command: str,
+    mineru_method: str,
+    mineru_backend: str,
+    mineru_lang: str,
+) -> dict:
+    executable = resolve_executable(mineru_command)
+    if not executable:
+        return {"backend": "mineru-vlm", "status": "skipped", "reason": f"command not found: {mineru_command}"}
+    cmd = [
+        executable,
+        "-p",
+        page.source,
+        "-o",
+        str(output_dir),
+        "-m",
+        mineru_method or "auto",
+        "-b",
+        mineru_backend or "vlm-transformers",
+        "-l",
+        mineru_lang or "ch",
+    ]
+    args = argparse.Namespace(mineru_model_source="huggingface", mineru_hf_endpoint="https://hf-mirror.com")
+    return run_enhancement_command("mineru-vlm", cmd, output_dir, timeout_seconds, env=mineru_environment(args))
+
+
+def run_template_image_enhancer(
+    backend: str,
+    command_template: str,
+    page: ScreenshotPage,
+    output_dir: Path,
+    timeout_seconds: float,
+) -> dict:
+    if not command_template.strip():
+        return {"backend": backend, "status": "skipped", "reason": "command template is not configured"}
+    output_file = output_dir / "enhanced.md"
+    command_text = command_template.format(input=page.source, output=str(output_file), output_dir=str(output_dir))
+    cmd = shlex.split(command_text, posix=False)
+    if not cmd:
+        return {"backend": backend, "status": "skipped", "reason": "empty command template"}
+    executable = resolve_executable(cmd[0])
+    if not executable:
+        return {"backend": backend, "status": "skipped", "reason": f"command not found: {cmd[0]}"}
+    cmd[0] = executable
+    return run_enhancement_command(backend, cmd, output_dir, timeout_seconds)
+
+
+def run_enhancement_command(
+    backend: str,
+    cmd: list[str],
+    output_dir: Path,
+    timeout_seconds: float,
+    *,
+    env: dict[str, str] | None = None,
+) -> dict:
+    started = {
+        "backend": backend,
+        "status": "running",
+        "command": subprocess.list2cmdline(cmd),
+        "output_dir": str(output_dir),
+    }
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd=str(output_dir),
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout_seconds if timeout_seconds > 0 else None,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        started.update({"status": "timeout", "reason": f"timed out after {timeout_seconds:.0f}s", "stdout_tail": tail_text(exc.stdout or "")})
+        return started
+    except Exception as exc:  # noqa: BLE001
+        started.update({"status": "failed", "reason": str(exc)})
+        return started
+
+    text_path, text = pick_enhancement_text(output_dir)
+    started.update(
+        {
+            "status": "ok" if completed.returncode == 0 else "failed",
+            "returncode": completed.returncode,
+            "stdout_tail": tail_text(completed.stdout or ""),
+            "artifact": str(text_path) if text_path else "",
+            "text": text,
+        }
+    )
+    if completed.returncode != 0 and not started.get("reason"):
+        started["reason"] = "non-zero exit"
+    return started
+
+
+def pick_enhancement_text(output_dir: Path) -> tuple[Path | None, str]:
+    candidates = sorted(output_dir.rglob("*.md")) + sorted(output_dir.rglob("*.txt"))
+    for candidate in candidates:
+        try:
+            text = candidate.read_text(encoding="utf-8", errors="replace").strip()
+        except Exception:
+            continue
+        if text:
+            return candidate, text[:20000]
+    json_candidates = sorted(output_dir.rglob("*.json"))
+    for candidate in json_candidates:
+        try:
+            text = candidate.read_text(encoding="utf-8", errors="replace").strip()
+        except Exception:
+            continue
+        if text:
+            return candidate, text[:20000]
+    return None, ""
+
+
+def resolve_executable(command: str) -> str:
+    command = str(command or "").strip().strip('"')
+    if not command:
+        return ""
+    path = Path(command)
+    if path.exists():
+        return str(path)
+    found = shutil.which(command)
+    return found or ""
+
+
+def safe_name(value: str) -> str:
+    cleaned = re.sub(r"[^\w.\-]+", "_", value, flags=re.UNICODE).strip("._")
+    return cleaned[:80] or "image"
+
+
+def tail_text(text: str, limit: int = 3000) -> str:
+    text = text if isinstance(text, str) else str(text or "")
+    return text[-limit:]
+
+
+def build_existing_enhancement_payload(pages: list[ScreenshotPage]) -> dict:
+    items = []
+    for page in pages:
+        enhancements = page.layout_enhancements or []
+        if not enhancements:
+            continue
+        selected = next((item for item in enhancements if item.get("status") == "ok"), enhancements[0])
+        items.append(
+            {
+                "source": page.source,
+                "file_name": page.file_name,
+                "signals": (page.layout_profile or {}).get("signals") or [],
+                "status": selected.get("status") or "unknown",
+                "selected_backend": selected.get("backend") or "",
+                "attempts": enhancements,
+            }
+        )
+    return {
+        "schema_version": "image-layout-enhancement-v1",
+        "mode": "existing",
+        "target_count": len(items),
+        "status": "ok" if items else "skipped",
+        "items": items,
+    }
+
+
+def umi_ocr_image_with_blocks(image_path: Path, ocr_engine) -> tuple[str, list[dict]]:
+    run = getattr(ocr_engine, "run", None)
+    if not callable(run):
+        return umi_ocr_image(image_path, ocr_engine).strip(), []
+    result = run(str(image_path))
+    code = result.get("code")
+    if code == 101:
+        return "", []
+    if code != 100:
+        raise RuntimeError(f"Umi-OCR failed: {result}")
+    lines = []
+    blocks = []
+    for index, item in enumerate(result.get("data", []), start=1):
+        text = (item.get("text") or "").strip()
+        if not text:
+            continue
+        lines.append(text)
+        block = {
+            "index": index,
+            "text": text,
+            "score": item.get("score"),
+        }
+        bbox = normalize_ocr_box(item.get("box") or item.get("bbox"))
+        if bbox:
+            block["bbox"] = bbox
+        blocks.append(block)
+    return "\n".join(lines), blocks
+
+
+def normalize_ocr_box(raw_box) -> list[float] | None:
+    if not raw_box:
+        return None
+    try:
+        if isinstance(raw_box, dict):
+            values = [raw_box.get(key) for key in ("x1", "y1", "x2", "y2")]
+            if all(value is not None for value in values):
+                return [round(float(value), 2) for value in values]
+        if len(raw_box) == 4 and all(isinstance(value, (int, float)) for value in raw_box):
+            x1, y1, x2, y2 = [float(value) for value in raw_box]
+            return [round(min(x1, x2), 2), round(min(y1, y2), 2), round(max(x1, x2), 2), round(max(y1, y2), 2)]
+        points = []
+        for point in raw_box:
+            if isinstance(point, dict):
+                points.append((float(point.get("x")), float(point.get("y"))))
+            elif len(point) >= 2:
+                points.append((float(point[0]), float(point[1])))
+        if not points:
+            return None
+        xs = [point[0] for point in points]
+        ys = [point[1] for point in points]
+        return [round(min(xs), 2), round(min(ys), 2), round(max(xs), 2), round(max(ys), 2)]
+    except Exception:
+        return None
+
+
+def bbox_region(bbox: list[float]) -> str:
+    x1, y1, x2, y2 = bbox
+    cx = (x1 + x2) / 2
+    cy = (y1 + y2) / 2
+    horizontal = "left" if cx < 0.33 else "right" if cx > 0.67 else "center"
+    vertical = "top" if cy < 0.33 else "bottom" if cy > 0.67 else "middle"
+    return f"{vertical}-{horizontal}"
+
+
+def build_layout_profile(text: str, blocks: list[dict], *, width: int, height: int) -> dict:
+    lines = [line.strip() for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n") if line.strip()]
+    short_lines = [line for line in lines if len(line) <= 18]
+    bullet_like = [line for line in lines if re.match(r"^([\-•·*]|\d+[.、．])\s*", line)]
+    blocks_with_bbox = [block for block in blocks if block.get("bbox")]
+    region_counts: dict[str, int] = {}
+    x_bins = {"left": 0, "center": 0, "right": 0}
+    if width > 0 and height > 0:
+        for block in blocks_with_bbox:
+            bbox = normalize_bbox_to_unit(block["bbox"], width=width, height=height)
+            if not bbox:
+                continue
+            block["bbox_unit"] = bbox
+            region = bbox_region(bbox)
+            block["region"] = region
+            region_counts[region] = region_counts.get(region, 0) + 1
+            cx = (bbox[0] + bbox[2]) / 2
+            if cx < 0.33:
+                x_bins["left"] += 1
+            elif cx > 0.67:
+                x_bins["right"] += 1
+            else:
+                x_bins["center"] += 1
+    active_columns = sum(1 for count in x_bins.values() if count >= 3)
+    short_line_ratio = round(len(short_lines) / max(len(lines), 1), 3)
+    bullet_like_ratio = round(len(bullet_like) / max(len(lines), 1), 3)
+    aspect_ratio = round(width / height, 3) if width and height else 0.0
+    signals = []
+    if len(blocks_with_bbox) >= 12 and active_columns >= 2:
+        signals.append("multi_region_ocr_blocks")
+    if len(lines) >= 10 and short_line_ratio >= 0.55:
+        signals.append("short_label_dense")
+    if bullet_like_ratio >= 0.35:
+        signals.append("list_or_flow_dense")
+    if aspect_ratio >= 1.65 or (aspect_ratio and aspect_ratio <= 0.62):
+        signals.append("non_page_aspect_ratio")
+    likely_infographic = bool(signals) and (len(lines) >= 8 or len(blocks_with_bbox) >= 8)
+    return {
+        "schema_version": "image-layout-profile-v1",
+        "line_count": len(lines),
+        "ocr_block_count": len(blocks),
+        "ocr_block_with_bbox_count": len(blocks_with_bbox),
+        "short_line_ratio": short_line_ratio,
+        "bullet_like_ratio": bullet_like_ratio,
+        "aspect_ratio": aspect_ratio,
+        "active_columns": active_columns,
+        "region_counts": region_counts,
+        "signals": signals,
+        "likely_infographic": likely_infographic,
+    }
+
+
+def normalize_bbox_to_unit(bbox: list[float], *, width: int, height: int) -> list[float] | None:
+    if len(bbox) != 4 or width <= 0 or height <= 0:
+        return None
+    x1, y1, x2, y2 = bbox
+    if max(abs(x1), abs(x2)) <= 1.5 and max(abs(y1), abs(y2)) <= 1.5:
+        return [round(max(0.0, min(1.0, value)), 4) for value in bbox]
+    return [
+        round(max(0.0, min(1.0, x1 / width)), 4),
+        round(max(0.0, min(1.0, y1 / height)), 4),
+        round(max(0.0, min(1.0, x2 / width)), 4),
+        round(max(0.0, min(1.0, y2 / height)), 4),
+    ]
 
 
 def mark_duplicates(pages: list[ScreenshotPage]) -> list[dict]:
@@ -656,15 +1190,139 @@ def base_order_tie_breaker(page: ScreenshotPage, index: int) -> float:
     return confidence + max(0.0, 0.04 - index * 0.001)
 
 
-def render_book_markdown(title: str | Path, pages: list[ScreenshotPage]) -> str:
+def render_book_markdown(title: str | Path, pages: list[ScreenshotPage], *, prefer_enhanced: bool = False) -> str:
     title = str(title)
     lines = [f"# {title or 'Rebuilt Image Book'}", ""]
     for page in pages:
         lines.append(f"<!-- source: {page.source} -->")
         if page.order_confidence < 0.45:
             lines.append(f"<!-- low-confidence-order: {page.order_confidence:.2f} -->")
+        enhanced_text = selected_enhancement_text(page) if prefer_enhanced else ""
+        if is_likely_infographic(page):
+            signals = ", ".join(str(signal) for signal in (page.layout_profile or {}).get("signals", []))
+            lines.append(f"<!-- likely-infographic: {signals or 'layout-heavy image'} -->")
+            lines.append(f"![source image]({page.source})")
+            lines.append("")
+            lines.append("<!-- Infographic/layout-heavy page: linear OCR may lose visual relationships. See layout.md. -->")
+        if enhanced_text:
+            lines.append("<!-- enhanced-layout-source: automatic VLM/layout backend -->")
+            lines.extend(text_to_markdown(enhanced_text).splitlines())
+            lines.append("")
+            lines.append("<!-- original-umi-ocr-text -->")
         lines.extend(text_to_markdown(page.text).splitlines())
         lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def is_likely_infographic(page: ScreenshotPage) -> bool:
+    profile = page.layout_profile or {}
+    return bool(profile.get("likely_infographic"))
+
+
+def render_layout_markdown(pages: list[ScreenshotPage]) -> str:
+    lines = ["# 图片版面复查 / Image Layout Review", ""]
+    infographic_pages = [page for page in pages if is_likely_infographic(page)]
+    lines.append(f"- Pages: {len(pages)}")
+    lines.append(f"- Likely infographic/layout-heavy pages: {len(infographic_pages)}")
+    lines.append("")
+    if not pages:
+        return "\n".join(lines).rstrip() + "\n"
+    for page in pages:
+        profile = page.layout_profile or {}
+        signals = ", ".join(str(signal) for signal in profile.get("signals") or [])
+        marker = "needs layout review" if is_likely_infographic(page) else "normal"
+        lines.append(f"## {page.order_index or ''} {Path(page.source).name}".strip())
+        lines.append("")
+        lines.append(f"- Source: `{page.source}`")
+        lines.append(f"- Status: {marker}")
+        lines.append(f"- Size: {page.width}x{page.height}")
+        lines.append(f"- OCR lines: {profile.get('line_count', 0)}")
+        lines.append(f"- OCR blocks with bbox: {profile.get('ocr_block_with_bbox_count', 0)}")
+        lines.append(f"- Active columns: {profile.get('active_columns', 0)}")
+        if signals:
+            lines.append(f"- Signals: {signals}")
+        region_counts = profile.get("region_counts") or {}
+        if region_counts:
+            region_text = ", ".join(f"{key}={value}" for key, value in sorted(region_counts.items()))
+            lines.append(f"- Regions: {region_text}")
+        lines.append("")
+        blocks = page.ocr_blocks or []
+        if blocks:
+            lines.append("| # | Region | BBox | Score | Text |")
+            lines.append("| --- | --- | --- | --- | --- |")
+            for block in blocks[:120]:
+                bbox = block.get("bbox_unit") or block.get("bbox") or ""
+                if isinstance(bbox, list):
+                    bbox = ",".join(str(value) for value in bbox)
+                lines.append(
+                    f"| {block.get('index', '')} | {markdown_cell(str(block.get('region') or ''))} | "
+                    f"{markdown_cell(str(bbox))} | {markdown_cell(str(block.get('score') or ''))} | "
+                    f"{markdown_cell(str(block.get('text') or ''))} |"
+                )
+            if len(blocks) > 120:
+                lines.append(f"| ... | ... | ... | ... | {len(blocks) - 120} more block(s) omitted |")
+        else:
+            lines.append("No OCR bounding boxes were available; this page used text-only OCR fallback.")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def selected_enhancement_text(page: ScreenshotPage) -> str:
+    for enhancement in page.layout_enhancements or []:
+        if enhancement.get("status") == "ok" and enhancement.get("text"):
+            return str(enhancement.get("text") or "").strip()
+    return ""
+
+
+def render_enhancement_markdown(payload: dict) -> str:
+    lines = ["# 信息图自动补强 / Layout-Heavy Enhancement", ""]
+    lines.append(f"- Status: {payload.get('status', '')}")
+    lines.append(f"- Mode: {payload.get('mode', '')}")
+    lines.append(f"- Target pages: {payload.get('target_count', 0)}")
+    if payload.get("reason"):
+        lines.append(f"- Reason: {payload.get('reason')}")
+    backends = payload.get("backends") or []
+    if backends:
+        lines.append(f"- Backend order: {', '.join(str(item) for item in backends)}")
+    lines.append("")
+    items = payload.get("items") or []
+    if not items:
+        lines.append("No layout-heavy pages were enhanced.")
+        return "\n".join(lines).rstrip() + "\n"
+    for item in items:
+        lines.append(f"## {item.get('file_name') or Path(str(item.get('source') or '')).name}")
+        lines.append("")
+        lines.append(f"- Source: `{item.get('source')}`")
+        lines.append(f"- Status: {item.get('status')}")
+        if item.get("selected_backend"):
+            lines.append(f"- Selected backend: {item.get('selected_backend')}")
+        signals = ", ".join(str(signal) for signal in item.get("signals") or [])
+        if signals:
+            lines.append(f"- Signals: {signals}")
+        lines.append("")
+        attempts = item.get("attempts") or []
+        if attempts:
+            lines.append("| Backend | Status | Artifact | Reason |")
+            lines.append("| --- | --- | --- | --- |")
+            for attempt in attempts:
+                reason = attempt.get("reason") or attempt.get("stdout_tail") or ""
+                lines.append(
+                    f"| {markdown_cell(str(attempt.get('backend') or ''))} | "
+                    f"{markdown_cell(str(attempt.get('status') or ''))} | "
+                    f"{markdown_cell(str(attempt.get('artifact') or ''))} | "
+                    f"{markdown_cell(str(reason)[:300])} |"
+                )
+            lines.append("")
+        selected_text = ""
+        for attempt in attempts:
+            if attempt.get("status") == "ok" and attempt.get("text"):
+                selected_text = str(attempt.get("text") or "").strip()
+                break
+        if selected_text:
+            lines.append("### Selected Enhanced Text")
+            lines.append("")
+            lines.append(selected_text[:5000])
+            lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -909,11 +1567,13 @@ def render_review_markdown(
     no_text = [page for page in pages if page.char_count == 0]
     ocr_failed = [page for page in pages if page.ocr_status == "failed"]
     ocr_recovered = [page for page in pages if page.ocr_status == "ok" and page.ocr_message]
+    infographic_pages = [page for page in ordered_pages if is_likely_infographic(page)]
     lines = ["# 截图成书复查清单 / Image Book Review", ""]
     lines.append(f"- Total images: {len(pages)}")
     lines.append(f"- Ordered representatives: {len(ordered_pages)}")
     lines.append(f"- Duplicate groups: {len(duplicate_groups)}")
     lines.append(f"- Low-confidence order items: {len(low_confidence)}")
+    lines.append(f"- Likely infographic/layout-heavy items: {len(infographic_pages)}")
     lines.append(f"- Empty OCR items: {len(no_text)}")
     lines.append(f"- OCR failed items: {len(ocr_failed)}")
     lines.append(f"- OCR recovered items: {len(ocr_recovered)}")
@@ -931,6 +1591,15 @@ def render_review_markdown(
         lines.extend(["## 低置信度顺序 / Low Confidence Order", ""])
         for page in low_confidence:
             lines.append(f"- #{page.order_index}: `{page.source}` confidence={page.order_confidence:.2f}")
+        lines.append("")
+
+    if infographic_pages:
+        lines.extend(["## 疑似信息图/复杂版面 / Infographic Or Layout-Heavy Pages", ""])
+        lines.append("These pages should be reviewed with `layout.md`; linear OCR may lose relationships such as arrows, grouping, tables, and side-by-side labels.")
+        lines.append("")
+        for page in infographic_pages:
+            signals = ", ".join(str(signal) for signal in (page.layout_profile or {}).get("signals", []))
+            lines.append(f"- #{page.order_index}: `{page.source}` signals={markdown_cell(signals)}")
         lines.append("")
 
     if no_text:
