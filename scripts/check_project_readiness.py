@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -117,6 +118,7 @@ def stage2_checks() -> list[Check]:
     gitignore = read_text(".gitignore")
     quality_test = read_text("scripts/test_quality_gate.py")
     readme = read_text("README.md")
+    tracked_private_manifest_check = private_manifest_tracking_check()
     return [
         Check(
             "stage2_quality_regression",
@@ -168,7 +170,36 @@ def stage2_checks() -> list[Check]:
             ["benchmarks/*.local.json", "benchmarks/runs/"],
             ".gitignore",
         ),
+        tracked_private_manifest_check,
     ]
+
+
+def private_manifest_tracking_check() -> Check:
+    try:
+        completed = subprocess.run(
+            ["git", "ls-files", "benchmarks/*.local.json", "benchmarks/runs"],
+            cwd=PROJECT_DIR,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except Exception as exc:  # pragma: no cover - defensive diagnostic path
+        return Check(
+            "stage2_quality_regression",
+            "private manifests not tracked",
+            False,
+            "git ls-files benchmarks/*.local.json benchmarks/runs",
+            f"unable to run git ls-files: {exc}",
+        )
+    tracked = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    return Check(
+        "stage2_quality_regression",
+        "private manifests not tracked",
+        completed.returncode == 0 and not tracked,
+        "git ls-files benchmarks/*.local.json benchmarks/runs",
+        f"tracked={tracked}" if tracked else "no tracked private benchmark manifests or run outputs",
+    )
 
 
 def stage3_checks() -> list[Check]:
