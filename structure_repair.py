@@ -68,7 +68,9 @@ def repair_markdown_structure(
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     repaired: list[str] = []
     decisions: list[HeadingDecision] = []
+    domain_candidates = collect_domain_heading_candidates(lines)
     normalized_candidates = [normalize_heading_candidate(item) for item in (heading_candidates or [])]
+    normalized_candidates.extend(domain_candidates)
     candidate_map = build_heading_candidate_map(normalized_candidates)
     current_section = ""
     current_article = ""
@@ -442,6 +444,74 @@ def build_markdown_outline(text: str) -> list[dict[str, Any]]:
         outline.append(node)
         stack.append(node)
     return outline
+
+
+def collect_domain_heading_candidates(lines: list[str]) -> list[HeadingCandidate]:
+    candidates: list[HeadingCandidate] = []
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        existing = parse_existing_heading(stripped)
+        title = existing[1] if existing else stripped
+        if not title:
+            continue
+        level = domain_heading_level(title)
+        if level is None:
+            continue
+        if existing or should_accept_plain_domain_candidate(lines, idx, title):
+            candidates.append(
+                HeadingCandidate(
+                    title=title,
+                    level=level,
+                    source=f"domain_grammar:{domain_heading_kind(title)}",
+                    score=0.8 if existing else 0.72,
+                    reason="Chinese legal/contract numbering pattern",
+                )
+            )
+    return candidates
+
+
+def should_accept_plain_domain_candidate(lines: list[str], idx: int, title: str) -> bool:
+    if is_chapter_heading(title) or is_section_heading(title) or is_article_heading(title):
+        return is_blank_separated(lines, idx)
+    if is_parenthesized_clause_heading(title):
+        return should_promote_parenthesized_heading(lines, idx)
+    if is_numeric_item_heading(title):
+        return should_promote_numeric_item_heading(lines, idx)
+    if is_parenthesized_digit_heading(title):
+        return should_promote_parenthesized_digit_heading(lines, idx)
+    return False
+
+
+def domain_heading_level(title: str) -> int | None:
+    if is_chapter_heading(title):
+        return 1
+    if is_section_heading(title):
+        return 2
+    if is_article_heading(title):
+        return 3
+    if is_parenthesized_clause_heading(title):
+        return 4
+    if is_numeric_item_heading(title):
+        return 5
+    if is_parenthesized_digit_heading(title):
+        return 6
+    return None
+
+
+def domain_heading_kind(title: str) -> str:
+    if is_chapter_heading(title):
+        return "chapter"
+    if is_section_heading(title):
+        return "section"
+    if is_article_heading(title):
+        return "article"
+    if is_parenthesized_clause_heading(title):
+        return "parenthesized_clause"
+    if is_numeric_item_heading(title):
+        return "numeric_item"
+    if is_parenthesized_digit_heading(title):
+        return "parenthesized_digit_item"
+    return "unknown"
 
 
 def should_promote_article_heading(lines: list[str], idx: int) -> bool:

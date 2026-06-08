@@ -55,6 +55,10 @@ def main() -> int:
     report = result.report()
     if report.get("grammar") != "chapter_section_article_clause_item_subitem":
         raise AssertionError(f"Expected grammar name in report: {report}")
+    candidate_sources = report.get("candidate_sources") or {}
+    for expected_source in ("domain_grammar:chapter", "domain_grammar:section", "domain_grammar:article", "domain_grammar:parenthesized_clause"):
+        if candidate_sources.get(expected_source, 0) < 1:
+            raise AssertionError(f"Expected domain heading candidates in report: {report}")
     outline = report.get("inferred_outline") or []
     subitem = next((item for item in outline if item.get("title") == "（1）一级伤残"), None)
     if not subitem:
