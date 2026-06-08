@@ -3,15 +3,26 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PYTHON = Path(r"C:\Users\lightcolor\.conda\envs\pytorch-cuda121\python.exe")
-DEFAULT_PADDLEOCR = Path(r"C:\Users\lightcolor\.conda\envs\pytorch-cuda121\Scripts\paddleocr.exe")
-TOOL_CACHE = Path(r"D:\used-by-codex\tools")
+TOOL_CACHE = Path(
+    os.environ.get(
+        "EBOOK_CONVERTER_TOOL_CACHE",
+        Path.home() / ".cache" / "ebook-markdown-pipeline",
+    )
+)
+
+
+def default_paddleocr_command() -> str:
+    configured = os.environ.get("EBOOK_CONVERTER_PADDLEOCR_COMMAND", "").strip().strip('"')
+    if configured:
+        return configured
+    return shutil.which("paddleocr") or "paddleocr"
 
 
 def main() -> int:
@@ -32,7 +43,7 @@ def main() -> int:
     env = os.environ.copy()
     configure_local_cache(env)
     command = [
-        str(DEFAULT_PADDLEOCR),
+        default_paddleocr_command(),
         "doc_parser",
         "--input",
         str(image),
@@ -60,8 +71,8 @@ def main() -> int:
         return 0
     work_dir.mkdir(parents=True, exist_ok=True)
     output.parent.mkdir(parents=True, exist_ok=True)
-    if not DEFAULT_PADDLEOCR.exists():
-        raise FileNotFoundError(f"paddleocr executable not found: {DEFAULT_PADDLEOCR}")
+    if not shutil.which(command[0]) and not Path(command[0]).exists():
+        raise FileNotFoundError(f"paddleocr executable not found: {command[0]}")
     completed = subprocess.run(
         command,
         env=env,

@@ -5,10 +5,10 @@ This folder defines repeatable real-sample evaluation for the converter.
 Local files are not committed. Use:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\scripts\discover_benchmark_samples.py `
-  D:\downloads `
-  D:\BaiduSyncdisk\电子书 `
-  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\samples.local.json `
+python scripts\discover_benchmark_samples.py `
+  C:\books `
+  C:\more-books `
+  --output benchmarks\samples.local.json `
   --limit 50
 ```
 
@@ -17,9 +17,9 @@ For a fixed quality regression set, copy `benchmarks/sample-set-manifest.example
 Run a benchmark:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\scripts\run_benchmarks.py `
-  --manifest D:\used-by-codex\ebook_markdown_pipeline\benchmarks\samples.local.json `
-  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\latest `
+python scripts\run_benchmarks.py `
+  --manifest benchmarks\samples.local.json `
+  --output benchmarks\runs\latest `
   --sample-timeout 600 `
   --pdf-mode-for-benchmark fast
 ```
@@ -40,9 +40,9 @@ Use `--pdf-mode-for-benchmark fast` to route PDFs through `PyMuPDF4LLM` during b
 Compare PDF pipelines:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_pipelines.py `
-  --input D:\books\sample.pdf `
-  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\compare-runs\sample `
+python scripts\compare_pipelines.py `
+  --input C:\books\sample.pdf `
+  --output benchmarks\compare-runs\sample `
   --pipelines pymupdf4llm mineru umi docling `
   --pipeline-timeout 600
 ```
@@ -52,9 +52,9 @@ The comparison report writes `pipeline-comparison.md` with runtime, heading coun
 For very long PDFs, compare selected pages instead of the whole book:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_pipelines.py `
-  --input D:\books\huge.pdf `
-  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\compare-runs\huge-pages `
+python scripts\compare_pipelines.py `
+  --input C:\books\huge.pdf `
+  --output benchmarks\compare-runs\huge-pages `
   --pipelines pymupdf4llm mineru umi docling `
   --pipeline-timeout 120 `
   --page-ranges 1-3,100-102,600-602
@@ -65,10 +65,10 @@ python D:\used-by-codex\ebook_markdown_pipeline\scripts\compare_pipelines.py `
 Summarize multiple PDF comparisons:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\scripts\summarize_pdf_comparisons.py `
-  D:\used-by-codex\ebook_markdown_pipeline\benchmarks\compare-runs\sample-a `
-  D:\used-by-codex\ebook_markdown_pipeline\benchmarks\compare-runs\sample-b `
-  --output D:\used-by-codex\ebook_markdown_pipeline\benchmarks\compare-runs\summary.md
+python scripts\summarize_pdf_comparisons.py `
+  benchmarks\compare-runs\sample-a `
+  benchmarks\compare-runs\sample-b `
+  --output benchmarks\compare-runs\summary.md
 ```
 
 The summary report lists the requested pipeline, actual pipeline, status, score, headings, text length, runtime, and links back to each detailed comparison. Actual pipeline matters when a requested backend succeeds through fallback, such as `docling` producing `pymupdf4llm(fallback from docling)`.
@@ -76,8 +76,8 @@ The summary report lists the requested pipeline, actual pipeline, status, score,
 Stress HTTP agent calls:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\scripts\stress_agent_http.py `
-  --manifest D:\used-by-codex\ebook_markdown_pipeline\benchmarks\samples.local.json `
+python scripts\stress_agent_http.py `
+  --manifest benchmarks\samples.local.json `
   --iterations 20 `
   --concurrency 4 `
   --retries 2
@@ -92,9 +92,9 @@ For agent-facing PDF stability checks, combine `--pdf-pipeline-mode`, `--pdf-too
 Docker container smoke:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipeline\scripts\run_docker_agent_smoke.ps1 `
+powershell -ExecutionPolicy Bypass -File scripts\run_docker_agent_smoke.ps1 `
   -Port 8770 `
-  -ReportDir D:\used-by-codex\ebook_markdown_pipeline\benchmarks\runs\docker-agent-smoke-current `
+  -ReportDir benchmarks\runs\docker-agent-smoke-current `
   -ContainerIterations 2
 ```
 

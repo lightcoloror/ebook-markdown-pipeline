@@ -67,8 +67,9 @@ ProgressCallback = Callable[[dict], None]
 
 
 def default_vlm_python() -> str:
-    candidate = Path(r"C:\Users\lightcolor\.conda\envs\pytorch-cuda121\python.exe")
-    return str(candidate) if candidate.exists() else sys.executable
+    value = os.environ.get("EBOOK_CONVERTER_VLM_PYTHON", "").strip().strip('"')
+    candidate = Path(value).expanduser() if value else None
+    return str(candidate) if candidate and candidate.exists() else sys.executable
 
 
 def default_paddleocr_vl_command() -> str:

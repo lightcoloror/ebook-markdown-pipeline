@@ -63,7 +63,24 @@ COMMON_WINDOWS_COMMAND_PATHS = {
     "mineru": [],
 }
 
-DEFAULT_UMI_PLUGIN_DIR = Path(r"D:\Umi-OCR\Umi-OCR_Paddle_v2.1.5\UmiOCR-data\plugins\win7_x64_PaddleOCR-json")
+
+def env_path(name: str) -> Path | None:
+    value = os.environ.get(name, "").strip().strip('"')
+    return Path(value) if value else None
+
+
+def default_tool_cache_dir() -> Path:
+    return env_path("EBOOK_CONVERTER_TOOL_CACHE") or Path(__file__).resolve().parent.parent / "tools"
+
+
+def default_umi_plugin_dir() -> Path | None:
+    explicit = env_path("EBOOK_CONVERTER_UMI_PLUGIN_DIR")
+    if explicit:
+        return explicit
+    root = env_path("EBOOK_CONVERTER_UMI_DIR")
+    if root:
+        return root / "UmiOCR-data" / "plugins" / "win7_x64_PaddleOCR-json"
+    return None
 
 
 @dataclass
@@ -815,16 +832,17 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
 
 def vlm_image_backend_health() -> list[dict[str, str]]:
     root = Path(__file__).resolve().parent
-    vlm_python = Path(r"C:\Users\lightcolor\.conda\envs\pytorch-cuda121\python.exe")
-    paddleocr_exe = Path(r"C:\Users\lightcolor\.conda\envs\pytorch-cuda121\Scripts\paddleocr.exe")
+    vlm_python = env_path("EBOOK_CONVERTER_VLM_PYTHON") or Path(sys.executable)
+    paddleocr_command = os.environ.get("EBOOK_CONVERTER_PADDLEOCR_COMMAND", "paddleocr")
+    paddleocr_resolved = resolve_command_path(paddleocr_command)
     paddle_wrapper = root / "scripts" / "paddleocr_vl_image_to_md.py"
     qwen_wrapper = root / "scripts" / "qwen_vl_image_to_md.py"
     checks = [
         {
             "name": "PaddleOCR-VL wrapper",
             "kind": "vlm",
-            "status": "ok" if vlm_python.exists() and paddleocr_exe.exists() and paddle_wrapper.exists() else "missing",
-            "detail": f"python={vlm_python}; paddleocr={paddleocr_exe}; wrapper={paddle_wrapper}",
+            "status": "ok" if vlm_python.exists() and paddleocr_resolved and paddle_wrapper.exists() else "missing",
+            "detail": f"python={vlm_python}; paddleocr={paddleocr_resolved or paddleocr_command}; wrapper={paddle_wrapper}",
         },
         {
             "name": "Qwen-VL wrapper",
@@ -4240,7 +4258,7 @@ def iter_fallback_command_paths(command: str) -> Iterable[Path]:
     if normalized in COMMON_WINDOWS_COMMAND_PATHS:
         yield from COMMON_WINDOWS_COMMAND_PATHS[normalized]
 
-    workspace_tools = Path(__file__).resolve().parent.parent / "tools"
+    workspace_tools = default_tool_cache_dir()
     if normalized == "mineru":
         yield workspace_tools / "mineru-venv" / "Scripts" / "mineru.exe"
 
@@ -4366,18 +4384,36 @@ def format_bytes(size: int) -> str:
 
 
 def suggested_umi_ocr_command() -> str:
-    candidate = Path(r"D:\Umi-OCR\Umi-OCR_Paddle_v2.1.5\Umi-OCR.exe")
+    explicit = os.environ.get("EBOOK_CONVERTER_UMI_COMMAND", "").strip()
+    if explicit:
+        return explicit
+    root = env_path("EBOOK_CONVERTER_UMI_DIR")
+    candidate = root / "Umi-OCR.exe" if root else Path("Umi-OCR.exe")
     return str(candidate) if candidate.exists() else "Umi-OCR.exe"
 
 
 def suggested_umi_paddle_exe() -> str:
-    candidate = DEFAULT_UMI_PLUGIN_DIR / "PaddleOCR-json.exe"
-    return str(candidate) if candidate.exists() else "PaddleOCR-json.exe"
+    explicit = os.environ.get("EBOOK_CONVERTER_UMI_PADDLE_EXE", "").strip()
+    if explicit:
+        return explicit
+    plugin_dir = default_umi_plugin_dir()
+    if plugin_dir:
+        candidate = plugin_dir / "PaddleOCR-json.exe"
+        if candidate.exists():
+            return str(candidate)
+    return "PaddleOCR-json.exe"
 
 
 def suggested_umi_paddle_module() -> str:
-    candidate = DEFAULT_UMI_PLUGIN_DIR / "PPOCR_api.py"
-    return str(candidate) if candidate.exists() else "PPOCR_api.py"
+    explicit = os.environ.get("EBOOK_CONVERTER_UMI_PADDLE_MODULE", "").strip()
+    if explicit:
+        return explicit
+    plugin_dir = default_umi_plugin_dir()
+    if plugin_dir:
+        candidate = plugin_dir / "PPOCR_api.py"
+        if candidate.exists():
+            return str(candidate)
+    return "PPOCR_api.py"
 
 
 def get_pdf_page_count(source: Path) -> int:

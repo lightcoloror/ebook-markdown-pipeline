@@ -24,7 +24,7 @@ MCP-native agents can call `get_agent_contract` first to retrieve `schema_versio
 Use MCP for OpenClaw, Hermes Agent, Codex, Claude Code, or other agents that support tool schemas.
 
 ```powershell
-D:\used-by-codex\ebook_markdown_pipeline\start_mcp.cmd
+.\start_mcp.cmd
 ```
 
 Example MCP server config:
@@ -46,7 +46,7 @@ Replace `C:\path\to\ebook_markdown_pipeline` with the real project path.
 Before connecting an agent, run the stdio smoke test:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_mcp_stdio.py
+python scripts\test_mcp_stdio.py
 ```
 
 Use `--convert` if you also want to test a tiny real TXT conversion.
@@ -54,7 +54,7 @@ Use `--convert` if you also want to test a tiny real TXT conversion.
 For routine agent-facing changes, run the fast smoke suite. It covers MCP/HTTP, local CLI, batch handoff, smoke summary fields, and docs contract checks:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_agent_smoke_suite.py
+python scripts\test_agent_smoke_suite.py
 ```
 
 Pass `--output <dir>` to persist `agent-smoke-summary.json/md` as handoff evidence for another session or agent. The JSON report includes `contract`, `contract_validation`, `artifacts`, and `next_actions`; failed runs include failed test names and per-test rerun commands.
@@ -113,7 +113,7 @@ Host-side startup:
 
 ```powershell
 $env:EBOOK_CONVERTER_API_TOKEN = "replace-with-a-local-token"
-python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_http.py --host 0.0.0.0
+python ebook_converter_http.py --host 0.0.0.0
 ```
 
 The HTTP port is read from `config/http.env` unless explicitly overridden.
@@ -146,7 +146,7 @@ The HTTP bridge intentionally reuses the MCP tool names and payloads. Treat it a
 Local Docker smoke test:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File D:\used-by-codex\ebook_markdown_pipeline\scripts\run_docker_agent_smoke.ps1
+powershell -ExecutionPolicy Bypass -File scripts\run_docker_agent_smoke.ps1
 ```
 
 The smoke test generates tiny `TXT / FB2 / RTF / EPUB / ODT / AZW3 / MOBI / AZW / PDF` fixtures, starts the HTTP bridge temporarily, converts them through the API, and verifies that the OpenClaw and Hermes containers can call the bridge through `host.docker.internal`.
@@ -369,9 +369,9 @@ Use this for large screenshot folders or OCR-enabled image-book rebuilding. Poll
 If MCP is unavailable, use the CLI directly:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py `
-  D:\books `
-  D:\books-md `
+python batch_convert_books.py `
+  C:\books `
+  C:\books-md `
   --recursive `
   --resume `
   --output-format markdown

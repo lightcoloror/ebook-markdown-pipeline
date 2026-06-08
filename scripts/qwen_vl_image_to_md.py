@@ -6,7 +6,12 @@ from pathlib import Path
 
 
 DEFAULT_MODEL = "Qwen/Qwen2.5-VL-3B-Instruct"
-TOOL_CACHE = Path(r"D:\used-by-codex\tools")
+TOOL_CACHE = Path(
+    os.environ.get(
+        "EBOOK_CONVERTER_TOOL_CACHE",
+        Path.home() / ".cache" / "ebook-markdown-pipeline",
+    )
+)
 
 
 def main() -> int:

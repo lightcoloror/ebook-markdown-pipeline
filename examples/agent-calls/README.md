@@ -15,7 +15,7 @@ Start the service:
 
 ```powershell
 $env:EBOOK_CONVERTER_API_TOKEN = "local-token"
-python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_http.py
+python ebook_converter_http.py
 ```
 
 The default host and port are read from `config/http.env`.
@@ -23,18 +23,18 @@ The default host and port are read from `config/http.env`.
 Run:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\http_process_material.py `
+python examples\agent-calls\http_process_material.py `
   --token local-token `
-  --input D:\books\sample.epub `
-  --output D:\books-output
+  --input C:\books\sample.epub `
+  --output C:\books-output
 ```
 
 ## MCP Stdio
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\mcp_stdio_process_material.py `
-  --input D:\books\sample.epub `
-  --output D:\books-output
+python examples\agent-calls\mcp_stdio_process_material.py `
+  --input C:\books\sample.epub `
+  --output C:\books-output
 ```
 
 ## CLI-Style Local Call
@@ -42,9 +42,9 @@ python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\mcp_stdio_p
 This imports the same tool layer directly without starting a server:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\cli_process_material.py `
-  --input D:\books\sample.epub `
-  --output D:\books-output
+python examples\agent-calls\cli_process_material.py `
+  --input C:\books\sample.epub `
+  --output C:\books-output
 ```
 
 ## Agent Batch Handoff
@@ -52,42 +52,42 @@ python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\cli_process
 When taking over an existing batch without starting MCP or HTTP, use the local CLI-style helper to list recent batch results under an output root:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\cli_agent_batch_handoff.py list `
-  D:\agent-batch-output `
+python examples\agent-calls\cli_agent_batch_handoff.py list `
+  C:\agent-batch-output `
   --max-depth 3
 ```
 
 Inspect a known `agent-batch-results.json`:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\cli_agent_batch_handoff.py inspect `
-  D:\agent-batch-output\run-002\agent-batch-results.json
+python examples\agent-calls\cli_agent_batch_handoff.py inspect `
+  C:\agent-batch-output\run-002\agent-batch-results.json
 ```
 
 Build a compact handoff bundle through the same local helper:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\cli_agent_batch_handoff.py bundle `
-  --batch-results D:\agent-batch-output\run-002\agent-batch-results.json `
-  --output D:\agent-batch-output\run-002\handoff
+python examples\agent-calls\cli_agent_batch_handoff.py bundle `
+  --batch-results C:\agent-batch-output\run-002\agent-batch-results.json `
+  --output C:\agent-batch-output\run-002\handoff
 ```
 
 Docker-hosted agents can use the same handoff tools through the HTTP bridge:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\http_agent_batch_handoff.py `
+python examples\agent-calls\http_agent_batch_handoff.py `
   --url http://host.docker.internal:9241 `
-  list D:\agent-batch-output
+  list C:\agent-batch-output
 ```
 
 When another agent needs a compact handoff package instead of the full batch JSON, call the MCP/HTTP tool `build_agent_handoff_bundle` or the local wrapper:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\http_agent_batch_handoff.py `
+python examples\agent-calls\http_agent_batch_handoff.py `
   --url http://host.docker.internal:9241 `
   bundle `
-  --batch-results D:\agent-batch-output\run-002\agent-batch-results.json `
-  --output D:\agent-batch-output\run-002\handoff
+  --batch-results C:\agent-batch-output\run-002\agent-batch-results.json `
+  --output C:\agent-batch-output\run-002\handoff
 ```
 
 ## Query Mode
@@ -95,9 +95,9 @@ python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\http_agent_
 If you only need to locate a keyword in PDFs/images:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-calls\http_process_material.py `
-  --input D:\documents `
-  --output D:\documents-index `
+python examples\agent-calls\http_process_material.py `
+  --input C:\documents `
+  --output C:\documents-index `
   --query "合同金额"
 ```
 

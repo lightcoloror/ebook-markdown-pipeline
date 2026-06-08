@@ -143,7 +143,7 @@ Command:
 
 ```powershell
 python scripts\compare_pipelines.py `
-  --input "D:\downloads\03定位认知：如何找到适合自己的内容方向？.pdf" `
+  --input "C:\books\sample.pdf" `
   --output benchmarks\compare-runs\real-four-pipelines-01 `
   --pipelines pymupdf4llm mineru umi docling `
   --overwrite `

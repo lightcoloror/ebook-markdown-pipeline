@@ -15,13 +15,13 @@ Use this skill when a user asks to convert EPUB, AZW, MOBI, FB2, TXT, RTF, ODT, 
 Start command:
 
 ```powershell
-D:\used-by-codex\ebook_markdown_pipeline\start_mcp.cmd
+.\start_mcp.cmd
 ```
 
 Smoke test:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\scripts\test_mcp_stdio.py
+python scripts\test_mcp_stdio.py
 ```
 
 Use these tools:
@@ -45,7 +45,7 @@ Use these tools:
 ## CLI Fallback
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py INPUT OUTPUT --recursive --resume --output-format markdown
+python batch_convert_books.py INPUT OUTPUT --recursive --resume --output-format markdown
 ```
 
 ## Decision Rules
@@ -56,7 +56,7 @@ python D:\used-by-codex\ebook_markdown_pipeline\batch_convert_books.py INPUT OUT
 - Use `pdf_pipeline_mode=auto` by default.
 - If the user only needs to know which PDF page or image contains information, use the location index tools instead of full Markdown conversion.
 - If the input is a large folder of screenshots, use image-book reconstruction rather than plain OCR.
-- If the input is a `web-content-fetcher` archive folder, first run `wcf archive rebuild <archive> --with-visual-check`, then run `D:\used-by-codex\ebook_markdown_pipeline\process-web-archive.cmd <archive>`, then rerun `wcf archive rebuild` so final human/agent files absorb OCR text, visual blocks, and review warnings.
+- If the input is a `web-content-fetcher` archive folder, first run `wcf archive rebuild <archive> --with-visual-check`, then run `process-web-archive.cmd <archive>`, then rerun `wcf archive rebuild` so final human/agent files absorb OCR text, visual blocks, and review warnings.
 - Do not force Marker on long PDFs unless the user explicitly asks.
 - For long jobs, start conversion and poll status instead of blocking indefinitely.
 - Prefer returned `artifacts` and `next_actions` over guessing output paths.

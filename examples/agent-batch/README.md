@@ -14,7 +14,7 @@ Host process:
 
 ```powershell
 $env:EBOOK_CONVERTER_API_TOKEN = "local-token"
-python D:\used-by-codex\ebook_markdown_pipeline\ebook_converter_http.py --host 0.0.0.0 --token local-token
+python ebook_converter_http.py --host 0.0.0.0 --token local-token
 ```
 
 The default HTTP port is read from `config/http.env`. Docker agents should call `http://host.docker.internal:<EBOOK_CONVERTER_HTTP_PORT>`. Host-local scripts default to `config/http.env`.
@@ -24,9 +24,9 @@ The default HTTP port is read from `config/http.env`. Docker agents should call 
 Validate the manifest before long-running work:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\agent_batch_http.py `
-  --manifest D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\batch_manifest.example.json `
-  --output D:\agent-batch-output\run-001 `
+python examples\agent-batch\agent_batch_http.py `
+  --manifest examples\agent-batch\batch_manifest.example.json `
+  --output C:\agent-batch-output\run-001 `
   --dry-run
 ```
 
@@ -38,10 +38,10 @@ This writes:
 Run the real batch after the plan is valid:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\agent_batch_http.py `
+python examples\agent-batch\agent_batch_http.py `
   --token local-token `
-  --manifest D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\batch_manifest.example.json `
-  --output D:\agent-batch-output\run-001 `
+  --manifest examples\agent-batch\batch_manifest.example.json `
+  --output C:\agent-batch-output\run-001 `
   --timeout 900
 ```
 
@@ -55,11 +55,11 @@ Outputs:
 Compare this run against a previous batch quality baseline:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\agent_batch_http.py `
+python examples\agent-batch\agent_batch_http.py `
   --token local-token `
-  --manifest D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\batch_manifest.example.json `
-  --output D:\agent-batch-output\run-002 `
-  --baseline-results D:\agent-batch-output\run-001\agent-batch-results.json `
+  --manifest examples\agent-batch\batch_manifest.example.json `
+  --output C:\agent-batch-output\run-002 `
+  --baseline-results C:\agent-batch-output\run-001\agent-batch-results.json `
   --fail-on-regression
 ```
 
@@ -68,13 +68,13 @@ When `--baseline-results` is set, the runner writes `benchmark-quality-compariso
 Rerun only failed or review items from a previous run:
 
 ```powershell
-python D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\agent_batch_http.py `
+python examples\agent-batch\agent_batch_http.py `
   --token local-token `
-  --manifest D:\used-by-codex\ebook_markdown_pipeline\examples\agent-batch\batch_manifest.example.json `
-  --previous-results D:\agent-batch-output\run-001\agent-batch-results.json `
+  --manifest examples\agent-batch\batch_manifest.example.json `
+  --previous-results C:\agent-batch-output\run-001\agent-batch-results.json `
   --select failed-or-review `
   --rerun-mode recommended `
-  --output D:\agent-batch-output\run-002
+  --output C:\agent-batch-output\run-002
 ```
 
 `--select` supports `all`, `failed`, `review`, and `failed-or-review`. Dry-run plans write the exact selected job IDs to `agent-batch-plan.md`.
