@@ -22,6 +22,7 @@ Use them when you want a stable workflow rather than a full batch manifest. For 
 | [batch-folder.md](batch-folder.md) | Process a folder through `process_material` and inspect completion. |
 | [rerun-failed-or-review.md](rerun-failed-or-review.md) | Recover failed/review/poor outputs using executable `next_actions`. |
 | [structure-enhancement.md](structure-enhancement.md) | Safely repair weak Markdown heading hierarchy without overwriting the original output. |
+| [online-enhancement.md](online-enhancement.md) | Explicitly run fake or OpenAI-compatible provider enhancement after local review. |
 | [review-checklist.md](review-checklist.md) | Read summaries, checklists, reports, and structure-repair evidence. |
 | [docker-http-agent.md](docker-http-agent.md) | Call the Windows host HTTP bridge from Docker-based agents. |
 

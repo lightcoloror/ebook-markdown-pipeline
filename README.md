@@ -4,7 +4,7 @@ Graphic-Text Material Converter is a local-first converter for ebooks, PDFs, Off
 
 Stable internal id: `ebook-markdown-pipeline`. The Python package is still `ebook_markdown_pipeline` for compatibility with existing MCP, HTTP, CLI, Docker, and script integrations.
 
-Start with [docs/INSTALLATION.md](docs/INSTALLATION.md) for the four install levels. Architecture diagrams and module boundaries are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Third-party tools, reuse boundaries, and license notes are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md).
+Start with [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) for the public-facing project summary, GitHub About text, architecture diagram, and reuse boundary. Installation steps are in [docs/INSTALLATION.md](docs/INSTALLATION.md). Full architecture diagrams and module boundaries are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Third-party tools, reuse boundaries, and license notes are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md).
 
 ## Quick Flow
 
@@ -41,6 +41,8 @@ flowchart TD
 ```
 
 For the full architecture, PDF/image routing diagram, module map, and third-party boundary, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+For a concise repository overview that can be shared with new users or agents, see [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md).
 
 ## Highlights
 

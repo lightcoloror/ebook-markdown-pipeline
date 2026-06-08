@@ -18,6 +18,7 @@ FAST_TESTS = [
     "scripts/test_agent_batch_contract_validator.py",
     "scripts/test_agent_handoff_bundle.py",
     "scripts/test_online_providers.py",
+    "scripts/test_run_online_enhancement_cli.py",
     "scripts/test_enhance_markdown_structure_cli.py",
     "scripts/test_agent_fast_contract.py",
     "scripts/test_agent_smoke_summary_contract.py",
