@@ -45,7 +45,15 @@ REQUIRED_TOOLS = {
 }
 
 PROCESS_MATERIAL_FIELDS = {"status", "route", "inspection", "job_id", "warnings", "errors", "next_actions"}
-HEALTH_FIELDS = {"checks", "capabilities", "ok", "ready_capabilities", "degraded_capabilities", "missing_capabilities"}
+HEALTH_FIELDS = {
+    "checks",
+    "capabilities",
+    "online_provider_health",
+    "ok",
+    "ready_capabilities",
+    "degraded_capabilities",
+    "missing_capabilities",
+}
 INSPECTION_FIELDS = {"status", "input", "kind", "recommendation", "structure_strategy", "next_actions", "warnings"}
 JOB_FIELDS = {
     "job_id",
@@ -111,6 +119,9 @@ def main() -> int:
         assert_fields("health_check", health, HEALTH_FIELDS)
         if not isinstance(health.get("capabilities"), list) or not health["capabilities"]:
             raise AssertionError(f"health_check must expose capability matrix: {health}")
+        online_health = health.get("online_provider_health") or {}
+        if online_health.get("schema_version") != "online-model-providers-v1":
+            raise AssertionError(f"health_check must expose online provider config health: {health}")
         assert_environment_report_tool(image_dir, tmpdir / "environment-report")
 
         inspection = call_tool("inspect_document", {"input": str(image_dir), "recursive": False})

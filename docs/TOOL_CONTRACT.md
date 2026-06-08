@@ -19,6 +19,8 @@ Agents should not directly parse PDFs, images, temporary directories, SQLite fil
 
 Agents should also not call online model providers directly for document recognition. Future online API support should remain behind this project's provider abstraction so that privacy, cost, retry, fallback, artifact schema, and report logging stay consistent.
 
+`get_agent_contract` and `health_check` expose `online_provider_health` when `config/online_models.example.json` or `EBOOK_CONVERTER_ONLINE_MODELS_CONFIG` is readable. This is configuration health only: it reports provider names, types, models, configured base URLs, key environment variable names, and missing-key status without making remote API calls.
+
 ## Main Router: `process_material`
 
 Use `process_material` as the default entry point for unknown input.

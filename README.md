@@ -396,7 +396,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_docker_agent_smoke.ps1 `
 
 UI 复查工作台还支持 `只看复查 / Review only`、`上一条 / Prev`、`下一条 / Next`、`原文件 / Source`、`标记验收 / Accept`、`人工评分 / Score` 和 `人工记录 / Manual`。人工验收结果会写入输出目录的 `.reports/manual-review.json` 和 `.reports/manual-review.md`，重新扫描或转换完成后会自动回填到表格，用于后续校准质量评分规则。
 
-Agent 批处理模板在 `examples/agent-batch/`：`batch_manifest.example.json` 定义批处理任务，`agent_batch_http.py --dry-run` 可先校验 manifest 并输出 `agent-batch-plan.md`，正式运行时通过 HTTP `/call` 执行 `process_material -> get_job_status -> read_artifact`，并输出 `agent-batch-results.json` 和 `agent-batch-summary.md`。接手历史批次时，如果不知道具体结果文件，先调用 `list_agent_batch_results`；已知路径时调用 `inspect_agent_batch_results`，不用手写 JSON 解析。没有 MCP/HTTP 时可用 `examples/agent-calls/cli_agent_batch_handoff.py list|inspect` 调用同一逻辑；Docker/HTTP 场景可用 `examples/agent-calls/http_agent_batch_handoff.py`。OpenClaw/Hermes/Codex 可直接复用 `AGENT_PROMPT_TEMPLATE.md` 中的固定调用规则。
+Agent 快速调用模板在 `examples/agent-recipes/`，覆盖单文件识别、批量文件夹、失败/复查重跑、复查清单和 Docker HTTP 调用。更正式的批处理模板在 `examples/agent-batch/`：`batch_manifest.example.json` 定义批处理任务，`agent_batch_http.py --dry-run` 可先校验 manifest 并输出 `agent-batch-plan.md`，正式运行时通过 HTTP `/call` 执行 `process_material -> get_job_status -> read_artifact`，并输出 `agent-batch-results.json` 和 `agent-batch-summary.md`。接手历史批次时，如果不知道具体结果文件，先调用 `list_agent_batch_results`；已知路径时调用 `inspect_agent_batch_results`，不用手写 JSON 解析。没有 MCP/HTTP 时可用 `examples/agent-calls/cli_agent_batch_handoff.py list|inspect` 调用同一逻辑；Docker/HTTP 场景可用 `examples/agent-calls/http_agent_batch_handoff.py`。OpenClaw/Hermes/Codex 可直接复用 `AGENT_PROMPT_TEMPLATE.md` 中的固定调用规则。
 
 ## 截图成书重建
 

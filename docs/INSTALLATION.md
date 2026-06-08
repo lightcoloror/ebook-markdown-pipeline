@@ -156,6 +156,15 @@ python scripts\paddleocr_vl_image_to_md.py `
 
 Heavy local VLM backends may download large models on first use. Keep them optional unless you actually need infographic or complex-layout enhancement.
 
+If you plan to test future online-model integration, start from the template:
+
+```powershell
+copy config\online_models.example.json config\online_models.local.json
+$env:EBOOK_CONVERTER_ONLINE_MODELS_CONFIG = "config\online_models.local.json"
+```
+
+The current implementation only reads this config for provider health and fake-provider tests. It does not call remote APIs yet. Keep API keys in environment variables such as `VLM_API_KEY`, `TEXT_LLM_API_KEY`, and `EMBEDDING_API_KEY`; do not write real keys into the JSON file.
+
 ## 4. Agent / API Setup
 
 Good for:

@@ -32,6 +32,7 @@ from ebook_markdown_pipeline.document_locator import build_location_index, expor
 from ebook_markdown_pipeline.document_inspector import inspect_document  # noqa: E402
 from ebook_markdown_pipeline.environment_report import compare_environment_lock, export_environment_report  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book, rebuild_image_book_from_order  # noqa: E402
+from ebook_markdown_pipeline.online_providers import provider_registry_health  # noqa: E402
 from ebook_markdown_pipeline.process_web_archive import process_web_archive as process_web_archive_core  # noqa: E402
 
 
@@ -664,8 +665,10 @@ def agent_operating_context() -> dict[str, Any]:
         "config_sources": {
             "http": str(Path(__file__).resolve().parent / "config" / "http.env"),
             "example_env": str(Path(__file__).resolve().parent / "config.example.env"),
+            "online_models_example": str(Path(__file__).resolve().parent / "config" / "online_models.example.json"),
         },
         "pipeline_capabilities": capabilities,
+        "online_provider_health": provider_registry_health(),
         "risk_status": agent_risk_status(capabilities),
         "route_defaults": {
             "process_material": "recognize_or_convert",
@@ -772,6 +775,7 @@ def health_check(arguments: dict[str, Any]) -> dict[str, Any]:
         "checks": checks,
         "capability_checks": capability_checks,
         "capabilities": capabilities,
+        "online_provider_health": provider_registry_health(arguments.get("online_models_config")),
         "ok": all(item["status"] != "missing" for item in checks),
         "ready_capabilities": [item["name"] for item in capabilities if item.get("status") == "ok"],
         "degraded_capabilities": [item["name"] for item in capabilities if item.get("status") == "degraded"],

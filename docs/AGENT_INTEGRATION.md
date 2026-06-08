@@ -69,6 +69,14 @@ Use `--full` before releases or broad contract changes to include the slower ful
 
 ## Batch Templates
 
+Small copyable playbooks live in `examples/agent-recipes/`:
+
+- `single-file-recognition.md`: one source file or image, recognition first, no location index unless requested.
+- `batch-folder.md`: process a folder without preparing a full manifest.
+- `rerun-failed-or-review.md`: follow executable `next_actions` for versioned reruns.
+- `review-checklist.md`: inspect reports, structure-repair evidence, and fallback diagnostics.
+- `docker-http-agent.md`: call the host HTTP bridge from Docker-based agents.
+
 Repeatable agent batch templates live in `examples/agent-batch/`:
 
 - `batch_manifest.example.json`: a stable manifest shape for conversion, location indexing, and screenshot rebuild jobs.
