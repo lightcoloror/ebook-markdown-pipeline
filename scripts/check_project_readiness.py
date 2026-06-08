@@ -312,7 +312,7 @@ def stage5_checks() -> list[Check]:
             "stage5_online_api_abstraction",
             "fake provider tests",
             provider_evidence,
-            ["fake_provider_for_type", "Fake OCR", "fake_embedding", "fake table"],
+            ["fake_provider_for_type", "Fake OCR", "fake_embedding", "fake table", "assert_online_health_redacts_secrets"],
             "online_providers.py; scripts/test_online_providers.py",
         ),
         contains_all(

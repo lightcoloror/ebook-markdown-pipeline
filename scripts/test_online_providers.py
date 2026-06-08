@@ -28,6 +28,7 @@ def main() -> int:
     assert_fake_providers()
     assert_openai_payload()
     assert_openai_adapter_contract()
+    assert_online_health_redacts_secrets()
     assert_health_errors()
     print("Online provider contract test passed.")
     return 0
@@ -184,6 +185,49 @@ def assert_openai_adapter_contract() -> None:
         raise AssertionError(f"Expected bearer token header without exposing secret elsewhere: {calls[0]}")
     if calls[0]["timeout_seconds"] != 12:
         raise AssertionError(f"Expected configured timeout: {calls[0]}")
+
+
+def assert_online_health_redacts_secrets() -> None:
+    secret_env = "ONLINE_PROVIDER_SECRET_SHOULD_NOT_LEAK"
+    secret_value = "unit-test-secret-value"
+    old_value = os.environ.get(secret_env)
+    try:
+        os.environ[secret_env] = secret_value
+        with tempfile.TemporaryDirectory(prefix="online-provider-secret-") as tmp:
+            config = Path(tmp) / "providers.json"
+            config.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "online-model-providers-v1",
+                        "default_mode": "hybrid",
+                        "providers": {
+                            "configured_text": {
+                                "type": "text_structure_llm",
+                                "base_url": "https://example.test/v1",
+                                "model": "demo",
+                                "api_key_env": secret_env,
+                            }
+                        },
+                        "routing": {"text_structure_repair": "configured_text"},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            health = provider_registry_health(config)
+            serialized = json.dumps(health, ensure_ascii=False)
+            if health.get("ok") is not True or health.get("configured_count") != 1:
+                raise AssertionError(f"Expected configured provider health: {health}")
+            provider = (health.get("providers") or [{}])[0]
+            if provider.get("api_key_available") is not True or provider.get("api_key_env") != secret_env:
+                raise AssertionError(f"Health should expose only key availability and env var name: {health}")
+            if secret_value in serialized:
+                raise AssertionError(f"Health payload must not leak API key values: {health}")
+    finally:
+        if old_value is None:
+            os.environ.pop(secret_env, None)
+        else:
+            os.environ[secret_env] = old_value
 
 
 def assert_health_errors() -> None:
