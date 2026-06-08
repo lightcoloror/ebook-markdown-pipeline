@@ -318,6 +318,7 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "docling_fallback_to_pandoc": {"type": "boolean", "default": True},
                     "mineru_segment_min_pages": {"type": "integer"},
                     "mineru_segment_pages": {"type": "integer"},
+                    "output_name_suffix": {"type": "string"},
                 },
                 "required": ["input", "output"],
             },
@@ -357,6 +358,7 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "docling_fallback_to_pandoc": {"type": "boolean", "default": True},
                     "mineru_segment_min_pages": {"type": "integer"},
                     "mineru_segment_pages": {"type": "integer"},
+                    "output_name_suffix": {"type": "string"},
                 },
                 "required": ["input", "output"],
             },
@@ -1180,7 +1182,208 @@ def conversion_next_actions(results: list[Any], options: argparse.Namespace) -> 
         if item.get("type") in {"markdown", "html", "text", "summary_report"}:
             actions.append({"tool": "read_artifact", "arguments": {"path": item["path"], "artifact_type": item["type"]}})
             break
+    actions.extend(conversion_review_next_actions(results, options))
+    return unique_actions(actions)
+
+
+def conversion_review_next_actions(results: list[Any], options: argparse.Namespace) -> list[dict[str, Any]]:
+    actions: list[dict[str, Any]] = []
+    output_root = Path(getattr(options, "output", ""))
+    output_format = str(getattr(options, "output_format", "markdown") or "markdown")
+    for result in results:
+        report = getattr(result, "report", None)
+        payload: dict[str, Any] = {}
+        if report and Path(report).exists():
+            try:
+                payload = json.loads(Path(report).read_text(encoding="utf-8"))
+            except Exception:
+                payload = {}
+        item = {**asdict(result), **payload}
+        item.setdefault("source", getattr(result, "source", ""))
+        item.setdefault("output", getattr(result, "output", ""))
+        item.setdefault("report", report)
+        item.setdefault("status", getattr(result, "status", ""))
+        item.setdefault("pipeline", getattr(result, "pipeline", ""))
+        quality = item.get("quality") or {}
+        outline_alignment = item.get("pdf_outline_alignment") or {}
+        needs_review = (
+            str(getattr(result, "status", "")) == "failed"
+            or quality.get("level") in {"review", "poor", "failed"}
+            or outline_alignment.get("status") in {"low_alignment", "no_markdown_headings"}
+        )
+        has_fallback = "fallback" in str(item.get("pipeline") or "").lower() or bool(item.get("pdf_fallback_diagnostics"))
+        if needs_review or has_fallback:
+            actions.extend(executable_review_next_actions(item, output_root=output_root, output_format=output_format))
     return actions
+
+
+def executable_review_next_actions(item: dict[str, Any], *, output_root: Path | None = None, output_format: str = "markdown") -> list[dict[str, Any]]:
+    actions: list[dict[str, Any]] = []
+    source = str(item.get("source") or "")
+    output = str(item.get("output") or "")
+    report = str(item.get("report") or "")
+    source_suffix = Path(source).suffix.lower()
+
+    for raw_action in suggest_review_next_actions(item):
+        action_name = str(raw_action.get("action") or "")
+        why = raw_action.get("why")
+        if action_name == "read_report" and raw_action.get("path"):
+            actions.append(
+                {
+                    "action": "read_report",
+                    "tool": "read_report",
+                    "arguments": {"path": str(raw_action["path"])},
+                    "why": why,
+                }
+            )
+        elif action_name == "open_output" and raw_action.get("path"):
+            path = str(raw_action["path"])
+            actions.append(
+                {
+                    "action": "read_output",
+                    "tool": "read_artifact",
+                    "arguments": {"path": path, "artifact_type": infer_artifact_type(Path(path))},
+                    "why": why,
+                }
+            )
+        elif action_name == "rerun":
+            pipeline = str(raw_action.get("pipeline") or "auto")
+            rerun = rerun_action_for_pipeline(
+                source,
+                output,
+                output_root=output_root,
+                output_format=output_format,
+                pipeline=pipeline,
+                why=why,
+            )
+            if rerun:
+                actions.append(rerun)
+        elif action_name == "compare_pdf_pipelines" and source_suffix == ".pdf":
+            pipelines = [part.strip() for part in str(raw_action.get("pipelines") or "mineru,docling,pymupdf4llm").split(",") if part.strip()]
+            compare_args = [
+                rerun_arguments_for_pipeline(
+                    source,
+                    output,
+                    output_root=output_root,
+                    output_format=output_format,
+                    pipeline=pipeline,
+                )
+                for pipeline in pipelines
+            ]
+            compare_args = [args for args in compare_args if args]
+            if compare_args:
+                actions.append(
+                    {
+                        "action": "compare_pdf_pipelines",
+                        "tool": "start_conversion",
+                        "arguments_list": compare_args,
+                        "why": why,
+                    }
+                )
+        elif action_name == "inspect_pdf_outline" and report:
+            actions.append(
+                {
+                    "action": "inspect_pdf_outline",
+                    "tool": "read_report",
+                    "arguments": {"path": report},
+                    "why": why or "read pdf_outline and pdf_outline_alignment from the conversion report",
+                }
+            )
+        elif action_name == "inspect_toc" and report:
+            actions.append(
+                {
+                    "action": "inspect_toc",
+                    "tool": "read_report",
+                    "arguments": {"path": report},
+                    "why": why or "read TOC alignment diagnostics from the conversion report",
+                }
+            )
+        elif action_name == "export_location_review_pack" and source:
+            review_output = str((output_root or Path(output).parent or Path(source).parent) / ".location-review")
+            actions.append(
+                {
+                    "action": "build_location_index_for_review",
+                    "tool": "start_location_index",
+                    "arguments": {"input": source, "output": review_output, "recursive": False, "ocr": "auto"},
+                    "why": why or "build a page/image-level index for OCR spot checks",
+                }
+            )
+        elif action_name == "manual_accept_or_score":
+            actions.append({"action": "manual_accept_or_score", "tool": None, "arguments": {}, "why": why})
+
+    if item.get("pdf_fallback_diagnostics") and report:
+        actions.append(
+            {
+                "action": "inspect_fallback_diagnostics",
+                "tool": "read_report",
+                "arguments": {"path": report},
+                "why": "fallback diagnostics explain the original PDF tool failure and the fallback result",
+            }
+        )
+    return unique_actions(actions)
+
+
+def rerun_action_for_pipeline(
+    source: str,
+    output: str,
+    *,
+    output_root: Path | None,
+    output_format: str,
+    pipeline: str,
+    why: str | None,
+) -> dict[str, Any] | None:
+    arguments = rerun_arguments_for_pipeline(source, output, output_root=output_root, output_format=output_format, pipeline=pipeline)
+    if not arguments:
+        return None
+    return {
+        "action": "rerun",
+        "tool": "start_conversion",
+        "arguments": arguments,
+        "pipeline": pipeline,
+        "why": why,
+    }
+
+
+def rerun_arguments_for_pipeline(
+    source: str,
+    output: str,
+    *,
+    output_root: Path | None,
+    output_format: str,
+    pipeline: str,
+) -> dict[str, Any] | None:
+    if not source:
+        return None
+    target_root = output_root if output_root and str(output_root) not in {"", "."} else None
+    if target_root is None and output:
+        target_root = Path(output).parent
+    if target_root is None:
+        target_root = Path(source).parent
+    safe_pipeline = "".join(ch if ch.isalnum() else "-" for ch in pipeline.lower()).strip("-") or "auto"
+    arguments: dict[str, Any] = {
+        "input": source,
+        "output": str(target_root),
+        "recursive": False,
+        "overwrite": False,
+        "resume": False,
+        "output_format": output_format,
+        "output_name_suffix": f"-agent-rerun-{safe_pipeline}",
+    }
+    if Path(source).suffix.lower() == ".pdf" and pipeline not in {"auto", "calibre+pandoc"}:
+        arguments["pdf_pipeline_mode"] = pipeline
+    return arguments
+
+
+def unique_actions(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for action in actions:
+        key = json.dumps(action, ensure_ascii=False, sort_keys=True, default=str)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(action)
+    return unique
 
 
 def conversion_quality_summary(results: list[Any]) -> dict[str, Any]:
@@ -1206,6 +1409,8 @@ def conversion_quality_summary(results: list[Any]) -> dict[str, Any]:
                 quality_reasons.append(
                     f"PDF outline alignment requires review: {outline_status}, ratio={outline_alignment.get('match_ratio')}"
                 )
+            action_item = {**asdict(result), **payload}
+            action_item.setdefault("report", report)
             review_items.append(
                 {
                     "source": getattr(result, "source", ""),
@@ -1218,7 +1423,7 @@ def conversion_quality_summary(results: list[Any]) -> dict[str, Any]:
                     "quality_reasons": quality_reasons,
                     "pdf_outline_alignment": outline_alignment,
                     "suggested_action": agent_suggested_quality_action(payload, result),
-                    "next_actions": suggest_review_next_actions(payload or asdict(result)),
+                    "next_actions": executable_review_next_actions(action_item),
                 }
             )
     return {

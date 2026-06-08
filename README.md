@@ -4,7 +4,7 @@ Graphic-Text Material Converter is a local-first converter for ebooks, PDFs, Off
 
 Stable internal id: `ebook-markdown-pipeline`. The Python package is still `ebook_markdown_pipeline` for compatibility with existing MCP, HTTP, CLI, Docker, and script integrations.
 
-Start with [docs/INSTALLATION.md](docs/INSTALLATION.md) for the four install levels. Architecture diagrams and module boundaries are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Third-party tools and license boundaries are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Start with [docs/INSTALLATION.md](docs/INSTALLATION.md) for the four install levels. Architecture diagrams and module boundaries are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Third-party tools, reuse boundaries, and license notes are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md).
 
 ## Quick Flow
 
@@ -30,6 +30,7 @@ flowchart LR
 - Rebuilds screenshot/image books from unordered, duplicate, or partially overlapping screenshots.
 - Builds a lightweight page/image location index when you only need to know which PDF page or image contains a keyword.
 - Exposes the same core workflow through UI, CLI, MCP, and HTTP for OpenClaw, Hermes Agent, Codex, or other automation agents.
+- Keeps third-party projects at the tool/API boundary: this repository provides orchestration, routing, UI, reports, recovery, and agent contracts rather than vendoring parser/OCR/model code.
 
 ## Project Status
 

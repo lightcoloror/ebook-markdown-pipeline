@@ -199,6 +199,21 @@ def assert_quality_summary_next_actions(tmpdir: Path) -> None:
     action_names = {item.get("action") for item in review_items[0]["next_actions"]}
     if "compare_pdf_pipelines" not in action_names and "rerun" not in action_names:
         raise AssertionError(f"Expected actionable PDF recovery actions: {summary}")
+    tools = {item.get("tool") for item in review_items[0]["next_actions"] if item.get("tool")}
+    if not {"read_report", "read_artifact", "start_conversion"}.intersection(tools):
+        raise AssertionError(f"Expected executable tool calls in review next_actions: {summary}")
+    rerun_actions = [item for item in review_items[0]["next_actions"] if item.get("tool") == "start_conversion" and item.get("arguments")]
+    compare_actions = [item for item in review_items[0]["next_actions"] if item.get("action") == "compare_pdf_pipelines"]
+    if not rerun_actions and not compare_actions:
+        raise AssertionError(f"Expected rerun or compare actions with executable arguments: {summary}")
+    for action in rerun_actions:
+        args = action.get("arguments") or {}
+        if args.get("overwrite") is not False or not str(args.get("output_name_suffix") or "").startswith("-agent-rerun-"):
+            raise AssertionError(f"Rerun actions must be versioned and non-overwriting: {summary}")
+    for action in compare_actions:
+        arguments_list = action.get("arguments_list") or []
+        if not arguments_list or not all(item.get("input") and item.get("output") for item in arguments_list):
+            raise AssertionError(f"Compare actions must expose executable argument sets: {summary}")
 
 
 def assert_quality_comparison_artifact_read(tmpdir: Path) -> None:

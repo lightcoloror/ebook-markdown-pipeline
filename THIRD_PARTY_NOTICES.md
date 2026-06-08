@@ -1,6 +1,8 @@
 # Third-Party Notices
 
-This project is a local orchestration layer for ebook and PDF conversion tools. It does not vendor the third-party tools listed below. Users install and use those tools separately under their own licenses.
+This project is a local orchestration layer for ebook, PDF, Office, image, and web-archive conversion tools. It does not vendor the third-party tools listed below. Users install and use those tools separately under their own licenses.
+
+For a clearer engineering view of what is directly invoked, what is only an architectural reference, and what this repository owns, see [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md).
 
 ## License Choice
 
@@ -20,11 +22,16 @@ This is an engineering compliance note, not legal advice.
 | PyMuPDF4LLM | PDF-to-Markdown fallback | AGPL-3.0 via PyMuPDF ecosystem |
 | MinerU | Structured PDF parsing | Public information indicates AGPL-3.0 / strong-copyleft constraints; installed separately |
 | Marker | PDF parsing option | GPL-3.0-level project; installed separately |
+| Docling | Optional Office/document/PDF structure backend | Installed separately; check upstream license and model dependencies |
 | Umi-OCR / PaddleOCR-json | OCR fallback workflow | Installed separately; check upstream licenses and bundled OCR model licenses |
+| PaddleOCR-VL | Optional infographic/layout-heavy image enhancement | Installed separately or called through wrappers; check upstream model/license terms |
+| Qwen-VL | Optional heavier VLM image enhancement | Model and runtime are installed separately; check upstream model/license terms |
 | tkinterdnd2 | Optional drag-and-drop UI support | Python package dependency; installed separately |
 
 ## Distribution Boundary
 
 This repository contains only the orchestration scripts, UI, logging, retry, report, and workflow code. It does not redistribute third-party binaries, model weights, or book content.
+
+Some docs and code comments reference upstream design patterns, such as pluggable LLM services, local/remote VLM backends, MCP-style tool contracts, and document-object artifact boundaries. These references are implementation guidance for this orchestration layer, not copied upstream source code.
 
 If you redistribute a packaged build that bundles any third-party binaries or models, review and include the corresponding upstream license texts and notices.

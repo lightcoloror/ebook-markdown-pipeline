@@ -1,0 +1,41 @@
+{
+  "schema_version": "online-model-providers-v1",
+  "default_mode": "hybrid",
+  "providers": {
+    "openai_compatible_vlm": {
+      "type": "vlm_layout",
+      "base_url": "https://example.com/v1",
+      "model": "qwen-vl-ocr",
+      "api_key_env": "VLM_API_KEY",
+      "timeout_seconds": 120,
+      "max_concurrency": 1
+    },
+    "openai_compatible_text": {
+      "type": "text_structure_llm",
+      "base_url": "https://example.com/v1",
+      "model": "gpt-4.1-mini",
+      "api_key_env": "TEXT_LLM_API_KEY",
+      "timeout_seconds": 60,
+      "max_concurrency": 2
+    },
+    "openai_compatible_embedding": {
+      "type": "embedding",
+      "base_url": "https://example.com/v1",
+      "model": "text-embedding-3-small",
+      "api_key_env": "EMBEDDING_API_KEY",
+      "timeout_seconds": 30,
+      "max_concurrency": 4
+    }
+  },
+  "routing": {
+    "text_structure_repair": "openai_compatible_text",
+    "layout_heavy_images": "openai_compatible_vlm",
+    "semantic_location_index": "openai_compatible_embedding"
+  },
+  "safety": {
+    "send_full_document_by_default": false,
+    "require_explicit_online_mode": true,
+    "redact_paths_in_remote_requests": true,
+    "log_provider_name_only": true
+  }
+}

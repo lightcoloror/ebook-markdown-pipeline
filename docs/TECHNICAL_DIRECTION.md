@@ -239,7 +239,7 @@
 ### 后续 TODO
 
 - 新增 `online_providers.py`，定义 `OcrLayoutProvider`、`VlmLayoutProvider`、`TextStructureProvider`、`EmbeddingProvider` 抽象。
-- 新增 `config/online_models.example.json`，只保存 provider 配置模板和环境变量名，不保存密钥。
+- `config/online_models.example.json` 模板已存在；后续让 `health_check`、`inspect_document` 和 provider loader 读取它。
 - 扩展 `health_check`，检测在线 provider 配置是否存在、是否可连通、是否缺少密钥。
 - 扩展 `inspect_document`，返回 `online_api_recommended`、`estimated_pages`、`estimated_cost_risk` 和 `privacy_risk`。
 - 扩展 `process_material`，支持 `model_mode=local|online|hybrid|auto`。

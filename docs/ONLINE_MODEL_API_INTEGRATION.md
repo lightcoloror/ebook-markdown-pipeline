@@ -12,7 +12,7 @@
 
 ## Provider 抽象
 
-计划新增 `online_providers.py`，定义以下接口：
+下一步需要新增 `online_providers.py`，定义以下接口：
 
 - `ModelProvider`：读取 provider 名称、模型名、base URL、超时、并发、价格/限额策略和密钥环境变量名。
 - `OcrLayoutProvider`：输入图片或 PDF 页，输出 OCR/layout blocks。
@@ -22,7 +22,7 @@
 
 ## 配置草案
 
-计划新增 `config/online_models.example.json`，只保存配置模板和环境变量名，不保存密钥：
+仓库已提供 [../config/online_models.example.json](../config/online_models.example.json) 作为配置模板，只保存 provider 配置和环境变量名，不保存密钥。真实 provider adapter 尚未实现；当前模板用于提前固定配置形状：
 
 ```json
 {
@@ -100,11 +100,9 @@
 ## 开发顺序
 
 1. 新增 provider 抽象和 fake provider 测试。
-2. 新增 `config/online_models.example.json`。
-3. 扩展 `health_check` 和 `inspect_document`，只做检测和推荐，不真实调用。
-4. 接入 OpenAI-compatible `TextStructureProvider`，先用于 `structure_repair` 疑难段补强。
-5. 接入 OpenAI-compatible `VlmLayoutProvider`，先用于信息图、PPT PDF、截图书疑难页。
-6. 接入 `OcrLayoutProvider`，用于云 OCR/layout 替代本地 OCR。
-7. 接入 `EmbeddingProvider`，增强定位索引和语义检索。
-8. 加入预算、并发、重试、超时、隐私确认和 report 记录。
-
+2. 扩展 `health_check` 和 `inspect_document`，只做检测和推荐，不真实调用。
+3. 接入 OpenAI-compatible `TextStructureProvider`，先用于 `structure_repair` 疑难段补强。
+4. 接入 OpenAI-compatible `VlmLayoutProvider`，先用于信息图、PPT PDF、截图书疑难页。
+5. 接入 `OcrLayoutProvider`，用于云 OCR/layout 替代本地 OCR。
+6. 接入 `EmbeddingProvider`，增强定位索引和语义检索。
+7. 加入预算、并发、重试、超时、隐私确认和 report 记录。

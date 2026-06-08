@@ -131,12 +131,37 @@ For conversion jobs, `quality_summary` is available after completion:
       "next_actions": [
         {
           "action": "read_report",
-          "path": "D:\\output\\.reports\\book.report.json",
+          "tool": "read_report",
+          "arguments": {
+            "path": "output/.reports/book.report.json"
+          },
           "why": "inspect converter diagnostics and quality reasons"
         },
         {
           "action": "compare_pdf_pipelines",
-          "pipelines": "mineru,docling,pymupdf4llm",
+          "tool": "start_conversion",
+          "arguments_list": [
+            {
+              "input": "input/book.pdf",
+              "output": "output",
+              "recursive": false,
+              "overwrite": false,
+              "resume": false,
+              "output_format": "markdown",
+              "output_name_suffix": "-agent-rerun-mineru",
+              "pdf_pipeline_mode": "mineru"
+            },
+            {
+              "input": "input/book.pdf",
+              "output": "output",
+              "recursive": false,
+              "overwrite": false,
+              "resume": false,
+              "output_format": "markdown",
+              "output_name_suffix": "-agent-rerun-docling",
+              "pdf_pipeline_mode": "docling"
+            }
+          ],
           "why": "compare structure recovery rather than trusting one parser"
         }
       ]
@@ -147,7 +172,7 @@ For conversion jobs, `quality_summary` is available after completion:
 
 Agents should treat `quality_summary.review_count > 0` as a prompt to read the `summary_report` or `review_report` before presenting the output as final.
 
-Review checklist JSON entries also include machine-readable `next_actions`. These actions are advisory, not automatic permission to overwrite files. Prefer versioned reruns and ask the user before destructive replacement.
+Review checklist JSON entries and completed conversion jobs also include machine-readable `next_actions`. Prefer actions with `tool` and `arguments` / `arguments_list` instead of inferring commands from prose. Rerun actions default to `overwrite=false`, `resume=false`, and an `output_name_suffix` such as `-agent-rerun-mineru`, so agents can compare outputs without replacing the original. These actions are advisory, not automatic permission to overwrite files; ask the user before destructive replacement.
 
 ## Structure Repair Report
 
