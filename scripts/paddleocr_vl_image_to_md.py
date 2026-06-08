@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -73,7 +73,7 @@ def main() -> int:
     )
     candidate = pick_text_artifact(work_dir)
     if candidate:
-        shutil.copyfile(candidate, output)
+        write_normalized_markdown(candidate, output, work_dir)
     else:
         output.write_text(
             "# PaddleOCR-VL output unavailable\n\n"
@@ -113,6 +113,112 @@ def pick_text_artifact(root: Path) -> Path | None:
         except Exception:
             continue
     return None
+
+
+def write_normalized_markdown(candidate: Path, output: Path, raw_root: Path) -> None:
+    markdown = candidate.read_text(encoding="utf-8", errors="replace").strip()
+    tables = extract_actual_tables(raw_root)
+    if tables:
+        markdown = markdown.rstrip() + "\n\n## 真实表格 / Extracted Tables\n\n" + "\n\n".join(tables).strip()
+    output.write_text(markdown.rstrip() + "\n", encoding="utf-8", newline="\n")
+
+
+def extract_actual_tables(root: Path) -> list[str]:
+    tables: list[str] = []
+    tables.extend(extract_json_table_blocks(root))
+    tables.extend(extract_docx_tables(root))
+    return unique_markdown_blocks(tables)
+
+
+def extract_json_table_blocks(root: Path) -> list[str]:
+    tables: list[str] = []
+    for path in sorted(root.rglob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        except Exception:
+            continue
+        tables.extend(table_blocks_from_json_value(data))
+    return tables
+
+
+def table_blocks_from_json_value(value) -> list[str]:
+    tables: list[str] = []
+    if isinstance(value, dict):
+        label = str(value.get("block_label") or value.get("label") or value.get("type") or "").lower()
+        content = str(value.get("block_content") or value.get("content") or value.get("html") or "").strip()
+        if "table" in label and content:
+            tables.append(normalize_table_content(content))
+        for child in value.values():
+            tables.extend(table_blocks_from_json_value(child))
+    elif isinstance(value, list):
+        for child in value:
+            tables.extend(table_blocks_from_json_value(child))
+    return tables
+
+
+def extract_docx_tables(root: Path) -> list[str]:
+    try:
+        from docx import Document
+    except Exception:
+        return []
+    tables: list[str] = []
+    for path in sorted(root.rglob("*.docx")):
+        try:
+            document = Document(str(path))
+        except Exception:
+            continue
+        for table in document.tables:
+            rows = [[clean_cell_text(cell.text) for cell in row.cells] for row in table.rows]
+            markdown = table_rows_to_markdown(rows)
+            if markdown:
+                tables.append(markdown)
+    return tables
+
+
+def table_rows_to_markdown(rows: list[list[str]]) -> str:
+    rows = [[cell for cell in row] for row in rows if any(cell.strip() for cell in row)]
+    if not rows:
+        return ""
+    col_count = max(len(row) for row in rows)
+    normalized = [row + [""] * (col_count - len(row)) for row in rows]
+    if col_count < 2:
+        return ""
+    header = normalized[0]
+    body = normalized[1:] or [[""] * col_count]
+    lines = [
+        "| " + " | ".join(markdown_cell(cell) for cell in header) + " |",
+        "| " + " | ".join("---" for _ in range(col_count)) + " |",
+    ]
+    for row in body:
+        lines.append("| " + " | ".join(markdown_cell(cell) for cell in row) + " |")
+    return "\n".join(lines)
+
+
+def normalize_table_content(content: str) -> str:
+    content = content.strip()
+    if not content:
+        return ""
+    return content
+
+
+def clean_cell_text(value: str) -> str:
+    return " ".join(str(value).replace("\r", "\n").split())
+
+
+def markdown_cell(value: str) -> str:
+    return clean_cell_text(value).replace("|", r"\|")
+
+
+def unique_markdown_blocks(blocks: list[str]) -> list[str]:
+    seen = set()
+    unique = []
+    for block in blocks:
+        normalized = "\n".join(line.rstrip() for line in str(block).strip().splitlines()).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(normalized)
+    return unique
 
 
 if __name__ == "__main__":
