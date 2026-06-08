@@ -178,6 +178,8 @@
 
 后续需要支持把本地大模型能力替换为在线大模型 API，但不改变本项目“调度层/复查层/agent 接口层”的定位。在线化不应让 agent 或 UI 直接调用供应商 API，而应通过统一 provider adapter 接入。
 
+详细设计见 [ONLINE_MODEL_API_INTEGRATION.md](ONLINE_MODEL_API_INTEGRATION.md)。
+
 ### 需要的在线模型类型
 
 最小可用组合：
