@@ -121,6 +121,8 @@ class PdfPreflight:
     toc_like_pages: int
     table_like_pages: int
     two_column_like_pages: int
+    slide_aspect_page_ratio: float
+    presentation_like: bool
     scanned_likely: bool
     complex_layout_likely: bool
     recommended_pipeline: str
@@ -4416,6 +4418,7 @@ def inspect_pdf_preflight(source: Path, args: argparse.Namespace, sample_pages: 
         text_chars = 0
         text_blocks = 0
         image_area_ratios: list[float] = []
+        slide_aspect_pages = 0
         toc_like_pages = 0
         table_like_pages = 0
         two_column_like_pages = 0
@@ -4433,6 +4436,8 @@ def inspect_pdf_preflight(source: Path, args: argparse.Namespace, sample_pages: 
                 table_like_pages += 1
             if looks_like_two_column_page(page, blocks):
                 two_column_like_pages += 1
+            if looks_like_slide_page_aspect(page):
+                slide_aspect_pages += 1
 
             image_area_ratio = page_image_area_ratio(page)
             image_area_ratios.append(image_area_ratio)
@@ -4445,17 +4450,26 @@ def inspect_pdf_preflight(source: Path, args: argparse.Namespace, sample_pages: 
         avg_text_blocks = round(text_blocks / max(sampled, 1), 1)
         image_page_ratio = round(image_pages / max(sampled, 1), 3)
         avg_image_area_ratio = round(sum(image_area_ratios) / max(sampled, 1), 3)
+        slide_aspect_page_ratio = round(slide_aspect_pages / max(sampled, 1), 3)
+        presentation_like = (
+            slide_aspect_page_ratio >= 0.65
+            and toc_like_pages == 0
+            and bookmark_count == 0
+            and avg_text_blocks <= 12
+        )
         scanned_likely = text_page_ratio < 0.5 or avg_text_chars < 120
         complex_layout_likely = (
             image_page_ratio >= 0.35
             or avg_image_area_ratio >= 0.25
             or table_like_pages > 0
             or two_column_like_pages > 0
+            or presentation_like
         )
         recommended, reasons = recommend_pdf_pipeline(
             page_count=page_count,
             scanned_likely=scanned_likely,
             complex_layout_likely=complex_layout_likely,
+            presentation_like=presentation_like,
             toc_like_pages=toc_like_pages,
             table_like_pages=table_like_pages,
             two_column_like_pages=two_column_like_pages,
@@ -4474,6 +4488,8 @@ def inspect_pdf_preflight(source: Path, args: argparse.Namespace, sample_pages: 
             toc_like_pages=toc_like_pages,
             table_like_pages=table_like_pages,
             two_column_like_pages=two_column_like_pages,
+            slide_aspect_page_ratio=slide_aspect_page_ratio,
+            presentation_like=presentation_like,
             scanned_likely=scanned_likely,
             complex_layout_likely=complex_layout_likely,
             recommended_pipeline=recommended,
@@ -4615,6 +4631,8 @@ def empty_pdf_preflight() -> PdfPreflight:
         toc_like_pages=0,
         table_like_pages=0,
         two_column_like_pages=0,
+        slide_aspect_page_ratio=0.0,
+        presentation_like=False,
         scanned_likely=False,
         complex_layout_likely=False,
         recommended_pipeline="marker",
@@ -4683,6 +4701,16 @@ def looks_like_two_column_page(page, blocks: list[tuple[float, float, float, flo
     return right_min - left_max > page.rect.width * 0.04
 
 
+def looks_like_slide_page_aspect(page) -> bool:
+    width = float(page.rect.width)
+    height = float(page.rect.height)
+    if width <= 0 or height <= 0:
+        return False
+    ratio = width / height
+    # Common slide decks exported to PDF are 16:9 or 4:3 landscape pages.
+    return 1.28 <= ratio <= 1.9
+
+
 def looks_like_toc_page(text: str) -> bool:
     if not text:
         return False
@@ -4707,6 +4735,7 @@ def recommend_pdf_pipeline(
     page_count: int,
     scanned_likely: bool,
     complex_layout_likely: bool,
+    presentation_like: bool,
     toc_like_pages: int,
     table_like_pages: int,
     two_column_like_pages: int,
@@ -4721,6 +4750,8 @@ def recommend_pdf_pipeline(
         reasons.append("文本层较少，疑似扫描版或 OCR 质量风险")
     if complex_layout_likely:
         reasons.append("图片/表格/复杂版式迹象较多")
+    if presentation_like:
+        reasons.append("页面比例和文本块密度接近 PPT/幻灯片 PDF")
     if toc_like_pages:
         reasons.append("检测到目录页迹象")
     if table_like_pages:

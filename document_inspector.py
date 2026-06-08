@@ -177,6 +177,8 @@ def inspect_pdf(input_path: Path, *, sample_pages: int) -> dict[str, Any]:
     warnings = []
     if preflight.scanned_likely:
         warnings.append("PDF appears scanned or has weak text layer.")
+    if getattr(preflight, "presentation_like", False):
+        warnings.append("PDF appears to be a slide deck or PPT export; page-level layout may matter more than book-style chapters.")
     if preflight.complex_layout_likely:
         warnings.append("PDF appears to have complex layout, images, tables, or multiple columns.")
     if preflight.page_count >= 200:
@@ -318,6 +320,13 @@ def directory_next_actions(recommendation: str, strategy: dict[str, Any]) -> lis
 
 
 def pdf_structure_strategy(preflight) -> dict[str, Any]:
+    if getattr(preflight, "presentation_like", False):
+        return {
+            "mode": "presentation_pdf_slide_recovery",
+            "confidence": "medium",
+            "reason": "PDF page aspect ratio and block density look like slides exported from PPT; treat each page as a slide and preserve page-level layout cues.",
+            "preferred_tools": ["mineru", "docling", "umi", "pymupdf4llm"],
+        }
     if preflight.bookmark_count:
         base = {
             "mode": "bookmark_guided_structure_recovery",
@@ -354,6 +363,12 @@ def pdf_structure_strategy(preflight) -> dict[str, Any]:
 
 def pdf_next_actions(preflight, strategy: dict[str, Any]) -> list[dict[str, str]]:
     mode = str(strategy.get("mode") or "")
+    if mode == "presentation_pdf_slide_recovery":
+        return [
+            {"tool": "start_conversion", "pdf_pipeline_mode": "mineru", "why": "recover slide titles, text boxes, and visual layout blocks"},
+            {"tool": "start_conversion", "pdf_pipeline_mode": "pymupdf4llm", "why": "create a fast text-layer baseline for comparison"},
+            {"tool": "start_location_index", "why": "build page-level search when only slide/page location is needed"},
+        ]
     if mode == "ocr_first_with_review":
         return [
             {"tool": "start_location_index", "why": "build a page-level index quickly before full OCR conversion if only coarse location is needed"},
@@ -426,6 +441,8 @@ def collect_document_sources(input_path: Path, *, recursive: bool, include_hidde
 
 
 def recommend_pdf_tool(preflight) -> str:
+    if getattr(preflight, "presentation_like", False):
+        return "presentation_pdf_slide_recovery"
     if preflight.scanned_likely:
         return "build_location_index_or_mineru_ocr"
     if preflight.complex_layout_likely:

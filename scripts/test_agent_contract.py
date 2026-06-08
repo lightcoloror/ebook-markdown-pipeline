@@ -118,6 +118,7 @@ def main() -> int:
         if not isinstance(inspection.get("next_actions"), list) or "mode" not in inspection.get("structure_strategy", {}):
             raise AssertionError(f"inspect_document must expose structure strategy and next actions: {inspection}")
         assert_pdf_outline_inspection(tmpdir)
+        assert_presentation_pdf_inspection(tmpdir)
         assert_conversion_report_pdf_outline(tmpdir)
         assert_review_decisions_report(tmpdir)
         assert_web_archive_route(tmpdir)
@@ -274,6 +275,29 @@ def assert_pdf_outline_inspection(tmpdir: Path) -> None:
         raise AssertionError(f"Unexpected first outline item: {inspection}")
     if (inspection.get("structure_strategy") or {}).get("mode") != "bookmark_guided_structure_recovery":
         raise AssertionError(f"Expected bookmark-guided structure strategy: {inspection}")
+
+
+def assert_presentation_pdf_inspection(tmpdir: Path) -> None:
+    pdf_path = tmpdir / "slides-export.pdf"
+    document = fitz.open()
+    for idx in range(3):
+        page = document.new_page(width=1280, height=720)
+        page.insert_text((72, 80), f"Slide {idx + 1}: Key Idea", fontsize=28)
+        page.insert_text((96, 160), "Short bullet", fontsize=18)
+        page.insert_text((96, 210), "Another compact visual note", fontsize=18)
+    document.save(pdf_path)
+    document.close()
+
+    inspection = call_tool("inspect_document", {"input": str(pdf_path)})
+    preflight = inspection.get("preflight") or {}
+    if not preflight.get("presentation_like") or preflight.get("slide_aspect_page_ratio", 0) < 0.65:
+        raise AssertionError(f"Expected presentation-like PDF preflight: {inspection}")
+    strategy = inspection.get("structure_strategy") or {}
+    if strategy.get("mode") != "presentation_pdf_slide_recovery":
+        raise AssertionError(f"Expected presentation PDF strategy: {inspection}")
+    actions = inspection.get("next_actions") or []
+    if not any(action.get("tool") == "start_location_index" for action in actions):
+        raise AssertionError(f"Expected page-level location action for slide PDF: {inspection}")
 
 
 def assert_conversion_report_pdf_outline(tmpdir: Path) -> None:
