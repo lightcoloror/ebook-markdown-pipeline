@@ -63,6 +63,38 @@ def main() -> int:
         if not isinstance(job.get("next_actions"), list):
             raise AssertionError(f"Job next_actions must be a list: {job}")
 
+        routed_rebuild = call_tool(
+            "process_material",
+            {
+                "input": str(image_dir),
+                "output": str(tmpdir / "rebuild-out"),
+                "recursive": False,
+                "ocr": "never",
+                "intent": "rebuild",
+            },
+        )
+        if routed_rebuild["route"] != "start_image_book_rebuild":
+            raise AssertionError(f"Explicit rebuild intent should use image-book recognition: {routed_rebuild}")
+        rebuild_job = poll_job(str(routed_rebuild["job_id"]))
+        if rebuild_job["status"] != "done":
+            raise AssertionError(f"Explicit rebuild job did not finish: {rebuild_job}")
+
+        routed_locate = call_tool(
+            "process_material",
+            {
+                "input": str(image_dir),
+                "output": str(tmpdir / "locate-out"),
+                "recursive": False,
+                "ocr": "never",
+                "intent": "locate",
+            },
+        )
+        if routed_locate["route"] != "start_location_index" or not routed_locate.get("next_actions"):
+            raise AssertionError(f"Explicit locate intent should use location index: {routed_locate}")
+        locate_job = poll_job(str(routed_locate["job_id"]))
+        if locate_job["status"] != "done":
+            raise AssertionError(f"Explicit locate job did not finish: {locate_job}")
+
         inspection = call_tool("inspect_document", {"input": str(image_dir), "recursive": False})
         assert_fields("inspect_document", inspection, INSPECTION_FIELDS)
         if not isinstance(inspection.get("next_actions"), list) or "mode" not in inspection.get("structure_strategy", {}):

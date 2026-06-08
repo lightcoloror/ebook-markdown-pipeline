@@ -233,7 +233,12 @@ def stage3_checks() -> list[Check]:
             "stage3_pdf_image_quality",
             "recognition default over location index",
             agent_test,
-            ["route\"] != \"start_image_book_rebuild", "route\"] != \"start_location_index", "Query process_material route should still use location index"],
+            [
+                "Unexpected process_material route",
+                "Explicit rebuild intent should use image-book recognition",
+                "Explicit locate intent should use location index",
+                "Query process_material route should still use location index",
+            ],
             "scripts/test_agent_fast_contract.py",
         ),
     ]
