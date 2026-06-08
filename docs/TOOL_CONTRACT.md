@@ -17,7 +17,7 @@ Preferred order:
 
 Agents should not directly parse PDFs, images, temporary directories, SQLite files, or model outputs when a tool exists for that purpose.
 
-Agents should also not call online model providers directly for document recognition. Future online API support should remain behind this project's provider abstraction so that privacy, cost, retry, fallback, artifact schema, and report logging stay consistent.
+Agents should also not call online model providers directly for document recognition. Online API support must remain behind this project's provider abstraction so that privacy, cost, retry, fallback, artifact schema, and report logging stay consistent.
 
 `get_agent_contract` and `health_check` expose `online_provider_health` when `config/online_models.example.json` or `EBOOK_CONVERTER_ONLINE_MODELS_CONFIG` is readable. This is configuration health only: it reports provider names, types, models, configured base URLs, key environment variable names, and missing-key status without making remote API calls.
 
@@ -45,7 +45,7 @@ Online-model option:
 
 - `inspect_document` returns `online_enhancement` with `recommended`, `enabled_by_model_mode`, `remote_call_enabled`, `recommended_routes`, `estimated_pages`, `estimated_items`, `estimated_cost_risk`, `privacy_risk`, `reason`, and `next_step`.
 - `remote_call_enabled` is currently always `false` in inspection. The field exists so future provider-backed pipelines can become explicit and auditable.
-- Agents should not call vendor APIs directly even when `online_enhancement.recommended=true`; wait for this project to expose the provider-backed action.
+- Agents should not call vendor APIs directly even when `online_enhancement.recommended=true`; use `run_online_enhancement` only after the user or caller explicitly chooses online/hybrid enhancement.
 
 Routing rules:
 
@@ -362,6 +362,52 @@ Use `compare_environment_lock` with a prior `environment-lock.json` to detect dr
 ```
 
 Use this when deciding whether to convert, build a location index, rebuild an image book, export a review pack, or compare PDF pipelines.
+
+## Online Enhancement
+
+`run_online_enhancement` is the explicit provider-backed entry point for optional online/fake enhancement. It does not run during default conversion.
+
+Supported tasks:
+
+- `text_structure`: repair low-confidence Markdown heading hierarchy.
+- `vlm_layout`: extract image/infographic visual layout into Markdown and blocks.
+- `table_repair`: repair true table candidates without forcing card layouts into tables.
+
+Safety rules:
+
+- `provider_mode=fake` is the default and is used for dry-run contracts and tests.
+- `provider_mode=openai_compatible` requires `model_mode=hybrid|online|auto`.
+- Remote calls also require `allow_remote=true`.
+- API keys are read only from environment variables named in `config/online_models.example.json`.
+
+Example fake call:
+
+```json
+{
+  "name": "run_online_enhancement",
+  "arguments": {
+    "task": "text_structure",
+    "provider_mode": "fake",
+    "input_text": "Title\n\nBody"
+  }
+}
+```
+
+Example remote-gated call:
+
+```json
+{
+  "name": "run_online_enhancement",
+  "arguments": {
+    "task": "vlm_layout",
+    "provider_mode": "openai_compatible",
+    "model_mode": "hybrid",
+    "allow_remote": true,
+    "input_path": "path/to/infographic.png",
+    "mime_type": "image/png"
+  }
+}
+```
 
 For `web-content-fetcher` archives, `inspect_document` returns:
 

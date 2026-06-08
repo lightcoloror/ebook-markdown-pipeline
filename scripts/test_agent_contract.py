@@ -26,6 +26,7 @@ REQUIRED_TOOLS = {
     "get_agent_contract",
     "process_material",
     "process_web_archive",
+    "run_online_enhancement",
     "get_job_status",
     "read_artifact",
     "inspect_agent_batch_results",
@@ -133,6 +134,7 @@ def main() -> int:
         assert_conversion_report_pdf_outline(tmpdir)
         assert_review_decisions_report(tmpdir)
         assert_web_archive_route(tmpdir)
+        assert_online_enhancement_tool(tmpdir)
 
         assert_quality_summary_next_actions(tmpdir)
 
@@ -544,6 +546,57 @@ def assert_web_archive_route(tmpdir: Path) -> None:
     readable = call_tool("read_artifact", {"path": str(visual_check), "artifact_type": "visual_check_json"})
     if (readable.get("json") or {}).get("schema_version") != 1:
         raise AssertionError(f"Expected parsed visual_check_json artifact: {readable}")
+
+
+def assert_online_enhancement_tool(tmpdir: Path) -> None:
+    structure = call_tool(
+        "run_online_enhancement",
+        {"task": "text_structure", "input_text": "Title\n\nBody", "provider_mode": "fake"},
+    )
+    if structure.get("status") != "ok" or not (structure.get("result") or {}).get("markdown", "").startswith("# Title"):
+        raise AssertionError(f"Expected fake text structure enhancement: {structure}")
+
+    table = call_tool(
+        "run_online_enhancement",
+        {"task": "table_repair", "input_text": "| A | B |\n| --- | --- |\n| 1 | 2 |", "provider_mode": "fake"},
+    )
+    if table.get("status") != "ok" or not (table.get("result") or {}).get("tables"):
+        raise AssertionError(f"Expected fake table repair enhancement: {table}")
+
+    image = tmpdir / "online-vlm.png"
+    pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 120, 80), 0)
+    pixmap.clear_with(255)
+    pixmap.save(str(image))
+    visual = call_tool(
+        "run_online_enhancement",
+        {"task": "vlm_layout", "input_path": str(image), "provider_mode": "fake"},
+    )
+    if visual.get("status") != "ok" or "# Fake Layout" not in (visual.get("result") or {}).get("markdown", ""):
+        raise AssertionError(f"Expected fake VLM layout enhancement: {visual}")
+
+    blocked = call_tool(
+        "run_online_enhancement",
+        {
+            "task": "text_structure",
+            "input_text": "Title",
+            "provider_mode": "openai_compatible",
+            "model_mode": "local",
+        },
+    )
+    if blocked.get("error") is not True or "model_mode=local" not in blocked.get("message", ""):
+        raise AssertionError(f"Expected local mode to block remote online enhancement: {blocked}")
+
+    needs_permission = call_tool(
+        "run_online_enhancement",
+        {
+            "task": "text_structure",
+            "input_text": "Title",
+            "provider_mode": "openai_compatible",
+            "model_mode": "hybrid",
+        },
+    )
+    if needs_permission.get("error") is not True or "allow_remote=true" not in needs_permission.get("message", ""):
+        raise AssertionError(f"Expected explicit remote permission requirement: {needs_permission}")
 
 
 def assert_http_contract(input_path: Path, output_path: Path) -> None:

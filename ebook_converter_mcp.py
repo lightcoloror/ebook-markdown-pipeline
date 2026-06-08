@@ -32,7 +32,13 @@ from ebook_markdown_pipeline.document_locator import build_location_index, expor
 from ebook_markdown_pipeline.document_inspector import inspect_document  # noqa: E402
 from ebook_markdown_pipeline.environment_report import compare_environment_lock, export_environment_report  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book, rebuild_image_book_from_order  # noqa: E402
-from ebook_markdown_pipeline.online_providers import provider_registry_health  # noqa: E402
+from ebook_markdown_pipeline.online_providers import (  # noqa: E402
+    OnlineProviderError,
+    fake_provider_for_type,
+    load_provider_registry,
+    openai_compatible_provider,
+    provider_registry_health,
+)
 from ebook_markdown_pipeline.process_web_archive import process_web_archive as process_web_archive_core  # noqa: E402
 
 
@@ -340,6 +346,27 @@ def tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "run_online_enhancement",
+            "description": "Explicit optional provider-backed enhancement for text structure, image/VLM layout, or table repair. Defaults to fake provider; real remote calls require allow_remote=true.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "task": {"type": "string", "enum": ["text_structure", "vlm_layout", "table_repair"]},
+                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto"], "default": "local"},
+                    "provider_mode": {"type": "string", "enum": ["fake", "openai_compatible"], "default": "fake"},
+                    "provider": {"type": "string"},
+                    "config": {"type": "string"},
+                    "allow_remote": {"type": "boolean", "default": False},
+                    "input_text": {"type": "string"},
+                    "input_path": {"type": "string"},
+                    "mime_type": {"type": "string", "default": "image/png"},
+                    "prompt": {"type": "string"},
+                    "context": {"type": "object"},
+                },
+                "required": ["task"],
+            },
+        },
+        {
             "name": "start_conversion",
             "description": "Start a background conversion job. Poll with get_job_status.",
             "inputSchema": {
@@ -582,6 +609,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return process_material(arguments)
     if name == "process_web_archive":
         return process_web_archive_tool(arguments)
+    if name == "run_online_enhancement":
+        return run_online_enhancement(arguments)
     if name == "start_conversion":
         return start_conversion(arguments)
     if name == "get_job_status":
@@ -965,6 +994,127 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
         "errors": [],
         "next_actions": next_actions,
     }
+
+
+ONLINE_ENHANCEMENT_TASKS = {
+    "text_structure": {"route": "text_structure_repair", "provider_type": "text_structure_llm"},
+    "vlm_layout": {"route": "layout_heavy_images", "provider_type": "vlm_layout"},
+    "table_repair": {"route": "table_repair", "provider_type": "table_repair"},
+}
+
+
+def run_online_enhancement(arguments: dict[str, Any]) -> dict[str, Any]:
+    task = str(arguments.get("task") or "")
+    task_info = ONLINE_ENHANCEMENT_TASKS.get(task)
+    if not task_info:
+        return {"error": True, "message": f"Unsupported online enhancement task: {task}", "supported_tasks": sorted(ONLINE_ENHANCEMENT_TASKS)}
+
+    provider_mode = str(arguments.get("provider_mode") or "fake")
+    model_mode = str(arguments.get("model_mode") or "local")
+    allow_remote = bool(arguments.get("allow_remote", False))
+    context = arguments.get("context") if isinstance(arguments.get("context"), dict) else {}
+    prompt = str(arguments.get("prompt") or "")
+
+    if provider_mode == "fake":
+        try:
+            provider = fake_provider_for_type(str(task_info["provider_type"]))
+            return run_enhancement_provider_task(task, provider, arguments, context=context, prompt=prompt, remote_call_enabled=False, provider_name=f"fake_{task}")
+        except Exception as exc:  # noqa: BLE001
+            return {"error": True, "message": str(exc), "retryable": False}
+
+    if provider_mode != "openai_compatible":
+        return {"error": True, "message": f"Unsupported provider_mode: {provider_mode}", "supported_provider_modes": ["fake", "openai_compatible"]}
+    if model_mode == "local":
+        return {
+            "error": True,
+            "message": "model_mode=local refuses remote online enhancement. Use model_mode=hybrid, online, or auto for explicit provider calls.",
+            "retryable": False,
+        }
+    if not allow_remote:
+        return {
+            "error": True,
+            "message": "Remote provider calls require allow_remote=true. This prevents accidental API usage and cost/privacy surprises.",
+            "retryable": False,
+            "next_actions": [
+                {
+                    "action": "retry_with_explicit_remote_permission",
+                    "tool": "run_online_enhancement",
+                    "arguments": {**{key: value for key, value in arguments.items() if key != "allow_remote"}, "allow_remote": True},
+                }
+            ],
+        }
+
+    try:
+        registry = load_provider_registry(arguments.get("config"))
+        provider_config = registry.providers.get(str(arguments.get("provider") or "")) if arguments.get("provider") else registry.provider_for_route(str(task_info["route"]))
+        if provider_config is None:
+            return {
+                "error": True,
+                "message": f"No provider configured for route {task_info['route']}.",
+                "route": task_info["route"],
+                "available_providers": sorted(registry.providers),
+            }
+        provider = openai_compatible_provider(provider_config)
+        return run_enhancement_provider_task(
+            task,
+            provider,
+            arguments,
+            context=context,
+            prompt=prompt,
+            remote_call_enabled=True,
+            provider_name=provider_config.name,
+        )
+    except OnlineProviderError as exc:
+        payload = exc.to_dict()
+        payload["error"] = True
+        return payload
+    except Exception as exc:  # noqa: BLE001
+        return {"error": True, "message": str(exc), "retryable": False}
+
+
+def run_enhancement_provider_task(
+    task: str,
+    provider: Any,
+    arguments: dict[str, Any],
+    *,
+    context: dict[str, Any],
+    prompt: str,
+    remote_call_enabled: bool,
+    provider_name: str,
+) -> dict[str, Any]:
+    if task == "text_structure":
+        text = read_text_input(arguments, label="input_text")
+        result = provider.repair_structure(text, context=context)
+    elif task == "table_repair":
+        table = read_text_input(arguments, label="input_text")
+        result = provider.repair_table(table, context=context)
+    elif task == "vlm_layout":
+        image_path = Path(str(arguments.get("input_path") or ""))
+        if not image_path.is_file():
+            return {"error": True, "message": "vlm_layout requires input_path pointing to an image file."}
+        result = provider.describe_layout(image_path.read_bytes(), mime_type=str(arguments.get("mime_type") or "image/png"), prompt=prompt)
+    else:
+        return {"error": True, "message": f"Unsupported task: {task}"}
+    return {
+        "status": "ok",
+        "task": task,
+        "provider": provider_name,
+        "provider_mode": "remote" if remote_call_enabled else "fake",
+        "remote_call_enabled": remote_call_enabled,
+        "result": result,
+    }
+
+
+def read_text_input(arguments: dict[str, Any], *, label: str) -> str:
+    text = arguments.get(label)
+    if isinstance(text, str) and text:
+        return text
+    path_value = str(arguments.get("input_path") or "")
+    if path_value:
+        path = Path(path_value)
+        if path.is_file():
+            return path.read_text(encoding="utf-8", errors="replace")
+    raise ValueError(f"{label} or input_path is required for this enhancement task.")
 
 
 def choose_material_route(inspection: dict[str, Any], *, intent: str, query: str, image_book_threshold: int) -> str:

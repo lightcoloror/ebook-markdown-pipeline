@@ -25,6 +25,8 @@ The contract and HTTP `/health` also expose operating context: config sources, p
 
 `inspect_document` and `process_material` accept `model_mode=local|online|hybrid|auto`. In the current implementation this only adds `online_enhancement` recommendations and risk fields; it does not call remote providers. Agents should treat `online_enhancement.remote_call_enabled=false` as a hard stop and must not call vendor APIs directly.
 
+When an explicit online/fake enhancement is required, use `run_online_enhancement`. The tool supports `text_structure`, `vlm_layout`, and `table_repair`. It defaults to `provider_mode=fake`; real OpenAI-compatible calls require `provider_mode=openai_compatible`, `model_mode=hybrid|online|auto`, and `allow_remote=true`.
+
 ## Recommended Integration
 
 Use MCP for OpenClaw, Hermes Agent, Codex, Claude Code, or other agents that support tool schemas.

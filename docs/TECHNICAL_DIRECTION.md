@@ -240,6 +240,7 @@
 
 - `online_providers.py` 已提供 `OcrLayoutProvider`、`VlmLayoutProvider`、`TextStructureProvider`、`TableRepairProvider`、`EmbeddingProvider` 抽象，fake provider 测试，以及 OpenAI-compatible adapter。
 - `config/online_models.example.json` 模板已存在；`health_check` / agent contract 已能读取 provider health，`inspect_document` / `process_material` 已能返回 `online_enhancement` 推荐和风险字段，后续让实际管道按显式 `model_mode` 调用 provider。
+- `run_online_enhancement` 已提供显式 fake/OpenAI-compatible 调用入口，覆盖 `text_structure`、`vlm_layout`、`table_repair`，真实远程调用需要 `allow_remote=true`。
 - 扩展 `health_check`，在已有 provider 配置/缺失密钥检测基础上增加可选真实连通性、预算和隐私风险检查。
 - 扩展实际管道，在 `model_mode=hybrid|online|auto` 且用户确认成本/隐私风险后读取 `online_enhancement` 并调用 provider。
 - 扩展 `process_material`，支持 `model_mode=local|online|hybrid|auto`。

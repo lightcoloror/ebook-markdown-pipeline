@@ -20,6 +20,28 @@ flowchart LR
     input --> entry --> route --> backends --> output --> agent
 ```
 
+## Architecture At A Glance
+
+The repository is intentionally a coordinator, not a new parser/OCR/model stack. UI, CLI, HTTP, and MCP all enter the same routing layer; that layer inspects inputs, chooses specialist tools, normalizes Markdown, records quality evidence, and returns artifacts plus agent-safe next actions.
+
+```mermaid
+flowchart TD
+    entry["UI / CLI / HTTP / MCP"] --> inspect["Inspect input\nformat, text layer, page count, layout risk"]
+    inspect --> route["Recommend pipeline\nfast path, OCR, layout, fallback"]
+    route --> ebook["Ebook and document tools\nPandoc / Calibre / Docling"]
+    route --> pdf["PDF tools\nPyMuPDF4LLM / MinerU / Marker / Umi-OCR"]
+    route --> image["Image tools\nUmi-OCR / PaddleOCR-VL / Qwen-VL / MinerU VLM"]
+    route --> online["Optional online providers\nVLM / structure repair / table repair"]
+    ebook --> repair["Markdown cleanup\nTOC alignment / structure repair"]
+    pdf --> repair
+    image --> repair
+    online --> repair
+    repair --> artifacts["Outputs\nMarkdown + reports + logs + review checklist"]
+    artifacts --> agents["Agent handoff\nnext_actions / run_summary / bundles"]
+```
+
+For the full architecture, PDF/image routing diagram, module map, and third-party boundary, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## Highlights
 
 - Converts `EPUB / AZW3 / MOBI / FB2 / TXT / RTF / ODT / PDF / DOCX / PPTX / XLSX / HTML / CSV / images` to Markdown-oriented outputs.
@@ -31,6 +53,23 @@ flowchart LR
 - Builds a lightweight page/image location index when you only need to know which PDF page or image contains a keyword.
 - Exposes the same core workflow through UI, CLI, MCP, and HTTP for OpenClaw, Hermes Agent, Codex, or other automation agents.
 - Keeps third-party projects at the tool/API boundary: this repository provides orchestration, routing, UI, reports, recovery, and agent contracts rather than vendoring parser/OCR/model code.
+
+## Referenced And Reused Tools
+
+This project follows a tool-first integration principle: use mature tools directly, and write only the glue needed to make them reliable together. The main directly integrated tools are:
+
+| Tool | Role |
+| --- | --- |
+| Pandoc | Common ebook/text/Markdown/HTML conversion. |
+| Calibre / `ebook-convert` | AZW, AZW3, MOBI, and RTF conversion before Markdown cleanup. |
+| PyMuPDF / PyMuPDF4LLM | PDF inspection, outline extraction, rendering, and fast PDF-to-Markdown fallback. |
+| MinerU | Optional structured PDF parsing for complex/scanned documents. |
+| Marker | Optional layout-aware PDF parsing. |
+| Docling | Optional Office/document/PDF structure backend. |
+| Umi-OCR / PaddleOCR-json | Local OCR blocks for images and scanned pages. |
+| PaddleOCR-VL / Qwen-VL / MinerU VLM | Optional layout-heavy image or infographic enhancement. |
+
+Several design ideas are also documented as architectural references: Marker-style pluggable LLM services, MinerU-style local/remote VLM backend split, PaddleOCR MCP-style stable tool contracts, and Docling-style artifact boundaries. See [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the detailed boundary and license notes.
 
 ## Project Status
 

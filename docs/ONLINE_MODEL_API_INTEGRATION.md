@@ -2,7 +2,7 @@
 
 本项目后续会支持把部分本地大模型能力替换为在线大模型 API。接入原则是：统一 provider 抽象优先，不在 MinerU、PaddleOCR、截图成书、`structure_repair` 等具体管道里分别写供应商 API 调用。
 
-当前状态：`online_providers.py` 已提供 provider 抽象、fake provider、OpenAI-compatible adapter、配置健康检查和离线契约测试。默认转换流程仍然 local-first，不会自动调用远程 API。
+当前状态：`online_providers.py` 已提供 provider 抽象、fake provider、OpenAI-compatible adapter、配置健康检查和离线契约测试。MCP/HTTP 侧已提供显式 `run_online_enhancement` 工具。默认转换流程仍然 local-first，不会自动调用远程 API。
 
 ## 核心原则
 
@@ -103,6 +103,7 @@
 
 - Agent 仍然优先调用 `process_material`。
 - Agent 不直接调用 OpenAI、Qwen、Claude、Gemini、Paddle 官方 API 或其他供应商 API。
+- Agent 只能通过 `run_online_enhancement` 触发显式在线增强；真实远程调用必须传 `provider_mode=openai_compatible`、`model_mode=hybrid|online|auto` 和 `allow_remote=true`。
 - `process_material` 和 `inspect_document` 已接受 `model_mode=local|online|hybrid|auto`。当前只影响 `online_enhancement` 推荐/风险字段，不会自动调用在线 API。
 - `health_check` 已暴露 online provider 配置健康和缺失密钥状态；真实连通性、预算和隐私确认仍待接入。
 - `inspect_document` 已返回 `online_enhancement`，包括 `recommended`、`enabled_by_model_mode`、`remote_call_enabled=false`、`recommended_routes`、`estimated_pages`、`estimated_items`、`estimated_cost_risk` 和 `privacy_risk`。
@@ -111,8 +112,9 @@
 
 1. 已完成：provider 抽象、fake provider 测试、OpenAI-compatible adapter、配置健康检查。
 2. 已完成：`inspect_document` / `process_material` 的 `model_mode` 推荐层和 `online_enhancement` 风险字段。
-3. 下一步：在 `structure_repair` 低置信度片段中可选调用 OpenAI-compatible `TextStructureProvider`。
-4. 下一步：在信息图、PPT PDF、截图书疑难页中可选调用 OpenAI-compatible `VlmLayoutProvider`。
-5. 下一步：接入 `OcrLayoutProvider`，用于云 OCR/layout 替代本地 OCR。
-6. 下一步：接入 `EmbeddingProvider`，增强定位索引和语义检索。
-7. 下一步：加入预算、并发、重试、超时、隐私确认和 report 记录。
+3. 已完成：显式 `run_online_enhancement` 入口，支持 fake / OpenAI-compatible 的 `text_structure`、`vlm_layout`、`table_repair`。
+4. 下一步：把 `structure_repair` 低置信度片段接到可选 `TextStructureProvider`，并写入 report。
+5. 下一步：把信息图、PPT PDF、截图书疑难页接到可选 `VlmLayoutProvider`，并写入增强 artifact。
+6. 下一步：接入 `OcrLayoutProvider`，用于云 OCR/layout 替代本地 OCR。
+7. 下一步：接入 `EmbeddingProvider`，增强定位索引和语义检索。
+8. 下一步：加入预算、并发、重试、超时、隐私确认和 report 记录。

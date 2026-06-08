@@ -24,10 +24,12 @@ flowchart LR
     router --> image["Image backends\nUmi-OCR / PaddleOCR-VL / Qwen-VL / MinerU VLM"]
     router --> web["Web archive adapter\nprocess_web_archive.py"]
     router --> locator["Location index\nSQLite FTS + page/image hits"]
+    router --> online["Optional online providers\nonline_providers.py"]
 
     ebook --> normalize["Markdown normalization\nTOC alignment / structure repair / cleanup"]
     pdf --> normalize
     image --> normalize
+    online --> normalize
     web --> artifacts["Artifacts"]
     locator --> artifacts
 
@@ -38,6 +40,35 @@ flowchart LR
     artifacts --> reports[".reports\nsummary / checklist / logs / report.json"]
     artifacts --> handoff["Agent handoff\nnext_actions / run_summary / bundle"]
 ```
+
+## Online Provider Boundary
+
+Online model APIs are optional enhancement tools, not default conversion paths. Agents and UI code should call the project-level provider abstraction instead of wiring vendor APIs into MinerU, PaddleOCR, structure repair, or screenshot-book logic directly.
+
+```mermaid
+flowchart LR
+    caller["UI / CLI / MCP / HTTP"] --> explicit["Explicit opt-in\nrun_online_enhancement"]
+    explicit --> safety["Safety gate\nmodel_mode + allow_remote + env key"]
+    safety --> registry["Provider registry\nonline_providers.py + config"]
+
+    registry --> fake["Fake providers\ntests and dry runs"]
+    registry --> openai["OpenAI-compatible providers\nVLM / text / table / embedding"]
+
+    fake --> artifact["Enhanced artifact\nMarkdown fragment / layout notes / repaired table"]
+    openai --> artifact
+
+    artifact --> report["Report evidence\nprovider name, route, status, no secret logging"]
+```
+
+Current provider interfaces are:
+
+- `OcrLayoutProvider`: OCR blocks with coordinates, intended for future local/cloud OCR unification.
+- `VlmLayoutProvider`: image or page layout description for infographic and layout-heavy pages.
+- `TextStructureProvider`: Markdown hierarchy and heading repair.
+- `TableRepairProvider`: table-only repair without forcing card/step layouts into tables.
+- `EmbeddingProvider`: future semantic location/search support.
+
+The default conversion path remains local-first. Real remote calls require explicit `provider_mode=openai_compatible`, non-local `model_mode`, and `allow_remote=true`.
 
 ## PDF And Image Routing
 
@@ -111,6 +142,7 @@ This keeps the default path local and rule-first while leaving a clear future ho
 | Document inspection | `document_inspector.py` |
 | Location index | `document_locator.py` |
 | Screenshot/image book rebuilding | `image_book_rebuilder.py` |
+| Online model provider abstraction | `online_providers.py`, `config/online_models.example.json` |
 | Web archive visual check | `process_web_archive.py`, `process-web-archive.cmd` |
 | Structure repair | `structure_repair.py` |
 | Artifact schema | `artifact_schema.py` |
