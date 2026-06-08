@@ -613,6 +613,7 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
 def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
     tools = tool_schemas()
     project_dir = Path(__file__).resolve().parent
+    operating_context = agent_operating_context()
     return {
         "schema_version": "ebook-agent-contract-v1",
         "server": SERVER_NAME,
@@ -633,6 +634,11 @@ def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
         ],
         "supports_async_jobs": True,
         "supports_artifacts": True,
+        "operating_context": operating_context,
+        "pipeline_capabilities": operating_context["pipeline_capabilities"],
+        "risk_status": operating_context["risk_status"],
+        "long_task_guidance": operating_context["long_task_guidance"],
+        "route_defaults": operating_context["route_defaults"],
         "tool_count": len(tools),
         "tools": tools,
         "docs": {
@@ -648,6 +654,71 @@ def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
             "schema_version": "artifact-schema-v1",
         },
     }
+
+
+def agent_operating_context() -> dict[str, Any]:
+    capabilities = safe_pipeline_capabilities()
+    return {
+        "config_sources": {
+            "http": str(Path(__file__).resolve().parent / "config" / "http.env"),
+            "example_env": str(Path(__file__).resolve().parent / "config.example.env"),
+        },
+        "pipeline_capabilities": capabilities,
+        "risk_status": agent_risk_status(capabilities),
+        "route_defaults": {
+            "process_material": "recognize_or_convert",
+            "documents": "start_conversion",
+            "pdf": "start_conversion",
+            "images": "start_image_book_rebuild",
+            "image_folders": "start_image_book_rebuild",
+            "location_index": "requires intent=locate or query",
+            "web_archives": "process_web_archive",
+        },
+        "long_task_guidance": {
+            "prefer_async_tools": True,
+            "poll_tool": "get_job_status",
+            "heavy_routes": ["mineru", "marker", "umi", "docling", "paddleocr-vl", "qwen-vl"],
+            "safe_pdf_default": "auto preflight, fallback diagnostics, versioned outputs",
+            "large_pdf_advice": "Use page ranges or pipeline comparison before forcing whole-document heavy OCR/VLM.",
+        },
+        "recommended_agent_flow": [
+            "call get_agent_contract once",
+            "call process_material for unknown inputs",
+            "poll get_job_status when job_id is returned",
+            "read quality_summary before claiming output is final",
+            "follow next_actions and read_artifact for reports/Markdown",
+        ],
+    }
+
+
+def safe_pipeline_capabilities() -> dict[str, Any]:
+    try:
+        payload = health_check({"fast": True})
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "error": True,
+            "message": str(exc),
+            "ready": [],
+            "degraded": [],
+            "missing": ["health_check"],
+            "capabilities": [],
+        }
+    return {
+        "ready": payload.get("ready_capabilities", []),
+        "degraded": payload.get("degraded_capabilities", []),
+        "missing": payload.get("missing_capabilities", []),
+        "capabilities": payload.get("capabilities", []),
+    }
+
+
+def agent_risk_status(capabilities: dict[str, Any]) -> str:
+    if capabilities.get("error"):
+        return "missing_dependencies"
+    if capabilities.get("missing"):
+        return "missing_dependencies"
+    if capabilities.get("degraded"):
+        return "degraded"
+    return "ok"
 
 
 def options_from_arguments(arguments: dict[str, Any]) -> argparse.Namespace:

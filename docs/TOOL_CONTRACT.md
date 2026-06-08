@@ -236,7 +236,7 @@ HTTP `/health` returns the transport contract plus lightweight operating status:
   "ok": true,
   "transport": "http",
   "http_config": {
-    "config_path": "D:\\used-by-codex\\ebook_markdown_pipeline\\config\\http.env",
+    "config_path": "C:\\path\\to\\ebook-markdown-pipeline\\config\\http.env",
     "local_url": "http://127.0.0.1:9241",
     "docker_url": "http://host.docker.internal:9241",
     "bind_host": "127.0.0.1",
@@ -247,7 +247,20 @@ HTTP `/health` returns the transport contract plus lightweight operating status:
     "degraded": [],
     "missing": ["docling_documents"]
   },
-  "risk_status": "missing_dependencies"
+  "risk_status": "missing_dependencies",
+  "config_sources": {
+    "http": "C:\\path\\to\\ebook-markdown-pipeline\\config\\http.env",
+    "example_env": "C:\\path\\to\\ebook-markdown-pipeline\\config.example.env"
+  },
+  "route_defaults": {
+    "process_material": "recognize_or_convert",
+    "images": "start_image_book_rebuild",
+    "location_index": "requires intent=locate or query"
+  },
+  "long_task_guidance": {
+    "prefer_async_tools": true,
+    "poll_tool": "get_job_status"
+  }
 }
 ```
 
@@ -277,6 +290,8 @@ Use `risk_status` as a quick preflight:
 ```
 
 Agents should use `capabilities` before choosing heavy PDF/OCR routes. For example, if `pdf_structure_recovery` is missing, prefer `pdf_fast_text`, `local_ocr`, or a user-visible health fix instead of blindly launching MinerU.
+
+`get_agent_contract` and HTTP `/contract` also expose the same operating context fields: `pipeline_capabilities`, `risk_status`, `config_sources`, `route_defaults`, and `long_task_guidance`. Agents should use these fields instead of guessing ports, assuming every optional backend is installed, or launching heavy whole-document OCR/VLM jobs synchronously.
 
 For persistent handoff, use `export_environment_report`. It writes `environment-report.md`, `environment-report.json`, `environment-lock.json`, and `requirements.lock.txt`, returns their paths, and exposes them as readable artifacts. Use this before large unattended batches or when another agent needs to understand or compare the machine state without shell access.
 

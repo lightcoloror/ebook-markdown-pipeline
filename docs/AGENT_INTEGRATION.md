@@ -21,6 +21,8 @@ The architecture diagrams and module boundaries are documented in [ARCHITECTURE.
 
 MCP-native agents can call `get_agent_contract` first to retrieve `schema_version=ebook-agent-contract-v1`, preferred entrypoints, specialist tools, full tool schemas, artifact/error contract versions, and docs pointers without scraping this document.
 
+The contract and HTTP `/health` also expose operating context: config sources, pipeline capabilities, `risk_status`, recognition-first route defaults, and long-task guidance. Agents should inspect those fields before choosing heavy PDF/OCR/VLM routes.
+
 ## Recommended Integration
 
 Use MCP for OpenClaw, Hermes Agent, Codex, Claude Code, or other agents that support tool schemas.

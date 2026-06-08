@@ -75,6 +75,12 @@ def main() -> int:
                 raise RuntimeError(f"MCP agent contract failed: {contract}")
             if contract.get("entrypoints")[:3] != ["process_material", "get_job_status", "read_artifact"]:
                 raise RuntimeError(f"MCP agent contract entrypoints failed: {contract}")
+            if contract.get("route_defaults", {}).get("images") != "start_image_book_rebuild":
+                raise RuntimeError(f"MCP contract should expose recognition-first route defaults: {contract}")
+            if not contract.get("pipeline_capabilities", {}).get("capabilities"):
+                raise RuntimeError(f"MCP contract missing pipeline capabilities: {contract}")
+            if not contract.get("long_task_guidance", {}).get("prefer_async_tools"):
+                raise RuntimeError(f"MCP contract missing long task guidance: {contract}")
             contract_tool_names = {item.get("name") for item in contract.get("tools") or []}
             if not {"process_material", "read_artifact", "build_agent_handoff_bundle"}.issubset(contract_tool_names):
                 raise RuntimeError(f"MCP agent contract missing tool schemas: {contract}")

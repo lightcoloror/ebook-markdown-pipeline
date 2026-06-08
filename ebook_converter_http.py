@@ -18,6 +18,8 @@ from ebook_markdown_pipeline.ebook_converter_mcp import (  # noqa: E402
     SERVER_DISPLAY_NAME_EN,
     SERVER_NAME,
     SERVER_VERSION,
+    agent_operating_context,
+    agent_risk_status,
     call_tool,
     tool_schemas,
 )
@@ -64,6 +66,7 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
             if self.path == "/health":
                 tools = tool_schemas()
                 capabilities = cached_capability_summary(capability_cache)
+                operating_context = agent_operating_context()
                 self.write_json(
                     {
                         "ok": True,
@@ -89,7 +92,11 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
                             "bind_port": bind_port or http_config.port,
                         },
                         "pipeline_capabilities": capabilities,
-                        "risk_status": health_risk_status(capabilities),
+                        "risk_status": agent_risk_status(capabilities),
+                        "operating_context": operating_context,
+                        "config_sources": operating_context.get("config_sources", {}),
+                        "route_defaults": operating_context.get("route_defaults", {}),
+                        "long_task_guidance": operating_context.get("long_task_guidance", {}),
                         "uptime_seconds": round(time.time() - started_at, 3),
                     }
                 )
@@ -186,6 +193,7 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
 def http_contract_payload(config: HttpConfig | None = None, *, bind_host: str | None = None, bind_port: int | None = None) -> dict[str, Any]:
     http_config = config or load_http_config()
     tools = tool_schemas()
+    operating_context = agent_operating_context()
     return {
         "schema_version": "ebook-http-contract-v1",
         "server": SERVER_NAME,
@@ -205,6 +213,11 @@ def http_contract_payload(config: HttpConfig | None = None, *, bind_host: str | 
         ],
         "supports_async_jobs": True,
         "supports_artifacts": True,
+        "operating_context": operating_context,
+        "pipeline_capabilities": operating_context["pipeline_capabilities"],
+        "risk_status": operating_context["risk_status"],
+        "long_task_guidance": operating_context["long_task_guidance"],
+        "route_defaults": operating_context["route_defaults"],
         "http_config": {
             "scheme": http_config.scheme,
             "host": http_config.host,
@@ -266,15 +279,7 @@ def cached_capability_summary(cache: dict[str, Any], *, ttl_seconds: float = 60.
 
 
 def health_risk_status(capabilities: dict[str, Any]) -> str:
-    if capabilities.get("error"):
-        return "missing_dependencies"
-    missing = capabilities.get("missing") or []
-    degraded = capabilities.get("degraded") or []
-    if missing:
-        return "missing_dependencies"
-    if degraded:
-        return "degraded"
-    return "ok"
+    return agent_risk_status(capabilities)
 
 
 if __name__ == "__main__":

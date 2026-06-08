@@ -57,6 +57,12 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"Health response is missing HTTP config: {health}")
     if not isinstance(health.get("pipeline_capabilities"), dict) or health.get("risk_status") not in {"ok", "degraded", "missing_dependencies"}:
         raise RuntimeError(f"Health response is missing capability/risk summary: {health}")
+    if not health.get("config_sources", {}).get("http") or not health.get("config_sources", {}).get("example_env"):
+        raise RuntimeError(f"Health response is missing config sources: {health}")
+    if health.get("route_defaults", {}).get("images") != "start_image_book_rebuild":
+        raise RuntimeError(f"Health response should expose recognition-first route defaults: {health}")
+    if not health.get("long_task_guidance", {}).get("prefer_async_tools"):
+        raise RuntimeError(f"Health response is missing long task guidance: {health}")
 
     contract = request_json(f"{url.rstrip('/')}/contract", headers=headers)
     if contract.get("schema_version") != "ebook-http-contract-v1" or contract.get("transport") != "http":
@@ -69,6 +75,12 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"HTTP contract missing capability flags: {contract}")
     if contract.get("tool_count", 0) < 10 or not isinstance(contract.get("tools"), list):
         raise RuntimeError(f"HTTP contract missing tool schemas: {contract}")
+    if contract.get("route_defaults", {}).get("location_index") != "requires intent=locate or query":
+        raise RuntimeError(f"HTTP contract missing route defaults: {contract}")
+    if not contract.get("pipeline_capabilities", {}).get("capabilities"):
+        raise RuntimeError(f"HTTP contract missing pipeline capabilities: {contract}")
+    if not contract.get("long_task_guidance", {}).get("poll_tool"):
+        raise RuntimeError(f"HTTP contract missing long task guidance: {contract}")
     contract_tool_names = {item.get("name") for item in contract.get("tools") or []}
     if not {"get_agent_contract", "process_material", "read_artifact", "build_agent_handoff_bundle"}.issubset(contract_tool_names):
         raise RuntimeError(f"HTTP contract missing key tools: {contract}")
