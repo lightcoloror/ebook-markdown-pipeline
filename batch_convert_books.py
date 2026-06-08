@@ -727,7 +727,7 @@ def required_dependencies(sources: Iterable[Path], args: argparse.Namespace) -> 
     return required
 
 
-def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace) -> list[dict[str, str]]:
+def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, *, fast: bool = False) -> list[dict[str, str]]:
     checks: list[dict[str, str]] = []
     source_list = list(sources)
     required = required_dependencies(source_list, args)
@@ -744,7 +744,7 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace) 
     for command in sorted(required):
         resolved = resolve_command_path(command)
         detail = resolved or "not found"
-        version = command_version(resolved or command) if resolved else ""
+        version = "" if fast else command_version(resolved or command) if resolved else ""
         if version:
             detail = f"{detail}; {version}"
         checks.append(
@@ -789,7 +789,7 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace) 
         }
     )
     checks.extend(vlm_image_backend_health())
-    cache_status, cache_detail = mineru_model_cache_status()
+    cache_status, cache_detail = mineru_model_cache_status(fast=fast)
     checks.append(
         {
             "name": "MinerU model cache",
@@ -802,8 +802,8 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace) 
         {
             "name": "CUDA for torch",
             "kind": "gpu",
-            "status": torch_cuda_status(),
-            "detail": torch_cuda_detail(),
+            "status": torch_cuda_status(fast=fast),
+            "detail": torch_cuda_detail(fast=fast),
         }
     )
     return checks
@@ -4080,7 +4080,9 @@ def pymupdf_available() -> bool:
     return importlib.util.find_spec("pymupdf") is not None or importlib.util.find_spec("fitz") is not None
 
 
-def torch_cuda_status() -> str:
+def torch_cuda_status(*, fast: bool = False) -> str:
+    if fast:
+        return "warning"
     try:
         import torch
 
@@ -4089,7 +4091,9 @@ def torch_cuda_status() -> str:
         return "warning"
 
 
-def torch_cuda_detail() -> str:
+def torch_cuda_detail(*, fast: bool = False) -> str:
+    if fast:
+        return "skipped in fast health check"
     try:
         import torch
 
@@ -4100,7 +4104,7 @@ def torch_cuda_detail() -> str:
         return f"torch not importable: {exc}"
 
 
-def mineru_model_cache_status() -> tuple[str, str]:
+def mineru_model_cache_status(*, fast: bool = False) -> tuple[str, str]:
     cache_root = Path.home() / ".cache" / "huggingface" / "hub"
     expected = [
         cache_root / "models--opendatalab--PDF-Extract-Kit-1.0",
@@ -4108,6 +4112,8 @@ def mineru_model_cache_status() -> tuple[str, str]:
     ]
     existing = [path for path in expected if path.exists()]
     if len(existing) == len(expected):
+        if fast:
+            return "ok", "; ".join(path.name for path in existing)
         return "ok", "; ".join(f"{path.name} ({format_bytes(directory_size(path))})" for path in existing)
     if existing:
         return "warning", "partial cache: " + "; ".join(path.name for path in existing)

@@ -230,7 +230,7 @@ def http_contract_payload(config: HttpConfig | None = None, *, bind_host: str | 
 
 def safe_capability_summary() -> dict[str, Any]:
     try:
-        payload = call_tool("health_check", {})
+        payload = call_tool("health_check", {"fast": True})
     except Exception as exc:  # noqa: BLE001
         return {
             "error": True,

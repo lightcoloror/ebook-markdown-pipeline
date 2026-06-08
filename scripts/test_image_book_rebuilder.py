@@ -13,12 +13,14 @@ from ebook_markdown_pipeline.image_book_rebuilder import (  # noqa: E402
     default_paddleocr_vl_command,
     default_qwen_vl_command,
     detect_title_candidate_details,
+    expand_long_image_sources,
     extract_page_number,
     infer_page_order,
     mark_duplicates,
     rebuild_image_book_from_order,
     render_book_markdown,
     render_layout_markdown,
+    render_review_markdown,
     run_layout_heavy_enhancements,
     selected_enhancement_text,
     text_to_markdown,
@@ -99,6 +101,9 @@ def main() -> int:
         raise RuntimeError(f"Expected existing Markdown heading preservation: {preserved_markdown}")
     if "- 已有列表" not in preserved_markdown or "<div>HTML</div>" not in preserved_markdown:
         raise RuntimeError(f"Expected Markdown/HTML preservation: {preserved_markdown}")
+    no_short_heading = text_to_markdown("## 已有标题\n\n用户访谈\n\n数据观察", promote_short_headings=False)
+    if "### 用户访谈" in no_short_heading or "### 数据观察" in no_short_heading:
+        raise RuntimeError(f"Expected short lines not to be promoted for enhanced Markdown: {no_short_heading}")
     title_details = detect_title_candidate_details("前言\n\n这是正文。\n\n2.1 关键原则\n继续说明")
     detail_titles = {item["title"] for item in title_details}
     if "前言" not in detail_titles or "2.1 关键原则" not in detail_titles:
@@ -179,6 +184,50 @@ def main() -> int:
                 raise RuntimeError(f"Expected enhanced Markdown: {enhanced_book}")
         finally:
             rebuilder.run_layout_enhancer_backend = original_backend
+
+    with tempfile.TemporaryDirectory(prefix="image-book-long-split-") as tmp:
+        from PIL import Image  # noqa: PLC0415
+
+        root = Path(tmp)
+        long_image = root / "long.png"
+        Image.new("RGB", (300, 1400), "white").save(long_image)
+        split_sources, split_manifest = expand_long_image_sources(
+            [long_image],
+            root / "split",
+            threshold_ratio=3.0,
+            threshold_height=1000,
+            chunk_height=600,
+            overlap=100,
+        )
+        if len(split_sources) != 3 or len(split_manifest) != 3:
+            raise RuntimeError(f"Expected long image to split into 3 slices: {split_sources}, {split_manifest}")
+        split_pages = [
+            make_page(str(split_sources[2]), "05 OCR page number", 3),
+            make_page(str(split_sources[0]), "01 OCR page number", 1),
+            make_page(str(split_sources[1]), "02 OCR page number", 2),
+        ]
+        for page, manifest in zip(sorted(split_pages, key=lambda item: item.file_name), split_manifest):
+            page.split_group = manifest["split_group"]
+            page.split_index = manifest["split_index"]
+            page.split_y_start = manifest["split_y_start"]
+            page.split_y_end = manifest["split_y_end"]
+            page.page_number = 99 - manifest["split_index"]
+        split_ordered = infer_page_order(split_pages)
+        if [page.split_index for page in split_ordered] != [1, 2, 3]:
+            raise RuntimeError(f"Expected split order to override OCR page numbers: {[page.split_index for page in split_ordered]}")
+        split_review = render_review_markdown(split_pages, split_ordered, [])
+        if "自动长图切分" not in split_review or "Auto-split long-image items: 3" not in split_review:
+            raise RuntimeError(f"Expected auto-split review note: {split_review}")
+        first_split = make_page("split-1.png", "原始1", 1)
+        second_split = make_page("split-2.png", "原始2", 2)
+        for idx, page in enumerate((first_split, second_split), start=1):
+            page.split_group = "long-source"
+            page.split_index = idx
+            page.order_index = idx
+            page.layout_enhancements = [{"backend": "fake", "status": "ok", "text": "A\n\n重复边界" if idx == 1 else "重复边界\n\nB"}]
+        deduped_book = render_book_markdown("去重测试", [first_split, second_split], prefer_enhanced=True)
+        if deduped_book.count("重复边界") != 1 or "A" not in deduped_book or "B" not in deduped_book:
+            raise RuntimeError(f"Expected adjacent split overlap dedupe: {deduped_book}")
 
     events = []
     from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book_from_sources  # noqa: PLC0415

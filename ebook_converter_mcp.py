@@ -679,11 +679,12 @@ def scan_books(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def health_check(arguments: dict[str, Any]) -> dict[str, Any]:
     options = options_from_arguments(arguments)
+    fast = bool(arguments.get("fast"))
     sources: list[Path] = []
     if getattr(options, "input", None):
         _, sources = resolve_sources_and_root(options)
-    checks = dependency_health_report(sources, options)
-    capability_checks = dependency_health_report([], options)
+    checks = dependency_health_report(sources, options, fast=fast)
+    capability_checks = dependency_health_report([], options, fast=fast)
     capabilities = environment_capability_summary(capability_checks)
     return {
         "checks": checks,

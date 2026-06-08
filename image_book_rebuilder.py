@@ -57,6 +57,10 @@ class ScreenshotPage:
     ocr_blocks: list[dict] | None = None
     layout_profile: dict | None = None
     layout_enhancements: list[dict] | None = None
+    split_group: str = ""
+    split_index: int | None = None
+    split_y_start: int | None = None
+    split_y_end: int | None = None
 
 
 ProgressCallback = Callable[[dict], None]
@@ -93,6 +97,11 @@ def main() -> int:
     build_parser.add_argument("--include-hidden", action="store_true")
     build_parser.add_argument("--umi-paddle-exe", default=suggested_umi_paddle_exe())
     build_parser.add_argument("--umi-paddle-module", default=suggested_umi_paddle_module())
+    build_parser.add_argument("--no-auto-split-long-images", action="store_true")
+    build_parser.add_argument("--long-image-threshold-ratio", type=float, default=3.0)
+    build_parser.add_argument("--long-image-threshold-height", type=int, default=4200)
+    build_parser.add_argument("--long-image-chunk-height", type=int, default=2200)
+    build_parser.add_argument("--long-image-overlap", type=int, default=180)
     build_parser.add_argument("--enhance-layout-heavy", choices=["auto", "never"], default="auto")
     build_parser.add_argument("--layout-enhancer-order", default="paddleocr-vl,mineru-vlm,qwen-vl")
     build_parser.add_argument("--layout-enhancer-timeout", type=float, default=180.0)
@@ -119,6 +128,11 @@ def main() -> int:
             ocr_mode=args.ocr,
             umi_paddle_exe=args.umi_paddle_exe,
             umi_paddle_module=args.umi_paddle_module,
+            auto_split_long_images=not args.no_auto_split_long_images,
+            long_image_threshold_ratio=args.long_image_threshold_ratio,
+            long_image_threshold_height=args.long_image_threshold_height,
+            long_image_chunk_height=args.long_image_chunk_height,
+            long_image_overlap=args.long_image_overlap,
             enhance_layout_heavy=args.enhance_layout_heavy,
             layout_enhancer_order=args.layout_enhancer_order,
             layout_enhancer_timeout=args.layout_enhancer_timeout,
@@ -147,6 +161,11 @@ def rebuild_image_book(
     ocr_mode: str = "auto",
     umi_paddle_exe: str | None = None,
     umi_paddle_module: str | None = None,
+    auto_split_long_images: bool = True,
+    long_image_threshold_ratio: float = 3.0,
+    long_image_threshold_height: int = 4200,
+    long_image_chunk_height: int = 2200,
+    long_image_overlap: int = 180,
     enhance_layout_heavy: str = "auto",
     layout_enhancer_order: str = "paddleocr-vl,mineru-vlm,qwen-vl",
     layout_enhancer_timeout: float = 180.0,
@@ -168,6 +187,11 @@ def rebuild_image_book(
         ocr_mode=ocr_mode,
         umi_paddle_exe=umi_paddle_exe,
         umi_paddle_module=umi_paddle_module,
+        auto_split_long_images=auto_split_long_images,
+        long_image_threshold_ratio=long_image_threshold_ratio,
+        long_image_threshold_height=long_image_threshold_height,
+        long_image_chunk_height=long_image_chunk_height,
+        long_image_overlap=long_image_overlap,
         enhance_layout_heavy=enhance_layout_heavy,
         layout_enhancer_order=layout_enhancer_order,
         layout_enhancer_timeout=layout_enhancer_timeout,
@@ -190,6 +214,11 @@ def rebuild_image_book_from_sources(
     ocr_mode: str = "auto",
     umi_paddle_exe: str | None = None,
     umi_paddle_module: str | None = None,
+    auto_split_long_images: bool = True,
+    long_image_threshold_ratio: float = 3.0,
+    long_image_threshold_height: int = 4200,
+    long_image_chunk_height: int = 2200,
+    long_image_overlap: int = 180,
     enhance_layout_heavy: str = "auto",
     layout_enhancer_order: str = "paddleocr-vl,mineru-vlm,qwen-vl",
     layout_enhancer_timeout: float = 180.0,
@@ -207,6 +236,17 @@ def rebuild_image_book_from_sources(
         for source in sources
         if source.exists() and source.is_file() and source.suffix.lower() in IMAGE_EXTENSIONS
     ]
+    split_manifest = []
+    if auto_split_long_images:
+        source_list, split_manifest = expand_long_image_sources(
+            source_list,
+            output_dir / "_auto_split",
+            threshold_ratio=long_image_threshold_ratio,
+            threshold_height=long_image_threshold_height,
+            chunk_height=long_image_chunk_height,
+            overlap=long_image_overlap,
+            progress_callback=progress_callback,
+        )
     emit_progress(progress_callback, "ocr", f"OCR {len(source_list)} image(s)", index=0, total=len(source_list))
     pages = ocr_screenshot_pages(
         source_list,
@@ -215,6 +255,7 @@ def rebuild_image_book_from_sources(
         umi_paddle_module=umi_paddle_module,
         progress_callback=progress_callback,
     )
+    attach_split_metadata(pages, split_manifest)
     emit_progress(progress_callback, "dedupe", "Detect duplicate screenshots")
     duplicate_groups = mark_duplicates(pages)
     representatives = choose_representatives(pages)
@@ -501,6 +542,105 @@ def collect_image_sources(input_path: Path, *, recursive: bool, include_hidden: 
             continue
         sources.append(path.resolve())
     return sorted(sources, key=natural_sort_key)
+
+
+def expand_long_image_sources(
+    sources: list[Path],
+    split_root: Path,
+    *,
+    threshold_ratio: float,
+    threshold_height: int,
+    chunk_height: int,
+    overlap: int,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[list[Path], list[dict]]:
+    expanded: list[Path] = []
+    manifest: list[dict] = []
+    for source in sources:
+        width, height, _ = image_metadata(source)
+        if not should_split_long_image(width, height, threshold_ratio=threshold_ratio, threshold_height=threshold_height):
+            expanded.append(source)
+            continue
+        emit_progress(progress_callback, "split_long_image", f"Split long image: {source.name}", source=source)
+        parts = split_long_image(
+            source,
+            split_root / safe_name(source.stem),
+            chunk_height=chunk_height,
+            overlap=overlap,
+            width=width,
+            height=height,
+        )
+        expanded.extend(Path(item["path"]) for item in parts)
+        manifest.extend(parts)
+    if manifest:
+        split_root.mkdir(parents=True, exist_ok=True)
+        (split_root / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+    return expanded, manifest
+
+
+def should_split_long_image(width: int, height: int, *, threshold_ratio: float, threshold_height: int) -> bool:
+    if width <= 0 or height <= 0:
+        return False
+    return height >= threshold_height and height / max(width, 1) >= threshold_ratio
+
+
+def split_long_image(
+    source: Path,
+    output_dir: Path,
+    *,
+    chunk_height: int,
+    overlap: int,
+    width: int,
+    height: int,
+) -> list[dict]:
+    from PIL import Image
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    chunk_height = max(400, int(chunk_height or 2200))
+    overlap = max(0, min(int(overlap or 0), chunk_height // 2))
+    records = []
+    image = Image.open(source)
+    index = 1
+    y = 0
+    while y < height:
+        y2 = min(height, y + chunk_height)
+        part = image.crop((0, y, width, y2))
+        part_path = output_dir / f"{index:03d}_{y:05d}-{y2:05d}_{safe_name(source.stem)}{source.suffix.lower() or '.png'}"
+        part.save(part_path)
+        records.append(
+            {
+                "source": str(source),
+                "path": str(part_path.resolve()),
+                "split_group": str(source.resolve()),
+                "split_index": index,
+                "split_y_start": y,
+                "split_y_end": y2,
+                "width": width,
+                "height": height,
+                "overlap": overlap,
+            }
+        )
+        if y2 >= height:
+            break
+        y = max(0, y2 - overlap)
+        index += 1
+    return records
+
+
+def attach_split_metadata(pages: list[ScreenshotPage], manifest: list[dict]) -> None:
+    if not manifest:
+        return
+    by_path = {normalize_source_key(str(item.get("path") or "")): item for item in manifest}
+    for page in pages:
+        item = by_path.get(normalize_source_key(page.source))
+        if not item:
+            continue
+        page.split_group = str(item.get("split_group") or "")
+        page.split_index = int(item["split_index"]) if item.get("split_index") is not None else None
+        page.split_y_start = int(item["split_y_start"]) if item.get("split_y_start") is not None else None
+        page.split_y_end = int(item["split_y_end"]) if item.get("split_y_end") is not None else None
+        page.order_confidence = max(page.order_confidence, 0.99)
+        page.order_reason = "auto_split_filename_order"
 
 
 def ocr_screenshot_pages(
@@ -1085,6 +1225,9 @@ def choose_representatives(pages: list[ScreenshotPage]) -> list[ScreenshotPage]:
 def infer_page_order(pages: list[ScreenshotPage]) -> list[ScreenshotPage]:
     if not pages:
         return []
+    split_order = infer_split_page_order(pages)
+    if split_order is not None:
+        return split_order
     remaining = sorted(pages, key=base_order_key)
     start_index = choose_start_page_index(remaining)
     ordered = [remaining.pop(start_index)]
@@ -1111,6 +1254,22 @@ def infer_page_order(pages: list[ScreenshotPage]) -> list[ScreenshotPage]:
 
     for index, page in enumerate(ordered, start=1):
         page.order_index = index
+    return ordered
+
+
+def infer_split_page_order(pages: list[ScreenshotPage]) -> list[ScreenshotPage] | None:
+    split_pages = [page for page in pages if page.split_group and page.split_index is not None]
+    if not split_pages or len(split_pages) != len(pages):
+        return None
+    groups = {page.split_group for page in split_pages}
+    if len(groups) != 1:
+        return None
+    ordered = sorted(split_pages, key=lambda page: (int(page.split_index or 0), int(page.split_y_start or 0), page.file_name.lower()))
+    for index, page in enumerate(ordered, start=1):
+        page.order_index = index
+        page.order_confidence = 0.99
+        page.previous_overlap_chars = 0
+        page.order_reason = "auto_split_filename_order"
     return ordered
 
 
@@ -1212,11 +1371,15 @@ def base_order_tie_breaker(page: ScreenshotPage, index: int) -> float:
 def render_book_markdown(title: str | Path, pages: list[ScreenshotPage], *, prefer_enhanced: bool = False) -> str:
     title = str(title)
     lines = [f"# {title or 'Rebuilt Image Book'}", ""]
+    previous_enhanced_text = ""
+    previous_split_group = ""
     for page in pages:
         lines.append(f"<!-- source: {page.source} -->")
         if page.order_confidence < 0.45:
             lines.append(f"<!-- low-confidence-order: {page.order_confidence:.2f} -->")
         enhanced_text = selected_enhancement_text(page) if prefer_enhanced else ""
+        if enhanced_text and page.split_group and page.split_group == previous_split_group:
+            enhanced_text = trim_repeated_enhanced_prefix(previous_enhanced_text, enhanced_text)
         if is_likely_infographic(page):
             signals = ", ".join(str(signal) for signal in (page.layout_profile or {}).get("signals", []))
             lines.append(f"<!-- likely-infographic: {signals or 'layout-heavy image'} -->")
@@ -1225,9 +1388,11 @@ def render_book_markdown(title: str | Path, pages: list[ScreenshotPage], *, pref
             lines.append("<!-- Infographic/layout-heavy page: linear OCR may lose visual relationships. See layout.md. -->")
         if enhanced_text:
             lines.append("<!-- enhanced-layout-source: automatic VLM/layout backend -->")
-            lines.extend(text_to_markdown(enhanced_text).splitlines())
+            lines.extend(text_to_markdown(enhanced_text, promote_short_headings=False).splitlines())
             lines.append("")
             lines.append("<!-- original-umi-ocr-text -->")
+            previous_enhanced_text = enhanced_text
+            previous_split_group = page.split_group
         lines.extend(text_to_markdown(page.text).splitlines())
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
@@ -1293,6 +1458,27 @@ def selected_enhancement_text(page: ScreenshotPage) -> str:
     return ""
 
 
+def trim_repeated_enhanced_prefix(previous_text: str, current_text: str) -> str:
+    previous_blocks = markdown_blocks(previous_text)
+    current_blocks = markdown_blocks(current_text)
+    if not previous_blocks or not current_blocks:
+        return current_text
+    max_overlap = min(8, len(previous_blocks), len(current_blocks))
+    for length in range(max_overlap, 0, -1):
+        if previous_blocks[-length:] == current_blocks[:length]:
+            return "\n\n".join(current_blocks[length:]).strip()
+    return current_text
+
+
+def markdown_blocks(text: str) -> list[str]:
+    blocks = []
+    for block in re.split(r"\n\s*\n+", text.replace("\r\n", "\n").replace("\r", "\n")):
+        normalized = "\n".join(line.strip() for line in block.splitlines() if line.strip())
+        if normalized:
+            blocks.append(normalized)
+    return blocks
+
+
 def render_enhancement_markdown(payload: dict) -> str:
     lines = ["# 信息图自动补强 / Layout-Heavy Enhancement", ""]
     lines.append(f"- Status: {payload.get('status', '')}")
@@ -1345,7 +1531,7 @@ def render_enhancement_markdown(payload: dict) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def text_to_markdown(text: str) -> str:
+def text_to_markdown(text: str, *, promote_short_headings: bool = True) -> str:
     text = remove_repeated_screenshot_noise(text)
     output = []
     previous_blank = True
@@ -1360,7 +1546,7 @@ def text_to_markdown(text: str) -> str:
             output.append(line)
             previous_blank = False
             continue
-        heading_level = infer_heading_level(line, previous_blank=previous_blank)
+        heading_level = infer_heading_level(line, previous_blank=previous_blank, promote_short_headings=promote_short_headings)
         if heading_level:
             output.append(f"{'#' * heading_level} {line}")
         else:
@@ -1411,14 +1597,14 @@ def screenshot_noise_key(line: str) -> str:
     return stripped
 
 
-def infer_heading_level(line: str, *, previous_blank: bool) -> int | None:
+def infer_heading_level(line: str, *, previous_blank: bool, promote_short_headings: bool = True) -> int | None:
     normalized = line.strip()
     if re.match(r"^(第[一二三四五六七八九十百千万\d]+[章节篇部卷]|Chapter\s+\d+|Part\s+\w+)\b", normalized, re.IGNORECASE):
         return 2
     dotted = re.match(r"^(\d+(?:\.\d+){0,3})[\s、.．]+", normalized)
     if dotted:
         return min(2 + dotted.group(1).count("."), 5)
-    if previous_blank and 2 <= len(normalized) <= 28 and not re.search(r"[。！？.!?，,；;：:]$", normalized):
+    if promote_short_headings and previous_blank and 2 <= len(normalized) <= 28 and not re.search(r"[。！？.!?，,；;：:]$", normalized):
         return 3
     return None
 
@@ -1579,13 +1765,16 @@ def render_structure_markdown(payload: dict) -> str:
 
 def render_order_markdown(pages: list[ScreenshotPage]) -> str:
     lines = ["# 图片顺序推断 / Inferred Screenshot Order", ""]
-    lines.append("| # | Source | Page | Confidence | Reason | Overlap | Title candidates |")
-    lines.append("| --- | --- | --- | --- | --- | --- | --- |")
+    lines.append("| # | Source | Page | Confidence | Reason | Overlap | Split | Title candidates |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
     for page in pages:
         titles = "; ".join(page.title_candidates or [])
+        split = ""
+        if page.split_index is not None:
+            split = f"{page.split_index} ({page.split_y_start or 0}-{page.split_y_end or 0})"
         lines.append(
             f"| {page.order_index} | {markdown_cell(page.source)} | {page.page_number or ''} | "
-            f"{page.order_confidence:.2f} | {markdown_cell(page.order_reason)} | {page.previous_overlap_chars} | {markdown_cell(titles)} |"
+            f"{page.order_confidence:.2f} | {markdown_cell(page.order_reason)} | {page.previous_overlap_chars} | {markdown_cell(split)} | {markdown_cell(titles)} |"
         )
     return "\n".join(lines).rstrip() + "\n"
 
@@ -1600,12 +1789,14 @@ def render_review_markdown(
     ocr_failed = [page for page in pages if page.ocr_status == "failed"]
     ocr_recovered = [page for page in pages if page.ocr_status == "ok" and page.ocr_message]
     infographic_pages = [page for page in ordered_pages if is_likely_infographic(page)]
+    split_pages = [page for page in ordered_pages if page.split_group]
     lines = ["# 截图成书复查清单 / Image Book Review", ""]
     lines.append(f"- Total images: {len(pages)}")
     lines.append(f"- Ordered representatives: {len(ordered_pages)}")
     lines.append(f"- Duplicate groups: {len(duplicate_groups)}")
     lines.append(f"- Low-confidence order items: {len(low_confidence)}")
     lines.append(f"- Likely infographic/layout-heavy items: {len(infographic_pages)}")
+    lines.append(f"- Auto-split long-image items: {len(split_pages)}")
     lines.append(f"- Empty OCR items: {len(no_text)}")
     lines.append(f"- OCR failed items: {len(ocr_failed)}")
     lines.append(f"- OCR recovered items: {len(ocr_recovered)}")
@@ -1632,6 +1823,14 @@ def render_review_markdown(
         for page in infographic_pages:
             signals = ", ".join(str(signal) for signal in (page.layout_profile or {}).get("signals", []))
             lines.append(f"- #{page.order_index}: `{page.source}` signals={markdown_cell(signals)}")
+        lines.append("")
+
+    if split_pages:
+        lines.extend(["## 自动长图切分 / Auto-Split Long Image", ""])
+        groups = sorted({page.split_group for page in split_pages})
+        lines.append(f"- Split groups: {len(groups)}")
+        lines.append("- Ordering is pinned to split index / vertical position to avoid OCR page-number mistakes.")
+        lines.append("- Adjacent slices may contain overlapped text near boundaries; review `enhanced.md` for duplicates.")
         lines.append("")
 
     if no_text:
