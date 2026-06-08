@@ -113,6 +113,21 @@ def main() -> int:
             "cli_agent_batch_handoff.py inspect",
             "http_agent_batch_handoff.py",
         ],
+        "examples/agent-recipes/README.md": [
+            "structure-enhancement.md",
+            "enhance_markdown_structure",
+            "Weak heading hierarchy",
+        ],
+        "examples/agent-recipes/structure-enhancement.md": [
+            "enhance_markdown_structure",
+            "model_mode",
+            "local",
+            "overwrite",
+            "false",
+            ".structure-enhanced",
+            "allow_remote=true",
+            "local_structure_repair.decisions",
+        ],
     }
     for relative, needles in required.items():
         text = (PROJECT_DIR / relative).read_text(encoding="utf-8")
