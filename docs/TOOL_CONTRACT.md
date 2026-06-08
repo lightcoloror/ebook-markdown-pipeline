@@ -367,6 +367,8 @@ Use this when deciding whether to convert, build a location index, rebuild an im
 
 `run_online_enhancement` is the explicit provider-backed entry point for optional online/fake enhancement. It does not run during default conversion.
 
+When `output` is provided, the tool persists a reviewable `online-enhancement-<task>.json` and `online-enhancement-<task>.md` pair and returns them as standard `artifacts` with `next_actions`. When `output` is omitted, it returns the result inline only.
+
 Supported tasks:
 
 - `ocr_layout`: run OCR with coordinates/layout blocks for an image or rendered page.
@@ -390,7 +392,8 @@ Example fake call:
   "arguments": {
     "task": "text_structure",
     "provider_mode": "fake",
-    "input_text": "Title\n\nBody"
+    "input_text": "Title\n\nBody",
+    "output": "out/online-review"
   }
 }
 ```

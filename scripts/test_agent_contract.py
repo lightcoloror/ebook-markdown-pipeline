@@ -551,10 +551,16 @@ def assert_web_archive_route(tmpdir: Path) -> None:
 def assert_online_enhancement_tool(tmpdir: Path) -> None:
     structure = call_tool(
         "run_online_enhancement",
-        {"task": "text_structure", "input_text": "Title\n\nBody", "provider_mode": "fake"},
+        {"task": "text_structure", "input_text": "Title\n\nBody", "provider_mode": "fake", "output": str(tmpdir / "online-artifacts")},
     )
     if structure.get("status") != "ok" or not (structure.get("result") or {}).get("markdown", "").startswith("# Title"):
         raise AssertionError(f"Expected fake text structure enhancement: {structure}")
+    artifact_types = {item.get("type") for item in structure.get("artifacts") or []}
+    if not {"json", "markdown"}.issubset(artifact_types) or not structure.get("next_actions"):
+        raise AssertionError(f"Expected persisted online enhancement artifacts and next actions: {structure}")
+    report = tmpdir / "online-artifacts" / "online-enhancement-text_structure.md"
+    if not report.exists() or "Online Enhancement Report" not in report.read_text(encoding="utf-8"):
+        raise AssertionError(f"Expected readable online enhancement report: {structure}")
 
     table = call_tool(
         "run_online_enhancement",

@@ -8,7 +8,7 @@
 
 - 本项目继续作为调度层、复查层、artifact 管理层和 agent 接口层。
 - 在线模型只能通过统一 provider adapter 接入，不能让 UI、MCP、HTTP 或具体管道直接绑定某个供应商 SDK。
-- 所有在线模型输出必须先归一化为项目内部 artifact，再交给后续转换、复查、索引或 agent 读取。
+- 所有在线模型输出必须先归一化为项目内部 artifact，再交给后续转换、复查、索引或 agent 读取；显式 `run_online_enhancement` 可通过 `output` 写出 `online-enhancement-<task>.json/md`。
 - 本地工具仍然是默认基础能力；在线 API 用于扫描页、复杂图文页、信息图、低置信度结构、表格/公式等疑难区域。
 - API key 只通过环境变量或本地未提交配置读取，不写入文档、report、manifest、agent contract 或 Git 提交。
 
@@ -111,6 +111,7 @@
 - Agent 仍然优先调用 `process_material`。
 - Agent 不直接调用 OpenAI、Qwen、Claude、Gemini、Paddle 官方 API 或其他供应商 API。
 - Agent 只能通过 `run_online_enhancement` 触发显式在线增强；真实远程调用必须传 `provider_mode=openai_compatible`、`model_mode=hybrid|online|auto` 和 `allow_remote=true`。
+- Agent 需要跨会话交接时应传 `output`，让增强结果落成 `online-enhancement-<task>.json/md` artifact，而不是只依赖一次性 tool 响应。
 - `process_material` 和 `inspect_document` 已接受 `model_mode=local|online|hybrid|auto`。当前只影响 `online_enhancement` 推荐/风险字段，不会自动调用在线 API。
 - `health_check` 已暴露 online provider 配置健康和缺失密钥状态；真实连通性、预算和隐私确认仍待接入。
 - `inspect_document` 已返回 `online_enhancement`，包括 `recommended`、`enabled_by_model_mode`、`remote_call_enabled=false`、`recommended_routes`、`estimated_pages`、`estimated_items`、`estimated_cost_risk` 和 `privacy_risk`。

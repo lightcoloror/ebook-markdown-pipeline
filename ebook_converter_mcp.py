@@ -356,6 +356,7 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "provider_mode": {"type": "string", "enum": ["fake", "openai_compatible"], "default": "fake"},
                     "provider": {"type": "string"},
                     "config": {"type": "string"},
+                    "output": {"type": "string"},
                     "allow_remote": {"type": "boolean", "default": False},
                     "input_text": {"type": "string"},
                     "input_texts": {"type": "array", "items": {"type": "string"}},
@@ -1106,7 +1107,7 @@ def run_enhancement_provider_task(
         result = provider.embed_texts(texts)
     else:
         return {"error": True, "message": f"Unsupported task: {task}"}
-    return {
+    payload = {
         "status": "ok",
         "task": task,
         "provider": provider_name,
@@ -1114,6 +1115,11 @@ def run_enhancement_provider_task(
         "remote_call_enabled": remote_call_enabled,
         "result": result,
     }
+    artifacts = write_online_enhancement_artifacts(payload, arguments)
+    if artifacts:
+        payload["artifacts"] = artifacts
+        payload["next_actions"] = artifact_next_actions(artifacts)
+    return payload
 
 
 def read_text_input(arguments: dict[str, Any], *, label: str) -> str:
@@ -1145,6 +1151,83 @@ def read_texts_input(arguments: dict[str, Any]) -> list[str]:
             chunks = [chunk.strip() for chunk in content.splitlines() if chunk.strip()]
             return chunks or [content]
     raise ValueError("input_texts, input_text, or input_path is required for embedding.")
+
+
+def write_online_enhancement_artifacts(payload: dict[str, Any], arguments: dict[str, Any]) -> list[dict[str, Any]]:
+    output_value = str(arguments.get("output") or "").strip()
+    if not output_value:
+        return []
+    output_dir = Path(output_value)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    task = str(payload.get("task") or "online")
+    stem = safe_online_artifact_stem(task)
+    json_path = output_dir / f"{stem}.json"
+    md_path = output_dir / f"{stem}.md"
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+    md_path.write_text(render_online_enhancement_markdown(payload), encoding="utf-8", newline="\n")
+    return [
+        artifact("json", json_path, label="Online enhancement JSON", media_type="application/json"),
+        artifact("markdown", md_path, label="Online enhancement report", media_type="text/markdown"),
+    ]
+
+
+def safe_online_artifact_stem(task: str) -> str:
+    safe = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in task.lower()).strip("-_")
+    return f"online-enhancement-{safe or 'result'}"
+
+
+def render_online_enhancement_markdown(payload: dict[str, Any]) -> str:
+    result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+    lines = [
+        "# Online Enhancement Report",
+        "",
+        f"- Task: {payload.get('task', '')}",
+        f"- Provider: {payload.get('provider', '')}",
+        f"- Provider mode: {payload.get('provider_mode', '')}",
+        f"- Remote call enabled: {bool(payload.get('remote_call_enabled'))}",
+        "",
+    ]
+    markdown = str(result.get("markdown") or "").strip()
+    if markdown:
+        lines.extend(["## Markdown", "", markdown, ""])
+    blocks = result.get("blocks") if isinstance(result.get("blocks"), list) else []
+    if blocks:
+        lines.extend(["## Blocks", ""])
+        for idx, block in enumerate(blocks[:30], start=1):
+            if isinstance(block, dict):
+                text = str(block.get("text") or "").replace("\n", " ").strip()
+                block_type = str(block.get("block_type") or "")
+                confidence = block.get("confidence", "")
+                lines.append(f"{idx}. {block_type or 'block'} {confidence}: {text}")
+        lines.append("")
+    tables = result.get("tables") if isinstance(result.get("tables"), list) else []
+    if tables:
+        lines.extend(["## Tables", ""])
+        for idx, table in enumerate(tables[:10], start=1):
+            if isinstance(table, dict):
+                table_md = str(table.get("markdown") or "").strip()
+                lines.append(f"### Table {idx}")
+                lines.append("")
+                lines.append(table_md or json.dumps(table, ensure_ascii=False))
+                lines.append("")
+    decisions = result.get("decisions") if isinstance(result.get("decisions"), list) else []
+    if decisions:
+        lines.extend(["## Decisions", ""])
+        for idx, decision in enumerate(decisions[:30], start=1):
+            if isinstance(decision, dict):
+                lines.append(f"{idx}. {decision.get('action', '')}: {decision.get('reason', '')}")
+        lines.append("")
+    vectors = result.get("vectors") if isinstance(result.get("vectors"), list) else []
+    if vectors:
+        dimension = result.get("dimension") or (len(vectors[0]) if vectors and isinstance(vectors[0], list) else "")
+        lines.extend(["## Embeddings", "", f"- Vector count: {len(vectors)}", f"- Dimension: {dimension}", ""])
+    warnings = result.get("warnings") if isinstance(result.get("warnings"), list) else []
+    if warnings:
+        lines.extend(["## Warnings", ""])
+        for item in warnings:
+            lines.append(f"- {item}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def choose_material_route(inspection: dict[str, Any], *, intent: str, query: str, image_book_threshold: int) -> str:

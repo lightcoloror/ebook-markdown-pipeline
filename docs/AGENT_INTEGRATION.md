@@ -27,6 +27,8 @@ The contract and HTTP `/health` also expose operating context: config sources, p
 
 When an explicit online/fake enhancement is required, use `run_online_enhancement`. The tool supports `ocr_layout`, `vlm_layout`, `text_structure`, `table_repair`, and `embedding`. It defaults to `provider_mode=fake`; real OpenAI-compatible calls require `provider_mode=openai_compatible`, `model_mode=hybrid|online|auto`, and `allow_remote=true`.
 
+Pass `output` when the enhancement result should survive handoff to another agent or human reviewer. The tool writes `online-enhancement-<task>.json/md` artifacts and returns `next_actions` for reading them.
+
 ## Recommended Integration
 
 Use MCP for OpenClaw, Hermes Agent, Codex, Claude Code, or other agents that support tool schemas.
