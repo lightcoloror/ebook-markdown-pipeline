@@ -23,6 +23,8 @@ venv/
 env/
 .env
 .env.*
+.local-docs/
+*.private.md
 
 # OS/editor noise
 .DS_Store
