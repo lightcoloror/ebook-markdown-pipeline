@@ -45,8 +45,8 @@
 | P1 | RapidOCR | 轻量本地 OCR 部署 | 比完整 PaddleOCR 更易打包 | Apache-2.0 常见，模型另查 | 低配 CPU OCR 候选 |
 | P1 | Tesseract | 经典离线 OCR | 兜底稳定、部署资料多 | Apache-2.0 | 可作为 OCRmyPDF 依赖或兜底 |
 | P1 | Surya | OCR/layout/reading order/table | Marker 生态底层能力之一，适合视觉版面 | 需复核 | 复杂版面研究候选 |
-| P1 | Crawl4AI | 网页资料转 Markdown | Agent/RAG 网页摄取成熟 | Apache-2.0 常见 | Web archive/URL 输入方向参考 |
-| P1 | Trafilatura | 网页正文/metadata 抽取 | 轻量网页正文抽取 | Apache-2.0/GPL 组件需复核 | 可作为网页 fast path |
+| P1 | Crawl4AI | 网页资料转 Markdown | Agent/RAG 网页摄取成熟 | Apache-2.0 + 额外 attribution 要求 | 只作参考；网页抓取统一复用 `web-content-fetcher` |
+| P1 | Trafilatura | 网页正文/metadata 抽取 | 轻量网页正文抽取 | Apache-2.0 | 只作参考；网页抓取统一复用 `web-content-fetcher` |
 | P2 | MegaParse | LLM ingest 多格式 parser | 对标“no information loss”解析思路 | Apache-2.0 常见 | 调研输出 schema 和质量报告 |
 | P2 | OmniParse | 本地多模态 ingest + UI | 多模态、本地、Gradio UI 与 U 盘形态接近 | 需复核 | 研究 UI/打包/多模态流水线 |
 | P2 | pdf-craft | 扫描书籍到 Markdown/EPUB | 和“截图书/扫描书”场景高度相关 | 需复核 | 实测扫描书目录/脚注/公式 |
@@ -146,6 +146,31 @@
 6. Unstructured：研究 partition/chunking 和企业 ingest 报告。
 7. GROBID：研究论文/参考文献专项路径。
 
+## 本地源码审计结果（首批）
+
+本节记录 2026-06-09 对首批候选项目的本地源码审计结果。审计重点不是“项目主页写了什么”，而是看仓库里的入口、依赖、许可证、构建形态和适合本项目复用的边界。结论遵循本项目的工具优先原则：优先复用成熟工具，只写调度层、wrapper、配置、日志、质量评估和恢复逻辑。
+
+| 项目 | 审计版本 | 源码里确认的入口/形态 | 许可证观察 | 适合整合的模块 | 判断 |
+| --- | --- | --- | --- | --- | --- |
+| MarkItDown | `e144e0a` | `MarkItDown` Python 类、CLI、`markitdown-mcp` 包；支持本地文件、URL、stream、URI、response 多入口 | MIT | 多格式轻量 baseline、MCP schema 参考、Office/HTML/图片的快速对照组 | 推荐 P0 可选接入。不要替代现有总控和质量评估，作为 `markitdown_backend` fast path 与 benchmark 更稳。 |
+| OCRmyPDF | `32013f4` | CLI `ocrmypdf`，核心目标是给扫描 PDF 增加 OCR 文本层；依赖 Tesseract、pikepdf、pypdfium2、pdfminer.six 等 | MPL-2.0 | 扫描 PDF 预处理 | 推荐 P0 接入。最稳路径是 `scanned.pdf -> searchable.pdf -> 现有 PDF 管道`，而不是直接让它输出 Markdown。 |
+| pdfplumber | `9804153` | Python API + CLI；暴露 `chars`、`lines`、`rects`、`images`、table extraction、visual debugging | MIT | PDF 预检、表格/坐标诊断、疑难页解释 | 推荐 P1 接入。适合 text-based PDF 的结构诊断，不适合作为整本 Markdown 主转换器。 |
+| Camelot | `a136fc0` | CLI + Python API；`lattice`、`stream`、`network`、`hybrid`、`auto` parser；表格可导出 Markdown/CSV/JSON/Excel | MIT | text-based PDF 表格专项抽取和 repair | 推荐 P1 可选接入。只在表格页或用户明确要求表格时触发，避免拖慢普通文档。 |
+| RapidOCR | `7b2d368` | `python/rapidocr/main.py` 中 `RapidOCR` 类，`__call__` 返回 OCR 结果；支持 ONNXRuntime、TensorRT、Paddle、OpenVINO、PyTorch、MNN 等推理后端 | Apache-2.0 | 低配离线 OCR、Umi-OCR 的 Python 轻量补充 | 推荐 P1 接入。适合 U 盘/CPU 离线包，但模型文件和具体推理后端仍需单独记录版本与许可。 |
+| Apache Tika | `8a7728a` | Java 17 + Maven 多模块；`tika-app`、`tika-server`、format detect、metadata、structured text extraction | Apache-2.0 | 格式嗅探、metadata、非主流格式兜底抽文本 | 推荐 P1 只做外部服务/外部 jar 调用。不要把 Java/Maven 构建塞进基础包；可配置 `tika-app.jar` 或 Tika Server。 |
+| GROBID | `8ca2585` | Java/Gradle 服务，Web service API、Docker、fulltext/header/reference TEI；专注技术/科学 PDF | Apache-2.0 | 学术论文、参考文献、TEI、论文结构专项 | 推荐 P2 专项接入。不是通用 PDF 转 Markdown；Windows 源码 checkout 出现长路径问题，且上游说明 Windows 支持不稳定，适合 Docker/HTTP heavy backend。 |
+| Crawl4AI | `cdf2ead` | `AsyncWebCrawler`、CLI `crwl`、Docker server、MCP SSE/WebSocket/schema；依赖 Playwright/Patchright/LiteLLM 等 | Apache-2.0，LICENSE 额外要求显著 attribution | Web 抓取/下载/MCP 设计参考 | 不直接整合。网页内容获取、抓取、下载、归档统一复用已有 `web-content-fetcher`；Crawl4AI 只作为 MCP/API/异步爬虫设计参考。 |
+| Trafilatura | `2f4702d` | Python API `fetch_url` / `extract`，CLI `trafilatura`，输出 CSV/JSON/HTML/Markdown/TXT/XML | Apache-2.0 | 轻量网页正文抽取参考 | 不直接整合。若未来 `web-content-fetcher` 需要轻量正文抽取增强，应在该项目里接入，而不是在本项目重复实现网页抓取。 |
+
+### 网页抓取相关的明确决策
+
+网页内容获取、抓取、下载、登录态复用、归档和重建，不在本项目重复造轮子。本项目只处理两类输入：
+
+- `web-content-fetcher` 已生成的 archive/rebuild 输入：本项目只做视觉复查、OCR 补强、版面块、表格候选和图片位置证据。
+- 普通 HTML/网页导出的本地文件：仍按本地文件转换处理，不主动爬取 URL。
+
+这样可以避免 Crawl4AI、Trafilatura、浏览器自动化、下载归档、登录态管理在两个项目里重复维护。后续如果要增强网页抓取，应优先改 `web-content-fetcher`，本项目只消费它的稳定产物。
+
 ## 按模块的整合状态矩阵
 
 本节用于区分“已经进入当前代码管道的开源项目”和“仍是候选/参考项目”。这里的“已整合”指当前项目已有直接命令调用、Python API 调用、wrapper、配置入口、测试或 agent 契约；“未整合”指目前主要停留在调研、对标或待实验状态。
@@ -195,7 +220,7 @@
 
 | 模块 | 已整合项目/能力 | 未整合候选 | 下一步建议 |
 | --- | --- | --- | --- |
-| Web archive 视觉复查 | 自研 `process_web_archive` | Crawl4AI、Trafilatura、Jina Reader | Crawl4AI 适合 Agent 网页采集；Trafilatura 适合轻量正文抽取。 |
+| Web archive 视觉复查 | 自研 `process_web_archive` + 复用 `web-content-fetcher` archive 产物 | Crawl4AI、Trafilatura、Jina Reader | 网页抓取/下载/归档统一放在 `web-content-fetcher`；本项目只做 archive 的视觉复查和图文补强。 |
 
 ### 在线 API 与云端增强
 
@@ -214,7 +239,7 @@
 | 4 | RapidOCR | 低配本地 OCR | 适合 U 盘离线、CPU 机器和轻量 OCR fallback。 |
 | 5 | Apache Tika | 格式识别和兜底抽文本 | 补非主流格式嗅探和 metadata/text fallback。 |
 | 6 | GROBID | 学术论文专项 | 只在论文/参考文献场景明确时接入。 |
-| 7 | Crawl4AI / Trafilatura | 网页资料采集 | 只有在扩展 URL/网页资料摄取时再接。 |
+| 7 | Crawl4AI / Trafilatura | 网页资料采集 | 不在本项目直接接入；作为 `web-content-fetcher` 的参考候选。 |
 
 ## 已核验来源
 
