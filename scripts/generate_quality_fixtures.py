@@ -116,6 +116,7 @@ def write_pdf_fixtures(root: Path) -> None:
     write_text_pdf(root / "text-layer.pdf", title="Text Layer PDF", two_column=False, slide=False)
     write_text_pdf(root / "two-column.pdf", title="Two Column PDF", two_column=True, slide=False)
     write_text_pdf(root / "ppt-exported.pdf", title="Presentation Like PDF", two_column=False, slide=True)
+    write_bookmarked_pdf(root / "bookmarked.pdf")
     image_path = root / "scan-source.png"
     write_png(image_path, width=640, height=360)
     doc = fitz.open()
@@ -143,6 +144,42 @@ def write_text_pdf(path: Path, *, title: str, two_column: bool, slide: bool) -> 
             fontsize=12,
         )
     page.insert_text((50, height - 50), "2. Closing", fontsize=16)
+    doc.save(path)
+    doc.close()
+
+
+def write_bookmarked_pdf(path: Path) -> None:
+    import fitz
+
+    doc = fitz.open()
+    first = doc.new_page(width=595, height=842)
+    first.insert_text((50, 60), "Bookmarked Fixture", fontsize=24)
+    first.insert_text((50, 110), "Chapter One", fontsize=18)
+    first.insert_textbox(
+        fitz.Rect(50, 150, 540, 420),
+        "This generated PDF has built-in bookmarks that should align with Markdown headings.\n" * 4,
+        fontsize=12,
+    )
+    first.insert_text((50, 470), "Section One Point One", fontsize=15)
+    first.insert_textbox(
+        fitz.Rect(50, 510, 540, 760),
+        "A nested section gives the quality gate a second-level outline item to match.\n" * 4,
+        fontsize=12,
+    )
+    second = doc.new_page(width=595, height=842)
+    second.insert_text((50, 70), "Chapter Two", fontsize=18)
+    second.insert_textbox(
+        fitz.Rect(50, 120, 540, 760),
+        "The second page makes bookmark page references meaningful without adding copyrighted content.\n" * 8,
+        fontsize=12,
+    )
+    doc.set_toc(
+        [
+            [1, "Chapter One", 1],
+            [2, "Section One Point One", 1],
+            [1, "Chapter Two", 2],
+        ]
+    )
     doc.save(path)
     doc.close()
 
@@ -199,13 +236,14 @@ def write_manifests(root: Path) -> None:
         {"id": "epub-01", "path": rel(root / "ebooks" / "sample.epub"), "category": "ebook_epub"},
         {"id": "azw3-substitute-01", "path": rel(root / "ebooks" / "sample.epub"), "category": "ebook_azw3_substitute"},
         {"id": "pdf-text-01", "path": rel(root / "pdf" / "text-layer.pdf"), "category": "pdf_text_layer"},
+        {"id": "pdf-bookmarked-01", "path": rel(root / "pdf" / "bookmarked.pdf"), "category": "pdf_bookmarked_outline"},
         {"id": "pdf-two-column-01", "path": rel(root / "pdf" / "two-column.pdf"), "category": "pdf_two_column"},
         {"id": "pdf-ppt-export-01", "path": rel(root / "pdf" / "ppt-exported.pdf"), "category": "pdf_presentation_like"},
         {"id": "pdf-scan-01", "path": rel(root / "pdf" / "scanned-image-only.pdf"), "category": "scanned_pdf"},
         {"id": "image-infographic-01", "path": rel(root / "images" / "infographic.png"), "category": "image_infographic"},
         {"id": "screenshots-duplicates-01", "path": rel(root / "images" / "screenshots"), "category": "image_set_duplicates"},
     ]
-    minimal_ids = {"txt-01", "epub-01", "azw3-substitute-01", "pdf-text-01", "pdf-two-column-01", "pdf-ppt-export-01"}
+    minimal_ids = {"txt-01", "epub-01", "azw3-substitute-01", "pdf-text-01", "pdf-bookmarked-01", "pdf-two-column-01", "pdf-ppt-export-01"}
     write_manifest(root / "quality-minimal.json", [item for item in samples if item["id"] in minimal_ids], "Minimal public quality-gate fixtures.")
     write_manifest(root / "quality-full.json", samples, "Full public quality-gate fixtures, including OCR/image-heavy samples.")
 

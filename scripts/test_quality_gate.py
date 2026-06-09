@@ -26,6 +26,7 @@ def main() -> int:
             "ebook_epub",
             "ebook_azw3_substitute",
             "pdf_text_layer",
+            "pdf_bookmarked_outline",
             "pdf_two_column",
             "pdf_presentation_like",
             "scanned_pdf",
@@ -38,6 +39,9 @@ def main() -> int:
             raise AssertionError(
                 f"Full public fixture profile missing required categories {sorted(missing_categories)}: {sorted(full_categories)}"
             )
+        minimal_categories = {str(item.get("category") or "") for item in minimal.get("samples") or []}
+        if "pdf_bookmarked_outline" not in minimal_categories:
+            raise AssertionError(f"Minimal public fixture profile must include PDF bookmark coverage: {minimal_categories}")
         repository_full = json.loads((PROJECT_DIR / "benchmarks" / "fixtures" / "generated" / "quality-full.json").read_text(encoding="utf-8"))
         repository_paths = [str(item.get("path") or "") for item in repository_full.get("samples") or []]
         if any(Path(path).is_absolute() for path in repository_paths):
@@ -59,6 +63,12 @@ def main() -> int:
         gates = ((payload.get("summary") or {}).get("quality_gates") or {})
         if gates.get("status") != "passed":
             raise AssertionError(f"Expected passing quality gate: {gates}")
+        bookmarked = next((item for item in payload.get("results") or [] if item.get("category") == "pdf_bookmarked_outline"), None)
+        if not bookmarked:
+            raise AssertionError(f"Expected PDF bookmark fixture result: {payload}")
+        bookmark_ratio = float((bookmarked.get("metrics") or {}).get("toc_match_ratio") or 0)
+        if bookmark_ratio <= 0:
+            raise AssertionError(f"Expected PDF bookmark fixture to produce TOC/bookmark match signal: {bookmarked}")
         quality_json = output / "quality-regression-summary.json"
         quality_md = output / "quality-regression-summary.md"
         if not quality_md.exists() or not quality_json.exists():

@@ -325,7 +325,7 @@ def toc_or_outline_titles(source: Path) -> list[str]:
     if suffix == ".epub":
         return extract_epub_toc_titles(source)
     if suffix == ".pdf":
-        return [str(item.get("title") or "") for item in pdf_outline_heading_candidates(source)]
+        return [str(getattr(item, "title", "") or "") for item in pdf_outline_heading_candidates(source)]
     return []
 
 

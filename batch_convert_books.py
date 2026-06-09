@@ -1836,6 +1836,7 @@ def run_segmented_mineru_pdf_convert(
                 output_path,
                 args,
                 source_kind="pdf",
+                note_source_path=source,
                 progress_callback=progress_callback,
                 progress_source=source,
                 progress_index=progress_index,
@@ -1916,6 +1917,7 @@ def run_marker_pdf_convert(
                 output_path,
                 args,
                 source_kind="pdf",
+                note_source_path=source,
                 progress_callback=progress_callback,
                 progress_source=source,
                 progress_index=progress_index,
@@ -1998,12 +2000,30 @@ def extract_pdf_text_layer_markdown(source: Path) -> str:
     import pymupdf
 
     parts = [f"# {source.stem}", ""]
+    outline = extract_pdf_outline(source)
+    outline_by_page: dict[int, list[dict[str, object]]] = {}
+    if isinstance(outline, dict):
+        for item in outline.get("items", []) or []:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "").strip()
+            page_number = int(item.get("page") or 0)
+            if title and page_number > 0:
+                outline_by_page.setdefault(page_number, []).append(item)
     with pymupdf.open(str(source)) as document:
         for page_index, page in enumerate(document, start=1):
             text = page.get_text("text").strip()
             if not text:
                 continue
-            parts.append(f"## Page {page_index}")
+            page_outline = outline_by_page.get(page_index) or []
+            if page_outline:
+                for item in page_outline:
+                    level = min(max(int(item.get("level") or 1) + 1, 2), 6)
+                    parts.append(f"{'#' * level} {str(item.get('title') or '').strip()}")
+                    parts.append("")
+            else:
+                parts.append(f"## Page {page_index}")
+                parts.append("")
             parts.append("")
             parts.append(text)
             parts.append("")

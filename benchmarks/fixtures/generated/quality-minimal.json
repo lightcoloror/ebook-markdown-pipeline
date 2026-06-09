@@ -23,6 +23,11 @@
       "category": "pdf_text_layer"
     },
     {
+      "id": "pdf-bookmarked-01",
+      "path": "benchmarks/fixtures/generated/pdf/bookmarked.pdf",
+      "category": "pdf_bookmarked_outline"
+    },
+    {
       "id": "pdf-two-column-01",
       "path": "benchmarks/fixtures/generated/pdf/two-column.pdf",
       "category": "pdf_two_column"
