@@ -1,6 +1,6 @@
 # References And Reuse
 
-This project follows a tool-first integration model: use mature local tools where they already exist, and keep this repository focused on orchestration, routing, quality review, UI, logging, recovery, and agent-facing contracts.
+This project follows a tool-first integration model: use mature local tools where they already exist, and keep this repository focused on orchestration, routing, quality review, UI, logging, recovery, and agent-facing contracts. For a broader candidate inventory and U-drive distribution risk tiers, see [OPEN_SOURCE_PROJECT_INVENTORY.md](OPEN_SOURCE_PROJECT_INVENTORY.md).
 
 It does not vendor third-party parser engines, OCR binaries, model weights, or ebook/PDF content. Install optional backends separately and follow each upstream project's license terms.
 

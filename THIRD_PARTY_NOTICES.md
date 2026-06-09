@@ -2,7 +2,7 @@
 
 This project is a local orchestration layer for ebook, PDF, Office, image, and web-archive conversion tools. It does not vendor the third-party tools listed below. Users install and use those tools separately under their own licenses.
 
-For a clearer engineering view of what is directly invoked, what is only an architectural reference, and what this repository owns, see [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md).
+For a clearer engineering view of what is directly invoked, what is only an architectural reference, and what this repository owns, see [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md). For a broader research inventory of related open-source projects and U-drive distribution risk tiers, see [docs/OPEN_SOURCE_PROJECT_INVENTORY.md](docs/OPEN_SOURCE_PROJECT_INVENTORY.md).
 
 ## License Choice
 
