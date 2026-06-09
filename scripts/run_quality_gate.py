@@ -15,12 +15,13 @@ DEFAULT_OUTPUT = PROJECT_DIR / "benchmarks" / "runs" / "quality-gate"
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the public quality regression gate.")
-    parser.add_argument("--profile", choices=["minimal", "full"], default="minimal")
+    parser.add_argument("--profile", choices=["minimal", "full", "backend-compare"], default="minimal")
     parser.add_argument("--fixtures-dir", type=Path, default=GENERATED_FIXTURES)
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--reuse-fixtures", action="store_true", help="Do not regenerate public fixtures before running.")
     parser.add_argument("--sample-timeout", type=float, default=90.0)
-    parser.add_argument("--pdf-mode-for-benchmark", default="fast", choices=["auto", "fast", "pymupdf4llm", "mineru", "marker", "umi", "docling"])
+    parser.add_argument("--pdf-mode-for-benchmark", default="fast", choices=["auto", "fast", "pymupdf4llm", "mineru", "marker", "umi", "docling", "markitdown"])
+    parser.add_argument("--document-mode-for-benchmark", default="auto", choices=["auto", "docling", "markitdown"])
     parser.add_argument("--min-success-rate", type=float, default=0.95)
     parser.add_argument("--min-good-rate", type=float, default=0.30)
     parser.add_argument("--max-review-poor-rate", type=float, default=0.70)
@@ -33,11 +34,14 @@ def main() -> int:
     if not args.reuse_fixtures:
         run([sys.executable, str(PROJECT_DIR / "scripts" / "generate_quality_fixtures.py"), "--output", str(fixtures_dir)])
 
-    manifest = fixtures_dir / f"quality-{args.profile}.json"
+    manifest_profile = "minimal" if args.profile == "backend-compare" else args.profile
+    manifest = fixtures_dir / f"quality-{manifest_profile}.json"
     if not manifest.exists():
         raise FileNotFoundError(f"quality fixture manifest not found: {manifest}")
 
     output = (args.output or DEFAULT_OUTPUT / time.strftime("%Y%m%d-%H%M%S")).resolve()
+    document_mode = "markitdown" if args.profile == "backend-compare" else args.document_mode_for_benchmark
+    pdf_mode = "markitdown" if args.profile == "backend-compare" else args.pdf_mode_for_benchmark
     command = [
         sys.executable,
         str(PROJECT_DIR / "scripts" / "run_benchmarks.py"),
@@ -48,7 +52,9 @@ def main() -> int:
         "--sample-timeout",
         str(args.sample_timeout),
         "--pdf-mode-for-benchmark",
-        args.pdf_mode_for_benchmark,
+        pdf_mode,
+        "--document-mode-for-benchmark",
+        document_mode,
         "--min-success-rate",
         str(args.min_success_rate),
         "--min-good-rate",
@@ -69,6 +75,8 @@ def main() -> int:
                 "profile": args.profile,
                 "manifest": str(manifest),
                 "output": str(output),
+                "pdf_mode_for_benchmark": pdf_mode,
+                "document_mode_for_benchmark": document_mode,
                 "summary": str(output / "benchmark-summary.md"),
                 "quality_summary": str(output / "quality-regression-summary.md"),
                 "exit_code": result.returncode,

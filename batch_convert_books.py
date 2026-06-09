@@ -26,10 +26,12 @@ from typing import Iterable
 try:
     from ebook_markdown_pipeline.local_env import load_project_env
     from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
+    from ebook_markdown_pipeline.markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ebook_markdown_pipeline.structure_repair import HeadingCandidate, repair_markdown_structure
 except ModuleNotFoundError:  # Allows running this file directly by absolute path.
     from local_env import load_project_env
     from docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
+    from markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from structure_repair import HeadingCandidate, repair_markdown_structure
 
 load_project_env()
@@ -44,6 +46,7 @@ PDF_FORMATS = {".pdf"}
 DOCLING_PANDOC_FALLBACK_FORMATS = {".docx", ".html", ".htm", ".md"}
 DOCLING_TEXT_FALLBACK_FORMATS = {".csv"}
 SUPPORTED_FORMATS = PANDOC_DIRECT_FORMATS | CALIBRE_INTERMEDIATE_FORMATS | PDF_FORMATS | DOCLING_FORMATS
+DOCUMENT_PIPELINE_MODES = ("auto", "docling", "markitdown")
 
 OUTPUT_FORMATS = {
     "markdown": {"suffix": ".md", "pandoc_target": "gfm"},
@@ -51,7 +54,7 @@ OUTPUT_FORMATS = {
     "text": {"suffix": ".txt", "pandoc_target": "plain"},
 }
 
-PDF_PIPELINE_MODES = ("auto", "marker", "mineru", "umi", "pymupdf4llm", "docling")
+PDF_PIPELINE_MODES = ("auto", "marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown")
 
 COMMON_WINDOWS_COMMAND_PATHS = {
     "pandoc": [
@@ -168,6 +171,12 @@ class DoclingTimeoutError(RuntimeError):
         self.diagnostic = diagnostic
 
 
+class MarkItDownTimeoutError(RuntimeError):
+    def __init__(self, message: str, diagnostic: dict[str, object]):
+        super().__init__(message)
+        self.diagnostic = diagnostic
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -203,6 +212,12 @@ def parse_args() -> argparse.Namespace:
         choices=PDF_PIPELINE_MODES,
         default="auto",
         help="PDF conversion mode, default: auto",
+    )
+    parser.add_argument(
+        "--document-pipeline-mode",
+        choices=DOCUMENT_PIPELINE_MODES,
+        default="auto",
+        help="Document conversion mode for supported non-PDF formats, default: auto. Use markitdown for a fast optional baseline.",
     )
     parser.add_argument(
         "--markdown-format",
@@ -341,6 +356,12 @@ def parse_args() -> argparse.Namespace:
         help="Abort Docling document conversion after this many seconds; 0 disables isolation/timeout. Default: 45.",
     )
     parser.add_argument(
+        "--markitdown-timeout",
+        type=float,
+        default=45.0,
+        help="Abort MarkItDown baseline conversion after this many seconds; 0 disables isolation/timeout. Default: 45.",
+    )
+    parser.add_argument(
         "--no-docling-fallback",
         action="store_true",
         help="Disable automatic fallback to Pandoc/lightweight text output when Docling fails or times out.",
@@ -382,8 +403,10 @@ def default_options(**overrides) -> SimpleNamespace:
         "pdf_tool_idle_timeout": 1800.0,
         "pdf_tool_finalize_timeout": 480.0,
         "docling_timeout": 45.0,
+        "markitdown_timeout": 45.0,
         "docling_fallback_to_pandoc": True,
         "pdf_pipeline_mode": "auto",
+        "document_pipeline_mode": "auto",
         "marker_default_max_pages": 12,
         "marker_seconds_per_page_estimate": 10.0,
         "umi_ocr_command": suggested_umi_ocr_command(),
@@ -554,6 +577,12 @@ def collect_sources(
 
 def detect_source_kind(path: Path) -> str:
     suffix = path.suffix.lower()
+    if suffix in MARKITDOWN_FORMATS:
+        return "markitdown" if markitdown_forced_for_suffix(suffix) else default_source_kind_for_suffix(suffix)
+    return default_source_kind_for_suffix(suffix)
+
+
+def default_source_kind_for_suffix(suffix: str) -> str:
     if suffix in PANDOC_DIRECT_FORMATS:
         return "pandoc"
     if suffix in CALIBRE_INTERMEDIATE_FORMATS:
@@ -563,6 +592,22 @@ def detect_source_kind(path: Path) -> str:
     if suffix in DOCLING_FORMATS:
         return "docling"
     return "unsupported"
+
+
+def markitdown_forced_for_suffix(suffix: str, args: argparse.Namespace | None = None) -> bool:
+    # Kept for direct detect_source_kind() compatibility; explicit routing with
+    # args is handled by source_kind_for_conversion().
+    return False
+
+
+def source_kind_for_conversion(path: Path, args: argparse.Namespace) -> str:
+    suffix = path.suffix.lower()
+    document_mode = getattr(args, "document_pipeline_mode", "auto")
+    if suffix in MARKITDOWN_FORMATS and suffix not in PDF_FORMATS and document_mode == "markitdown":
+        return "markitdown"
+    if suffix in DOCLING_FORMATS and document_mode == "docling":
+        return "docling"
+    return default_source_kind_for_suffix(suffix)
 
 
 def detect_format_label(path: Path) -> str:
@@ -712,6 +757,10 @@ def find_missing_dependencies(sources: Iterable[Path], args: argparse.Namespace)
             if not docling_available():
                 missing.append("Missing optional Python dependency: docling. Install with: pip install docling")
             continue
+        if command == "markitdown":
+            if not markitdown_available():
+                missing.append("Missing optional Python dependency: markitdown. Install with: pip install markitdown")
+            continue
         if resolve_command_path(command):
             continue
         missing.append(
@@ -724,7 +773,7 @@ def find_missing_dependencies(sources: Iterable[Path], args: argparse.Namespace)
 def required_dependencies(sources: Iterable[Path], args: argparse.Namespace) -> set[str]:
     required = set()
     for source in sources:
-        kind = detect_source_kind(source)
+        kind = source_kind_for_conversion(source, args)
         if kind == "pandoc":
             required.add(args.pandoc_command)
         elif kind == "calibre":
@@ -742,11 +791,18 @@ def required_dependencies(sources: Iterable[Path], args: argparse.Namespace) -> 
                 required.add("pymupdf4llm")
             elif selected == "docling" and not docling_available():
                 required.add("docling")
+            elif selected == "markitdown" and not markitdown_available():
+                required.add("markitdown")
             if args.output_format != "markdown":
                 required.add(args.pandoc_command)
         elif kind == "docling":
             if not docling_available():
                 required.add("docling")
+            if args.output_format != "markdown":
+                required.add(args.pandoc_command)
+        elif kind == "markitdown":
+            if not markitdown_available():
+                required.add("markitdown")
             if args.output_format != "markdown":
                 required.add(args.pandoc_command)
     return required
@@ -795,6 +851,14 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
             "kind": "python",
             "status": "ok" if docling_available() else "missing",
             "detail": "importable" if docling_available() else "optional backend not installed",
+        }
+    )
+    checks.append(
+        {
+            "name": "markitdown",
+            "kind": "python",
+            "status": "ok" if markitdown_available() else "missing",
+            "detail": "importable" if markitdown_available() else "optional baseline backend not installed",
         }
     )
     checks.append(
@@ -895,6 +959,7 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
     pymupdf_ok = check_ok("PyMuPDF")
     pymupdf4llm_ok = check_ok("pymupdf4llm")
     docling_ok = check_ok("docling")
+    markitdown_ok = check_ok("markitdown")
     umi_ok = check_ok("Umi PaddleOCR module")
     paddle_vl_ok = check_ok("PaddleOCR-VL wrapper")
     qwen_vl_ok = check_ok("Qwen-VL wrapper")
@@ -978,6 +1043,17 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
 
     capabilities.append(
         capability_item(
+            "markitdown_baseline",
+            "ok" if markitdown_ok else "missing",
+            "MarkItDown backend is importable." if markitdown_ok else "MarkItDown optional baseline backend is not installed.",
+            "Use MarkItDown as a fast multi-format comparison baseline."
+            if markitdown_ok
+            else "Install optional MarkItDown deps only if you need baseline comparison.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
             "gpu_acceleration",
             "ok" if cuda_status == "ok" else "degraded",
             "Torch CUDA is available." if cuda_status == "ok" else "Torch CUDA is unavailable; model pipelines may run on CPU.",
@@ -1046,9 +1122,11 @@ def convert_one(
     args._pdf_tool_diagnostics = []
     args._pdf_fallback_diagnostics = []
     args._docling_diagnostics = []
+    args._markitdown_diagnostics = []
     args._calibre_fallback_diagnostics = []
     args._last_pdf_pipeline = None
     args._last_docling_pipeline = None
+    args._last_markitdown_pipeline = None
     args._last_ebook_pipeline = None
 
     if output_path.exists() and not args.overwrite:
@@ -1060,7 +1138,7 @@ def convert_one(
             message="Output exists. Use --overwrite to replace it.",
         )
 
-    kind = detect_source_kind(source)
+    kind = source_kind_for_conversion(source, args)
     try:
         emit_stage(progress_callback, source, progress_index, progress_total, "prepare", f"输出到 {output_path}")
         if kind == "pandoc":
@@ -1071,6 +1149,8 @@ def convert_one(
             run_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         elif kind == "docling":
             run_docling_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        elif kind == "markitdown":
+            run_markitdown_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         else:
             return ConversionResult(
                 source=str(source),
@@ -1110,19 +1190,23 @@ def final_pipeline_name(source: Path, kind: str, args: argparse.Namespace) -> st
         return getattr(args, "_last_pdf_pipeline", None) or pipeline_name(source, args)
     if kind == "docling":
         return getattr(args, "_last_docling_pipeline", None) or pipeline_name(source, args)
+    if kind == "markitdown":
+        return getattr(args, "_last_markitdown_pipeline", None) or pipeline_name(source, args)
     if kind in {"pandoc", "calibre"}:
         return getattr(args, "_last_ebook_pipeline", None) or pipeline_name(source, args)
     return pipeline_name(source, args)
 
 
 def pipeline_name(source: Path, args: argparse.Namespace | None = None) -> str:
-    kind = detect_source_kind(source)
+    kind = source_kind_for_conversion(source, args) if args else detect_source_kind(source)
     if kind == "pandoc":
         return "pandoc"
     if kind == "calibre":
         return "calibre+pandoc"
     if kind == "docling":
         return "docling"
+    if kind == "markitdown":
+        return "markitdown"
     if kind == "pdf":
         if args:
             return selected_pdf_pipeline_label(source, args)
@@ -1423,6 +1507,121 @@ def run_docling_convert(
         convert_markdown_file(temp_md, output_path, args, progress_callback, source, progress_index, progress_total)
 
 
+def run_markitdown_convert(
+    source: Path,
+    output_path: Path,
+    args: argparse.Namespace,
+    progress_callback=None,
+    progress_index: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    emit_stage(progress_callback, source, progress_index, progress_total, "markitdown", "MarkItDown baseline 转换")
+    if args.dry_run:
+        return
+    result = run_markitdown_backend(source, output_path, args)
+    args._last_markitdown_pipeline = "markitdown"
+    markdown = result["markdown"]
+    if args.output_format == "markdown":
+        output_path.write_text(markdown, encoding="utf-8", newline="\n")
+        postprocess_text_output(
+            output_path,
+            args,
+            source_kind="markitdown",
+            note_source_path=source,
+            progress_callback=progress_callback,
+            progress_source=source,
+            progress_index=progress_index,
+            progress_total=progress_total,
+        )
+        return
+
+    with tempfile.TemporaryDirectory(prefix="markitdown-markdown-") as tmpdir:
+        temp_md = Path(tmpdir) / f"{source.stem}.md"
+        temp_md.write_text(markdown, encoding="utf-8", newline="\n")
+        convert_markdown_file(temp_md, output_path, args, progress_callback, source, progress_index, progress_total)
+
+
+def run_markitdown_backend(source: Path, output_path: Path, args: argparse.Namespace) -> dict:
+    timeout = float(getattr(args, "markitdown_timeout", 45.0) or 0.0)
+    diagnostic: dict[str, object] = {
+        "tool": "MarkItDown",
+        "source": str(source),
+        "output": str(output_path),
+        "started_at": timestamp_now(),
+        "timeout_seconds": timeout,
+        "duration_seconds": None,
+        "status": "running",
+    }
+    getattr(args, "_markitdown_diagnostics", []).append(diagnostic)
+    started = time.monotonic()
+    if timeout <= 0:
+        try:
+            result = convert_with_markitdown(source)
+            diagnostic["status"] = "ok"
+            return result
+        except Exception as exc:  # noqa: BLE001
+            diagnostic["status"] = "failed"
+            diagnostic["error"] = str(exc)
+            raise
+        finally:
+            diagnostic["duration_seconds"] = round(time.monotonic() - started, 3)
+            diagnostic["finished_at"] = timestamp_now()
+
+    with tempfile.TemporaryDirectory(prefix="markitdown-worker-") as tmpdir:
+        result_json = Path(tmpdir) / "result.json"
+        backend_script = Path(__file__).resolve().parent / "markitdown_backend.py"
+        cmd = [sys.executable, str(backend_script), str(source), "--output-json", str(result_json)]
+        diagnostic["command"] = cmd
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        diagnostic["pid"] = process.pid
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            terminate_process_tree(process)
+            stdout = exc.stdout or ""
+            stderr = exc.stderr or ""
+            diagnostic["status"] = "timeout"
+            diagnostic["duration_seconds"] = round(time.monotonic() - started, 3)
+            diagnostic["finished_at"] = timestamp_now()
+            diagnostic["stdout_tail"] = str(stdout)[-4000:]
+            diagnostic["stderr_tail"] = str(stderr)[-4000:]
+            raise MarkItDownTimeoutError(f"MarkItDown timed out after {format_duration(timeout)}", diagnostic) from exc
+        diagnostic["duration_seconds"] = round(time.monotonic() - started, 3)
+        diagnostic["finished_at"] = timestamp_now()
+        diagnostic["exit_code"] = process.returncode
+        diagnostic["stdout_tail"] = (stdout or "")[-4000:]
+        diagnostic["stderr_tail"] = (stderr or "")[-4000:]
+        payload = load_markitdown_worker_result(result_json)
+        if process.returncode != 0 or not payload.get("ok"):
+            diagnostic["status"] = "failed"
+            diagnostic["error"] = str(payload.get("error") or diagnostic.get("stderr_tail") or "MarkItDown failed")
+            raise RuntimeError(str(diagnostic["error"]))
+        diagnostic["status"] = "ok"
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            diagnostic["status"] = "failed"
+            diagnostic["error"] = "MarkItDown worker returned an invalid result."
+            raise RuntimeError(str(diagnostic["error"]))
+        return result
+
+
+def load_markitdown_worker_result(result_json: Path) -> dict:
+    if not result_json.exists():
+        return {"ok": False, "error": "MarkItDown worker produced no result JSON."}
+    try:
+        payload = json.loads(result_json.read_text(encoding="utf-8-sig"))
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"Could not read MarkItDown worker result: {exc}"}
+    return payload if isinstance(payload, dict) else {"ok": False, "error": "Invalid MarkItDown worker result JSON."}
+
+
 def run_docling_backend(source: Path, output_path: Path, args: argparse.Namespace) -> dict:
     timeout = float(getattr(args, "docling_timeout", 60.0) or 0.0)
     diagnostic: dict[str, object] = {
@@ -1631,6 +1830,8 @@ def run_pdf_convert(
             run_pymupdf4llm_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         elif selected == "docling":
             run_docling_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        elif selected == "markitdown":
+            run_markitdown_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         else:
             run_marker_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         return
@@ -3259,6 +3460,9 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
     docling_diagnostics = getattr(args, "_docling_diagnostics", [])
     if docling_diagnostics:
         payload["docling_diagnostics"] = docling_diagnostics
+    markitdown_diagnostics = getattr(args, "_markitdown_diagnostics", [])
+    if markitdown_diagnostics:
+        payload["markitdown_diagnostics"] = markitdown_diagnostics
     calibre_fallback_diagnostics = getattr(args, "_calibre_fallback_diagnostics", [])
     if calibre_fallback_diagnostics:
         payload["calibre_fallback_diagnostics"] = calibre_fallback_diagnostics
@@ -4852,6 +5056,8 @@ def estimate_conversion_seconds(source: Path, args: argparse.Namespace) -> float
         return page_count * 0.5
     if selected == "docling":
         return page_count * 2.0
+    if selected == "markitdown":
+        return page_count * 0.8
     return None
 
 
@@ -4872,6 +5078,8 @@ def selected_pdf_pipeline_label(source: Path, args: argparse.Namespace) -> str:
         return "umi-ocr"
     if selected == "docling":
         return "docling"
+    if selected == "markitdown":
+        return "markitdown"
     return selected
 
 
@@ -4905,6 +5113,8 @@ def plan_note(source: Path, args: argparse.Namespace) -> str:
         return f"{page_count} pages; {metrics}; using PyMuPDF4LLM"
     if selected == "docling":
         return f"{page_count} pages; {metrics}; using Docling document converter"
+    if selected == "markitdown":
+        return f"{page_count} pages; {metrics}; using MarkItDown baseline converter"
     if mode == "auto":
         return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s; auto-use Marker ({reason})"
     return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s"

@@ -242,9 +242,14 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "recursive": {"type": "boolean", "default": True},
                     "include_hidden": {"type": "boolean", "default": False},
                     "output_format": {"type": "string", "enum": ["markdown", "html", "text"], "default": "markdown"},
+                    "document_pipeline_mode": {
+                        "type": "string",
+                        "enum": ["auto", "docling", "markitdown"],
+                        "default": "auto",
+                    },
                     "pdf_pipeline_mode": {
                         "type": "string",
-                        "enum": ["auto", "marker", "mineru", "umi", "pymupdf4llm"],
+                        "enum": ["auto", "marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown"],
                         "default": "auto",
                     },
                 },
@@ -320,7 +325,8 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "recursive": {"type": "boolean", "default": True},
                     "include_hidden": {"type": "boolean", "default": False},
                     "output_format": {"type": "string", "enum": ["markdown", "html", "text"], "default": "markdown"},
-                    "pdf_pipeline_mode": {"type": "string", "enum": ["auto", "marker", "mineru", "pymupdf4llm", "umi", "docling"], "default": "auto"},
+                    "document_pipeline_mode": {"type": "string", "enum": ["auto", "docling", "markitdown"], "default": "auto"},
+                    "pdf_pipeline_mode": {"type": "string", "enum": ["auto", "marker", "mineru", "pymupdf4llm", "umi", "docling", "markitdown"], "default": "auto"},
                     "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto"], "default": "local"},
                     "image_book_threshold": {"type": "integer", "default": 8},
                     "sample_pages": {"type": "integer", "default": 8},
@@ -749,6 +755,7 @@ def agent_operating_context() -> dict[str, Any]:
             "prefer_async_tools": True,
             "poll_tool": "get_job_status",
             "heavy_routes": ["mineru", "marker", "umi", "docling", "paddleocr-vl", "qwen-vl"],
+            "baseline_routes": ["markitdown"],
             "safe_pdf_default": "auto preflight, fallback diagnostics, versioned outputs",
             "large_pdf_advice": "Use page ranges or pipeline comparison before forcing whole-document heavy OCR/VLM.",
         },
@@ -1422,7 +1429,7 @@ def choose_material_route(inspection: dict[str, Any], *, intent: str, query: str
         return "process_web_archive"
     if kind == "image":
         return "start_image_book_rebuild"
-    if kind in {"pdf", "pandoc", "calibre", "docling"}:
+    if kind in {"pdf", "pandoc", "calibre", "docling", "markitdown"}:
         return "start_conversion"
     return "unsupported"
 
@@ -1436,7 +1443,7 @@ def choose_pdf_pipeline_mode(inspection: dict[str, Any], requested: str) -> str:
     if preflight.get("scanned_likely"):
         return "mineru"
     recommended = str(preflight.get("recommended_pipeline") or "auto")
-    return recommended if recommended in {"marker", "mineru", "umi", "pymupdf4llm", "docling"} else "auto"
+    return recommended if recommended in {"marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown"} else "auto"
 
 
 def start_conversion(arguments: dict[str, Any]) -> dict[str, Any]:

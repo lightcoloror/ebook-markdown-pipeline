@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 
-PDF_PIPELINES = {"auto", "fast", "pymupdf4llm", "mineru", "marker", "umi", "docling"}
+PDF_PIPELINES = {"auto", "fast", "pymupdf4llm", "mineru", "marker", "umi", "docling", "markitdown"}
 PIPELINE_TEXT_ALIASES = [
     ("pymupdf4llm", "pymupdf4llm"),
     ("pymupdf", "pymupdf4llm"),
@@ -15,6 +15,8 @@ PIPELINE_TEXT_ALIASES = [
     ("umi ocr", "umi"),
     ("umi", "umi"),
     ("docling", "docling"),
+    ("markitdown", "markitdown"),
+    ("mark-it-down", "markitdown"),
 ]
 
 

@@ -23,6 +23,7 @@ This is an engineering compliance note, not legal advice.
 | MinerU | Structured PDF parsing | Public information indicates AGPL-3.0 / strong-copyleft constraints; installed separately |
 | Marker | PDF parsing option | GPL-3.0-level project; installed separately |
 | Docling | Optional Office/document/PDF structure backend | Installed separately; check upstream license and model dependencies |
+| Microsoft MarkItDown | Optional fast multi-format Markdown baseline | MIT-licensed upstream project; installed separately |
 | Umi-OCR / PaddleOCR-json | OCR fallback workflow | Installed separately; check upstream licenses and bundled OCR model licenses |
 | PaddleOCR-VL | Optional infographic/layout-heavy image enhancement | Installed separately or called through wrappers; check upstream model/license terms |
 | Qwen-VL | Optional heavier VLM image enhancement | Model and runtime are installed separately; check upstream model/license terms |

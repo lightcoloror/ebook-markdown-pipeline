@@ -37,6 +37,8 @@ Optional:
 - `recursive`: default `true`.
 - `include_hidden`: default `false`.
 - `output_format`: `markdown`, `html`, or `text`.
+- `document_pipeline_mode`: `auto`, `docling`, or `markitdown`. Use `markitdown` only for explicit baseline comparison on supported non-PDF documents.
+- `pdf_pipeline_mode`: `auto`, `marker`, `mineru`, `umi`, `pymupdf4llm`, `docling`, or `markitdown`. Use `markitdown` only for explicit PDF baseline comparison.
 - `image_book_threshold`: retained for compatibility; auto routing now recognizes image folders by default.
 - `ocr`: `auto`, `always`, or `never`.
 - `model_mode`: `local`, `online`, `hybrid`, or `auto`. Current implementation uses this for recommendation/risk reporting only; default conversion remains local-first.
@@ -55,6 +57,12 @@ Routing rules:
 - `web-content-fetcher` archive folders with `rebuild_input/manifest.json` route to `process_web_archive`.
 - Any input with `intent=locate` or `query` routes to `start_location_index`, then returns a `next_actions` entry for `query_location_index` when a query is present.
 - Unsupported or missing inputs return `status=unsupported` and do not start a job.
+
+MarkItDown baseline:
+
+- MarkItDown is exposed as an optional comparison backend, not as the default recommended route.
+- Agents may pass `document_pipeline_mode=markitdown` or `pdf_pipeline_mode=markitdown` when they need a fast baseline artifact for heading count, noise, success rate, or Markdown-shape comparison.
+- If MarkItDown is missing, `health_check` and dependency checks should report it as optional rather than blocking the default local-first workflow.
 
 Return shape:
 

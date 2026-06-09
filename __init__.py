@@ -4,6 +4,7 @@ load_project_env()
 
 from .batch_convert_books import (
     OUTPUT_FORMATS,
+    DOCUMENT_PIPELINE_MODES,
     PDF_PIPELINE_MODES,
     SUPPORTED_FORMATS,
     SourcePlan,

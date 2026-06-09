@@ -132,6 +132,7 @@ You do not need to install every backend on day one.
 | Minimal | Python deps + Pandoc | EPUB, FB2, TXT, ODT, text-layer PDF | Fast and small. |
 | Ebook | Minimal + Calibre | AZW, AZW3, MOBI, RTF | Best first setup for ebook collections. |
 | Document | Minimal + `requirements-docling.txt` | DOCX, PPTX, XLSX, HTML, CSV | Docling is optional and can be installed later. |
+| Baseline comparison | Minimal + `requirements-markitdown.txt` | EPUB, DOCX, PPTX, XLSX, HTML, PDF | MarkItDown is optional; use it as a fast comparison backend, not the default router. |
 | OCR/Layout | Umi-OCR, MinerU, Marker | scanned PDF, long PDF, complex layout | Larger downloads; may need more disk and RAM. |
 | Vision-heavy | PaddleOCR-VL / Qwen-VL wrappers | screenshots, infographics, image books | Optional heavy backends; use only when needed. |
 
@@ -154,6 +155,13 @@ python scripts\run_quality_gate.py
 ```
 
 It generates small public fixtures under `benchmarks/fixtures/generated`, runs the minimal benchmark profile, and writes `benchmark-summary.md` plus `quality-regression-summary.md` under `benchmarks/runs/quality-gate/`. The public fixture set covers generated TXT, EPUB, AZW3-substitute EPUB, text-layer PDF, bookmarked/outline PDF, two-column PDF, PPT-like PDF, scanned PDF, infographic image, and duplicate screenshot folders. Use `--profile full` when you intentionally want to include OCR/image-heavy fixtures.
+
+To compare the optional MarkItDown baseline against the current default routing, install it and run the backend comparison profile:
+
+```powershell
+python -m pip install -r requirements-markitdown.txt
+python scripts\run_quality_gate.py --profile backend-compare
+```
 
 ## CLI Examples
 
@@ -369,13 +377,15 @@ python scripts\compare_benchmark_quality.py `
 python scripts\compare_pipelines.py `
   --input .\samples\sample.pdf `
   --output .\benchmarks\compare-runs\sample `
-  --pipelines pymupdf4llm mineru umi docling `
+  --pipelines pymupdf4llm mineru umi docling markitdown `
   --pipeline-timeout 600
 ```
 
 输出的 `pipeline-comparison.md` 会对比各管道的耗时、标题数量、正文长度、表格迹象、页码噪声和人工评分入口。`--pipeline-timeout` 会限制单条管道耗时，并在每条管道结束后写出 `pipeline-comparison.partial.json/md`，避免 MinerU、Marker、Docling PDF OCR 等慢管道拖死整次对比。桌面 UI 里选中 PDF 后也可以点 `PDF对比 / Compare` 生成同类报告；如果填写 `对比页码 / Pages`，UI 会传入 `--page-ranges` 只比较指定页；选中失败或待复查条目后，`推荐重跑 / Rerun Rec` 会按报告里的推荐管道重新执行该文件。
 
 Agent/批量场景下可用 `--docling-timeout <秒>` 控制 Docling 文档后端的最长运行时间；`--no-docling-fallback` 可关闭 DOCX/HTML/Markdown/CSV 的自动轻量兜底。HTTP `/call` 的 `start_conversion` / `process_material` 也支持 `docling_timeout` 和 `docling_fallback_to_pandoc` 参数。
+
+需要轻量 baseline 对照时，可安装 `requirements-markitdown.txt`，然后显式传入 `--document-pipeline-mode markitdown` 或 `--pdf-pipeline-mode markitdown`。默认转换仍走现有推荐逻辑；MarkItDown 主要用于快速观察“另一个成熟工具会怎么转”，方便发现 Pandoc/Docling/PDF 管道的结构差异。
 
 PDF 后端降级会写入 `pdf_fallback_diagnostics`：包括原管道、降级管道、失败/超时原因、耗时和 fallback 状态。Agent 或 UI 看到 `pymupdf4llm(fallback from ...)` 时，应提示用户这是稳定性兜底结果，结构质量可能低于 MinerU/Docling/Marker 的高质量输出。如果本机 `pymupdf4llm` 与 PyMuPDF 版本不兼容，快速 PDF 管道会继续降级为 `pymupdf-text(fallback from pymupdf4llm)`，只抽取 PDF 文本层，适合不中断批处理和定位，但章节结构质量通常较弱。
 

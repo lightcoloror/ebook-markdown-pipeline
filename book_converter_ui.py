@@ -36,6 +36,7 @@ try:
     from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book_from_sources  # noqa: E402
     from ebook_markdown_pipeline import (
         OUTPUT_FORMATS,
+        DOCUMENT_PIPELINE_MODES,
         PDF_PIPELINE_MODES,
         SUPPORTED_FORMATS,
         analyze_sources,
@@ -68,6 +69,7 @@ except ModuleNotFoundError:
     from image_book_rebuilder import rebuild_image_book_from_sources  # noqa: E402
     from batch_convert_books import (
         OUTPUT_FORMATS,
+        DOCUMENT_PIPELINE_MODES,
         PDF_PIPELINE_MODES,
         SUPPORTED_FORMATS,
         analyze_sources,
@@ -100,6 +102,7 @@ class BookConverterUI:
         self.output_var = tk.StringVar()
         self.history_var = tk.StringVar()
         self.output_format_var = tk.StringVar(value="markdown")
+        self.document_mode_var = tk.StringVar(value="auto")
         self.pdf_mode_var = tk.StringVar(value="auto")
         self.recursive_var = tk.BooleanVar(value=True)
         self.include_hidden_var = tk.BooleanVar(value=False)
@@ -189,6 +192,15 @@ class BookConverterUI:
             width=16,
         ).grid(row=0, column=1, sticky="w", padx=8)
 
+        ttk.Label(settings, text="文档模式 / Doc mode").grid(row=0, column=2, sticky="w", pady=4)
+        ttk.Combobox(
+            settings,
+            textvariable=self.document_mode_var,
+            values=list(DOCUMENT_PIPELINE_MODES),
+            state="readonly",
+            width=12,
+        ).grid(row=0, column=3, sticky="w", padx=8)
+
         ttk.Label(settings, text="PDF 模式 / PDF mode").grid(row=0, column=5, sticky="w", pady=4)
         ttk.Combobox(
             settings,
@@ -199,16 +211,16 @@ class BookConverterUI:
         ).grid(row=0, column=6, sticky="w", padx=8)
 
         ttk.Checkbutton(settings, text="递归 / Recursive", variable=self.recursive_var).grid(
-            row=0, column=2, sticky="w", padx=8
-        )
-        ttk.Checkbutton(settings, text="含隐藏 / Hidden", variable=self.include_hidden_var).grid(
-            row=0, column=3, sticky="w", padx=8
-        )
-        ttk.Checkbutton(settings, text="覆盖 / Overwrite", variable=self.overwrite_var).grid(
             row=0, column=4, sticky="w", padx=8
         )
+        ttk.Checkbutton(settings, text="含隐藏 / Hidden", variable=self.include_hidden_var).grid(
+            row=0, column=8, sticky="w", padx=8
+        )
+        ttk.Checkbutton(settings, text="覆盖 / Overwrite", variable=self.overwrite_var).grid(
+            row=0, column=9, sticky="w", padx=8
+        )
         ttk.Checkbutton(settings, text="续跑 / Resume", variable=self.resume_var).grid(
-            row=0, column=7, sticky="w", padx=8
+            row=0, column=10, sticky="w", padx=8
         )
 
         ttk.Label(settings, text="Pandoc").grid(row=1, column=0, sticky="w", pady=4)
@@ -527,6 +539,7 @@ class BookConverterUI:
             include_hidden=self.include_hidden_var.get(),
             output_format=self.output_format_var.get(),
             output_name_suffix=self.one_shot_output_name_suffix,
+            document_pipeline_mode=self.document_mode_var.get(),
             pdf_pipeline_mode=self.pdf_mode_var.get(),
             overwrite=self.overwrite_var.get(),
             resume=self.resume_var.get(),
@@ -2827,6 +2840,7 @@ class BookConverterUI:
         for key, variable in {
             "input": self.input_var,
             "output_format": self.output_format_var,
+            "document_mode": self.document_mode_var,
             "pdf_mode": self.pdf_mode_var,
             "pandoc": self.pandoc_var,
             "calibre": self.calibre_var,
@@ -2862,6 +2876,7 @@ class BookConverterUI:
         data = {
             "input": self.input_var.get(),
             "output_format": self.output_format_var.get(),
+            "document_mode": self.document_mode_var.get(),
             "pdf_mode": self.pdf_mode_var.get(),
             "recursive": self.recursive_var.get(),
             "include_hidden": self.include_hidden_var.get(),

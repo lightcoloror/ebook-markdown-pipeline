@@ -61,11 +61,25 @@ Optional backends:
 | Marker | Short layout-heavy PDF parsing | Heavy; model/network setup can be slow. |
 | Umi-OCR / PaddleOCR-json | Scanned PDF/image OCR fallback | Configure paths through environment variables. |
 | Docling | Office/document formats and optional PDF comparison | Install only when needed. |
+| MarkItDown | Fast multi-format Markdown baseline | Install only when you need comparison evidence. |
 
 Install optional Docling support:
 
 ```powershell
 python -m pip install -r requirements-docling.txt
+```
+
+Install optional MarkItDown baseline support:
+
+```powershell
+python -m pip install -r requirements-markitdown.txt
+```
+
+Use MarkItDown explicitly when you want a quick comparison backend:
+
+```powershell
+python batch_convert_books.py .\samples .\out --document-pipeline-mode markitdown
+python batch_convert_books.py .\samples .\out --pdf-pipeline-mode markitdown
 ```
 
 Configure Umi-OCR if you use it:
