@@ -146,6 +146,76 @@
 6. Unstructured：研究 partition/chunking 和企业 ingest 报告。
 7. GROBID：研究论文/参考文献专项路径。
 
+## 按模块的整合状态矩阵
+
+本节用于区分“已经进入当前代码管道的开源项目”和“仍是候选/参考项目”。这里的“已整合”指当前项目已有直接命令调用、Python API 调用、wrapper、配置入口、测试或 agent 契约；“未整合”指目前主要停留在调研、对标或待实验状态。
+
+### 总控、路由与 Agent 入口
+
+| 模块 | 已整合项目/能力 | 未整合候选 | 下一步建议 |
+| --- | --- | --- | --- |
+| CLI / UI / HTTP / MCP | 自研 CLI、Tkinter UI、HTTP API、MCP stdio | MarkItDown MCP、Docling MCP、Markdownify MCP | 保持自研统一入口，借鉴它们的工具 schema、安装体验和缓存机制。 |
+| 批处理 / handoff / `next_actions` | 自研 manifest、`run_summary`、agent recipes、handoff bundle | Unstructured workflow、Unstract | 学习 pipeline/任务状态和企业化 ingest 设计，不急着引入。 |
+| 格式预检 / inspect | PyMuPDF、自研 PDF 预检、质量评分 | Apache Tika、pdfplumber、kreuzberg | Tika 可补超多格式嗅探；pdfplumber 可补 PDF 表格/坐标预检。 |
+
+### 电子书、Office 与通用文档转换
+
+| 模块 | 已整合项目/能力 | 未整合候选 | 下一步建议 |
+| --- | --- | --- | --- |
+| EPUB / FB2 / TXT / ODT | Pandoc | MarkItDown | MarkItDown 可作为轻量多格式 baseline，对比 Pandoc 输出质量。 |
+| AZW / AZW3 / MOBI / RTF | Calibre `ebook-convert` + Pandoc | MarkItDown、Apache Tika | Calibre 仍是主力；Tika 更适合兜底抽文本和格式识别。 |
+| DOCX / PPTX / XLSX / HTML / CSV | Docling 可选后端，Pandoc fallback | MarkItDown、Unstructured、Mammoth、LibreOffice headless | Docling 继续做主结构化后端；MarkItDown 可作为更轻的可选后端。 |
+
+### PDF 解析与结构增强
+
+| 模块 | 已整合项目/能力 | 未整合候选 | 下一步建议 |
+| --- | --- | --- | --- |
+| PDF fast path | PyMuPDF、PyMuPDF4LLM、自研 PyMuPDF text fallback | pdfplumber、pypdf、pdfminer.six、PDFBox | 优先评估 pdfplumber，用于表格/坐标诊断；pypdf/pdfminer 可做轻量兜底。 |
+| 复杂 PDF / 结构化 PDF | MinerU、Marker、Docling 可选管道 | RAGFlow DeepDoc、Surya、MegaParse | 先用真实样本压测现有三条重管道，再决定是否接新后端。 |
+| PDF bookmark / 字体标题修复 | PyMuPDF outline、font candidates、自研 `structure_repair` | GROBID、pdf-craft | GROBID 只适合论文专项；pdf-craft 适合扫描书/截图书专项。 |
+| 扫描 PDF | Umi-OCR、MinerU、Marker、Docling fallback | OCRmyPDF、PaddleOCR、RapidOCR、Tesseract | OCRmyPDF 最值得优先接：先给扫描 PDF 加文本层，再走现有 fast path。 |
+
+### 图片、信息图与截图书
+
+| 模块 | 已整合项目/能力 | 未整合候选 | 下一步建议 |
+| --- | --- | --- | --- |
+| 普通图片 OCR | Umi-OCR / PaddleOCR-json | RapidOCR、Tesseract、CnOCR | RapidOCR 适合低配离线包；Tesseract 可做经典兜底。 |
+| 信息图 / layout-heavy 图片 | PaddleOCR-VL wrapper、Qwen-VL wrapper、MinerU VLM 路由 | Surya、GOT-OCR 2.0、olmOCR、Pix2Text | 先继续打磨 PaddleOCR-VL/Qwen-VL；Pix2Text 值得测中文公式和图片。 |
+| 截图乱序/重复重建 | 自研 `image_book_rebuilder` | pdf-craft、paperless-ngx | pdf-craft 可参考扫描书目录/脚注；paperless-ngx 只作为产品形态参考。 |
+
+### 表格、公式与学术专项
+
+| 模块 | 已整合项目/能力 | 未整合候选 | 下一步建议 |
+| --- | --- | --- | --- |
+| 表格检测 / 表格修复 | Docling/MinerU/Marker 输出 + 自研质量判断 | Camelot、Tabula、pdfplumber、PaddleOCR PP-Structure | text-based PDF 表格优先接 Camelot/pdfplumber；扫描表格看 PaddleOCR。 |
+| 公式 / 科研 PDF | Marker/MinerU/Docling 可选 | GROBID、Nougat、Pix2Text、Mathpix 商业对标 | GROBID 适合论文结构，不是通用 PDF；Nougat/GPU 成本较高。 |
+| 参考文献 / DOI / 论文结构 | 暂无专项管道 | GROBID | 若真实用户有论文场景，再做 `academic_pdf` 专项路由。 |
+
+### 网页、URL 与 Web Archive
+
+| 模块 | 已整合项目/能力 | 未整合候选 | 下一步建议 |
+| --- | --- | --- | --- |
+| Web archive 视觉复查 | 自研 `process_web_archive` | Crawl4AI、Trafilatura、Jina Reader | Crawl4AI 适合 Agent 网页采集；Trafilatura 适合轻量正文抽取。 |
+
+### 在线 API 与云端增强
+
+| 模块 | 已整合项目/能力 | 未整合候选 | 下一步建议 |
+| --- | --- | --- | --- |
+| Provider 抽象 | `OcrLayoutProvider`、`VlmLayoutProvider`、`TextStructureProvider`、`EmbeddingProvider`，OpenAI-compatible 示例 | LlamaParse、Mistral OCR、Azure Document Intelligence、Google Document AI、Amazon Textract | 先保持 OpenAI-compatible 抽象，再按真实需求接具体供应商。 |
+| 文本结构修复 | 本地 `structure_repair` + online enhancement 接口 | Marker LLM service 模式、Reducto | 不要在每个管道里分散写 API，继续走统一 provider。 |
+
+### 建议的下一批整合优先级
+
+| 优先级 | 项目 | 对应模块 | 理由 |
+| --- | --- | --- | --- |
+| 1 | MarkItDown | 多格式轻量 baseline、MCP 参考 | MIT、格式广，适合对比 Office/HTML/图片等边界格式。 |
+| 2 | OCRmyPDF | 扫描 PDF 预处理 | 可把扫描 PDF 先变成 searchable PDF，复用现有 PDF fast path。 |
+| 3 | pdfplumber + Camelot | PDF 表格和坐标诊断 | 补当前表格专项弱项，且更适合 text-based PDF。 |
+| 4 | RapidOCR | 低配本地 OCR | 适合 U 盘离线、CPU 机器和轻量 OCR fallback。 |
+| 5 | Apache Tika | 格式识别和兜底抽文本 | 补非主流格式嗅探和 metadata/text fallback。 |
+| 6 | GROBID | 学术论文专项 | 只在论文/参考文献场景明确时接入。 |
+| 7 | Crawl4AI / Trafilatura | 网页资料采集 | 只有在扩展 URL/网页资料摄取时再接。 |
+
 ## 已核验来源
 
 - Microsoft MarkItDown GitHub：MIT license。
