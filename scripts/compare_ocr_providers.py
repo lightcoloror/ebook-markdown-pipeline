@@ -101,7 +101,7 @@ def compare_ocr_providers(
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "output": str(output_dir),
         "image_count": len(images),
-        "images": [str(path) for path in images],
+        "images": [{"path": str(path), "category": infer_image_category(path)} for path in images],
         "providers": provider_results,
     }
     payload["summary"] = summarize_provider_results(provider_results, image_count=len(images))
@@ -162,6 +162,7 @@ def run_provider(
         "message": message,
         "duration_seconds": duration,
         "metrics": metrics,
+        "category_metrics": summarize_items_by_category(items),
         "items": items,
     }
 
@@ -209,6 +210,7 @@ def item_result(
     blocks = list(blocks or [])
     return {
         "image": str(image),
+        "category": infer_image_category(image),
         "status": status,
         "message": message,
         "duration_seconds": round(time.monotonic() - started, 4),
@@ -219,6 +221,26 @@ def item_result(
         "empty": not bool(text),
         "text_preview": text[:120],
     }
+
+
+def infer_image_category(path: Path) -> str:
+    normalized = str(path).replace("\\", "/").lower()
+    name = path.name.lower()
+    if "/ocr/" in normalized:
+        if "chinese" in name:
+            return "image_ocr_chinese"
+        if "english" in name:
+            return "image_ocr_english"
+        if "lowres" in name:
+            return "image_ocr_lowres"
+        if "infographic" in name:
+            return "image_ocr_infographic"
+        return "image_ocr_misc"
+    if "infographic" in name:
+        return "image_infographic"
+    if "screenshot" in normalized or name.startswith("page-"):
+        return "image_screenshot"
+    return "image"
 
 
 def summarize_items(items: list[dict[str, Any]]) -> dict[str, Any]:
@@ -243,6 +265,13 @@ def summarize_items(items: list[dict[str, Any]]) -> dict[str, Any]:
         "total_bbox_count": bbox,
         "bbox_coverage": round(bbox / blocks, 4) if blocks else 0.0,
     }
+
+
+def summarize_items_by_category(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        grouped.setdefault(str(item.get("category") or "unknown"), []).append(item)
+    return {category: summarize_items(category_items) for category, category_items in sorted(grouped.items())}
 
 
 def summarize_provider_results(provider_results: list[dict[str, Any]], *, image_count: int) -> dict[str, Any]:
@@ -296,6 +325,25 @@ def render_markdown(payload: dict[str, Any]) -> str:
             f"{metrics.get('bbox_coverage', 0)} | {metrics.get('avg_duration_seconds', 0)} | "
             f"{markdown_cell(str(provider.get('message') or ''))} |"
         )
+    category_names = sorted(
+        {
+            category
+            for provider in payload.get("providers") or []
+            for category in (provider.get("category_metrics") or {})
+        }
+    )
+    if category_names:
+        lines.extend(["", "## By Category", ""])
+        lines.append("| Provider | Category | Samples | Empty | Chars | Blocks | BBox coverage | Avg sec |")
+        lines.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+        for provider in payload.get("providers") or []:
+            for category, metrics in (provider.get("category_metrics") or {}).items():
+                lines.append(
+                    f"| {provider.get('provider')} | {category} | "
+                    f"{metrics.get('sample_count', 0)} | {metrics.get('empty_count', 0)} | "
+                    f"{metrics.get('total_char_count', 0)} | {metrics.get('total_block_count', 0)} | "
+                    f"{metrics.get('bbox_coverage', 0)} | {metrics.get('avg_duration_seconds', 0)} |"
+                )
     lines.append("")
     lines.append("## Per Image")
     lines.append("")

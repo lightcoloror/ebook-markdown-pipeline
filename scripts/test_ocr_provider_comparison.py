@@ -35,8 +35,10 @@ class FakeUmiEngine:
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="ocr-provider-compare-") as tmp:
         root = Path(tmp)
-        first = root / "中文.png"
-        second = root / "english-lowres.png"
+        ocr_root = root / "ocr"
+        ocr_root.mkdir()
+        first = ocr_root / "chinese.png"
+        second = ocr_root / "lowres.png"
         first.write_bytes(b"fake image 1")
         second.write_bytes(b"fake image 2")
         output = root / "out"
@@ -57,8 +59,11 @@ def main() -> int:
             raise AssertionError(f"Expected RapidOCR char metrics: {payload}")
         if by_provider["umi"]["metrics"]["total_bbox_count"] != 2:
             raise AssertionError(f"Expected Umi bbox metrics: {payload}")
+        rapid_categories = by_provider["rapidocr"].get("category_metrics") or {}
+        if "image_ocr_chinese" not in rapid_categories or "image_ocr_lowres" not in rapid_categories:
+            raise AssertionError(f"Expected per-category OCR metrics: {rapid_categories}")
         markdown = Path(payload["markdown_report"]).read_text(encoding="utf-8")
-        if "OCR Provider Comparison" not in markdown or "Rapid" not in markdown or "Umi" not in markdown:
+        if "OCR Provider Comparison" not in markdown or "By Category" not in markdown or "image_ocr_chinese" not in markdown:
             raise AssertionError(f"Unexpected markdown report: {markdown}")
 
         missing = compare_ocr_providers(

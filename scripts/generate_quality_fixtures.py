@@ -6,6 +6,7 @@ import struct
 import zlib
 import zipfile
 from pathlib import Path
+from typing import Iterable
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
@@ -192,6 +193,108 @@ def write_image_fixtures(root: Path) -> None:
     write_png(screenshots / "page-002.png", width=640, height=420)
     write_png(screenshots / "page-001.png", width=640, height=420)
     write_png(screenshots / "page-001-duplicate.png", width=640, height=420)
+    write_ocr_image_fixtures(root / "ocr")
+
+
+def write_ocr_image_fixtures(root: Path) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    write_text_image(
+        root / "english.png",
+        ["English OCR Fixture", "Chapter 1: Customer Notes", "Total amount: 128.50"],
+        size=(900, 360),
+        font_size=36,
+    )
+    write_text_image(
+        root / "chinese.png",
+        ["中文识别样本", "第一章 图文材料转换器", "金额 128.50 元"],
+        size=(900, 360),
+        font_size=34,
+        prefer_cjk=True,
+    )
+    write_text_image(
+        root / "lowres.png",
+        ["Low resolution screenshot", "status ok", "page 03/08"],
+        size=(360, 160),
+        font_size=16,
+        low_contrast=True,
+    )
+    write_infographic_text_image(root / "infographic-text.png")
+
+
+def write_text_image(
+    path: Path,
+    lines: Iterable[str],
+    *,
+    size: tuple[int, int],
+    font_size: int,
+    prefer_cjk: bool = False,
+    low_contrast: bool = False,
+) -> None:
+    from PIL import Image, ImageDraw, ImageFont
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    background = (245, 244, 238) if not low_contrast else (232, 232, 232)
+    foreground = (34, 42, 54) if not low_contrast else (96, 96, 96)
+    image = Image.new("RGB", size, background)
+    draw = ImageDraw.Draw(image)
+    font = load_fixture_font(font_size, prefer_cjk=prefer_cjk)
+    y = max(24, font_size)
+    for line in lines:
+        draw.text((36, y), line, font=font, fill=foreground)
+        y += int(font_size * 1.55)
+    image.save(path)
+
+
+def write_infographic_text_image(path: Path) -> None:
+    from PIL import Image, ImageDraw, ImageFont
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image = Image.new("RGB", (980, 560), (242, 239, 230))
+    draw = ImageDraw.Draw(image)
+    title_font = load_fixture_font(34, prefer_cjk=True)
+    card_font = load_fixture_font(24, prefer_cjk=True)
+    draw.text((36, 26), "信息图 OCR Fixture / Infographic OCR", font=title_font, fill=(35, 44, 57))
+    cards = [
+        ("目标", "Goal", 50, 110),
+        ("用户", "Users", 360, 110),
+        ("渠道", "Channels", 670, 110),
+        ("成本", "Cost", 50, 310),
+        ("收入", "Revenue", 360, 310),
+        ("风险", "Risk", 670, 310),
+    ]
+    for cn, en, x, y in cards:
+        draw.rounded_rectangle((x, y, x + 240, y + 135), radius=18, fill=(255, 255, 250), outline=(80, 110, 120), width=3)
+        draw.text((x + 24, y + 24), cn, font=card_font, fill=(40, 64, 80))
+        draw.text((x + 24, y + 70), en, font=card_font, fill=(70, 70, 70))
+    image.save(path)
+
+
+def load_fixture_font(size: int, *, prefer_cjk: bool = False):
+    from PIL import ImageFont
+
+    candidates = []
+    if prefer_cjk:
+        candidates.extend(
+            [
+                r"C:\Windows\Fonts\msyh.ttc",
+                r"C:\Windows\Fonts\simsun.ttc",
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            ]
+        )
+    candidates.extend(
+        [
+            r"C:\Windows\Fonts\arial.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+    )
+    for candidate in candidates:
+        path = Path(candidate)
+        if path.exists():
+            try:
+                return ImageFont.truetype(str(path), size=size)
+            except Exception:
+                continue
+    return ImageFont.load_default()
 
 
 def write_png(path: Path, *, width: int, height: int) -> None:
@@ -242,6 +345,10 @@ def write_manifests(root: Path) -> None:
         {"id": "pdf-scan-01", "path": rel(root / "pdf" / "scanned-image-only.pdf"), "category": "scanned_pdf"},
         {"id": "image-infographic-01", "path": rel(root / "images" / "infographic.png"), "category": "image_infographic"},
         {"id": "screenshots-duplicates-01", "path": rel(root / "images" / "screenshots"), "category": "image_set_duplicates"},
+        {"id": "ocr-english-01", "path": rel(root / "images" / "ocr" / "english.png"), "category": "image_ocr_english"},
+        {"id": "ocr-chinese-01", "path": rel(root / "images" / "ocr" / "chinese.png"), "category": "image_ocr_chinese"},
+        {"id": "ocr-lowres-01", "path": rel(root / "images" / "ocr" / "lowres.png"), "category": "image_ocr_lowres"},
+        {"id": "ocr-infographic-01", "path": rel(root / "images" / "ocr" / "infographic-text.png"), "category": "image_ocr_infographic"},
     ]
     minimal_ids = {"txt-01", "epub-01", "azw3-substitute-01", "pdf-text-01", "pdf-bookmarked-01", "pdf-two-column-01", "pdf-ppt-export-01"}
     write_manifest(root / "quality-minimal.json", [item for item in samples if item["id"] in minimal_ids], "Minimal public quality-gate fixtures.")

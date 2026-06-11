@@ -51,6 +51,26 @@
       "id": "screenshots-duplicates-01",
       "path": "benchmarks/fixtures/generated/images/screenshots",
       "category": "image_set_duplicates"
+    },
+    {
+      "id": "ocr-english-01",
+      "path": "benchmarks/fixtures/generated/images/ocr/english.png",
+      "category": "image_ocr_english"
+    },
+    {
+      "id": "ocr-chinese-01",
+      "path": "benchmarks/fixtures/generated/images/ocr/chinese.png",
+      "category": "image_ocr_chinese"
+    },
+    {
+      "id": "ocr-lowres-01",
+      "path": "benchmarks/fixtures/generated/images/ocr/lowres.png",
+      "category": "image_ocr_lowres"
+    },
+    {
+      "id": "ocr-infographic-01",
+      "path": "benchmarks/fixtures/generated/images/ocr/infographic-text.png",
+      "category": "image_ocr_infographic"
     }
   ]
 }

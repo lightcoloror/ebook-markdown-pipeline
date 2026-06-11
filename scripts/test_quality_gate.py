@@ -32,6 +32,10 @@ def main() -> int:
             "scanned_pdf",
             "image_infographic",
             "image_set_duplicates",
+            "image_ocr_english",
+            "image_ocr_chinese",
+            "image_ocr_lowres",
+            "image_ocr_infographic",
         }
         full_categories = {str(item.get("category") or "") for item in full.get("samples") or []}
         missing_categories = required_full_categories.difference(full_categories)
