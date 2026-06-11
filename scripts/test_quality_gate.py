@@ -29,6 +29,7 @@ def main() -> int:
             "pdf_bookmarked_outline",
             "pdf_two_column",
             "pdf_presentation_like",
+            "pdf_table",
             "scanned_pdf",
             "image_infographic",
             "image_set_duplicates",
@@ -84,6 +85,9 @@ def main() -> int:
             "avg_toc_match_ratio",
             "page_heading_ratio",
             "ocr_characters",
+            "table_retention_ratio",
+            "expected_table_like_lines",
+            "table_like_lines",
             "structure_repair_decisions",
             "structure_repair_promoted",
             "structure_repair_low_confidence",
@@ -95,7 +99,7 @@ def main() -> int:
         if missing:
             raise AssertionError(f"Quality regression summary missing required metrics {sorted(missing)}: {summary}")
         quality_text = quality_md.read_text(encoding="utf-8")
-        for needle in ["Average TOC match ratio", "OCR characters", "Structure repair decisions", "Average duration seconds", "Review or poor"]:
+        for needle in ["Average TOC match ratio", "OCR characters", "Table retention ratio", "Structure repair decisions", "Average duration seconds", "Review or poor"]:
             if needle not in quality_text:
                 raise AssertionError(f"Quality regression Markdown missing {needle}: {quality_text}")
     print("Quality gate smoke test passed.")

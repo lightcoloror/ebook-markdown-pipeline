@@ -38,6 +38,12 @@
       "category": "pdf_presentation_like"
     },
     {
+      "id": "pdf-table-01",
+      "path": "benchmarks/fixtures/generated/pdf/table.pdf",
+      "category": "pdf_table",
+      "expected_table_like_lines": 5
+    },
+    {
       "id": "pdf-scan-01",
       "path": "benchmarks/fixtures/generated/pdf/scanned-image-only.pdf",
       "category": "scanned_pdf"

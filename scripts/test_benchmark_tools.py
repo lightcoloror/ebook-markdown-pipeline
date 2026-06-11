@@ -83,7 +83,7 @@ def main() -> int:
         if quality_payload.get("quality_gates", {}).get("status") != "passed":
             raise RuntimeError(f"Expected quality gates in regression summary: {quality_payload}")
         summary_fields = quality_payload.get("summary") or {}
-        for field in ["avg_toc_match_ratio", "ocr_characters", "structure_repair_decisions", "structure_repair_promoted", "avg_duration_seconds", "max_duration_seconds"]:
+        for field in ["avg_toc_match_ratio", "ocr_characters", "table_retention_ratio", "structure_repair_decisions", "structure_repair_promoted", "avg_duration_seconds", "max_duration_seconds"]:
             if field not in summary_fields:
                 raise RuntimeError(f"Expected quality metric {field}: {quality_payload}")
         benchmark_module = load_run_benchmarks()
@@ -137,6 +137,9 @@ def main() -> int:
                         "avg_characters": 1000,
                         "avg_toc_match_ratio": 0.5,
                         "ocr_characters": 100,
+                        "table_retention_ratio": 0.4,
+                        "table_like_lines": 2,
+                        "expected_table_like_lines": 5,
                         "structure_repair_decisions": 2,
                         "structure_repair_promoted": 1,
                         "structure_repair_low_confidence": 1,
@@ -164,6 +167,9 @@ def main() -> int:
                         "avg_characters": 1200,
                         "avg_toc_match_ratio": 0.75,
                         "ocr_characters": 120,
+                        "table_retention_ratio": 0.8,
+                        "table_like_lines": 4,
+                        "expected_table_like_lines": 5,
                         "structure_repair_decisions": 4,
                         "structure_repair_promoted": 3,
                         "structure_repair_low_confidence": 0,
@@ -194,7 +200,7 @@ def main() -> int:
         if comparison_payload.get("summary", {}).get("status") != "passed":
             raise RuntimeError(f"Expected passing quality comparison: {comparison_payload}")
         deltas = comparison_payload.get("summary", {}).get("deltas", {})
-        for field in ["avg_toc_match_ratio", "ocr_characters", "structure_repair_decisions", "structure_repair_promoted", "avg_duration_seconds", "max_duration_seconds"]:
+        for field in ["avg_toc_match_ratio", "ocr_characters", "table_retention_ratio", "table_like_lines", "expected_table_like_lines", "structure_repair_decisions", "structure_repair_promoted", "avg_duration_seconds", "max_duration_seconds"]:
             if field not in deltas:
                 raise RuntimeError(f"Expected quality comparison delta {field}: {comparison_payload}")
 
@@ -211,6 +217,9 @@ def main() -> int:
                         "avg_characters": 500,
                         "avg_toc_match_ratio": 0.0,
                         "ocr_characters": 50,
+                        "table_retention_ratio": 0.0,
+                        "table_like_lines": 0,
+                        "expected_table_like_lines": 5,
                         "structure_repair_decisions": 0,
                         "structure_repair_promoted": 0,
                         "structure_repair_low_confidence": 0,

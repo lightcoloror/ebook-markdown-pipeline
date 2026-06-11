@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 from typing import Any
 
 
 OCR_BLOCK_SCHEMA_VERSION = "ocr-blocks-v1"
 RAPIDOCR_PACKAGES = ("rapidocr_onnxruntime", "rapidocr")
+PROJECT_DIR = Path(__file__).resolve().parent
 
 
 def rapidocr_available() -> bool:
@@ -21,16 +23,34 @@ def rapidocr_package_name() -> str:
 
 
 def create_rapidocr_engine():
+    params = rapidocr_default_params()
     package_name = rapidocr_package_name()
     if package_name == "rapidocr_onnxruntime":
         from rapidocr_onnxruntime import RapidOCR  # type: ignore
 
-        return RapidOCR()
+        try:
+            return RapidOCR(params=params)
+        except TypeError:
+            return RapidOCR()
     if package_name == "rapidocr":
         from rapidocr import RapidOCR  # type: ignore
 
-        return RapidOCR()
+        try:
+            return RapidOCR(params=params)
+        except TypeError:
+            return RapidOCR()
     raise FileNotFoundError("RapidOCR is not installed. Install rapidocr_onnxruntime or rapidocr to enable this provider.")
+
+
+def rapidocr_model_root_dir() -> Path:
+    explicit = os.environ.get("EBOOK_CONVERTER_RAPIDOCR_MODEL_DIR", "").strip()
+    path = Path(explicit).expanduser() if explicit else PROJECT_DIR / ".tmp" / "rapidocr-models"
+    path.mkdir(parents=True, exist_ok=True)
+    return path.resolve()
+
+
+def rapidocr_default_params() -> dict[str, Any]:
+    return {"Global.model_root_dir": str(rapidocr_model_root_dir())}
 
 
 def recognize_image_with_rapidocr(image_path: Path, engine=None) -> dict[str, Any]:

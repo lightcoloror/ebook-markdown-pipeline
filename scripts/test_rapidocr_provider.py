@@ -8,7 +8,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR.parent))
 
 from ebook_markdown_pipeline.batch_convert_books import default_options, dependency_health_report, environment_capability_summary  # noqa: E402
-from ebook_markdown_pipeline.ocr_providers import normalize_rapidocr_blocks, recognize_image_with_rapidocr  # noqa: E402
+from ebook_markdown_pipeline.ocr_providers import normalize_rapidocr_blocks, rapidocr_default_params, rapidocr_model_root_dir, recognize_image_with_rapidocr  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book_from_sources  # noqa: E402
 import ebook_markdown_pipeline.image_book_rebuilder as rebuilder  # noqa: E402
 
@@ -47,6 +47,23 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="rapidocr-provider-") as tmp:
         root = Path(tmp)
+        model_root = root / "models"
+        import os
+
+        old_model_root = os.environ.get("EBOOK_CONVERTER_RAPIDOCR_MODEL_DIR")
+        os.environ["EBOOK_CONVERTER_RAPIDOCR_MODEL_DIR"] = str(model_root)
+        try:
+            if rapidocr_model_root_dir() != model_root.resolve():
+                raise AssertionError("RapidOCR model root should follow EBOOK_CONVERTER_RAPIDOCR_MODEL_DIR")
+            params = rapidocr_default_params()
+            if params.get("Global.model_root_dir") != str(model_root.resolve()):
+                raise AssertionError(f"Unexpected RapidOCR params: {params}")
+        finally:
+            if old_model_root is None:
+                os.environ.pop("EBOOK_CONVERTER_RAPIDOCR_MODEL_DIR", None)
+            else:
+                os.environ["EBOOK_CONVERTER_RAPIDOCR_MODEL_DIR"] = old_model_root
+
         image = root / "001.png"
         image.write_bytes(b"fake image bytes")
         direct = recognize_image_with_rapidocr(image, FakeRapidOCREngine())

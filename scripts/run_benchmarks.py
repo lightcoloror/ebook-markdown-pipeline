@@ -255,6 +255,7 @@ def run_sample(
         "recommended_pipeline": sample.get("recommended_pipeline"),
         "benchmark_pdf_mode": effective_pdf_mode(source, pdf_mode_for_benchmark),
         "benchmark_document_mode": effective_document_mode(source, document_mode_for_benchmark),
+        "expectations": sample_expectations(sample),
         "status": "unknown",
         "output": str(output_dir),
     }
@@ -291,7 +292,13 @@ def run_sample(
         write_batch_summary(results, options)
         first = results[0]
         output_path = Path(first.output) if first.output else None
-        metrics = enrich_quality_metrics(markdown_metrics(output_path), source=source, output_path=output_path, category=category)
+        metrics = enrich_quality_metrics(
+            markdown_metrics(output_path),
+            source=source,
+            output_path=output_path,
+            category=category,
+            expectations=base.get("expectations") or {},
+        )
         conversion_payloads = [asdict(item) for item in results]
         metrics.update(structure_repair_metrics(conversion_payloads))
         return finish_result(
@@ -321,11 +328,29 @@ def effective_document_mode(source: Path, document_mode_for_benchmark: str) -> s
     return document_mode_for_benchmark
 
 
-def enrich_quality_metrics(metrics: dict, *, source: Path, output_path: Path | None, category: str) -> dict:
+def sample_expectations(sample: dict) -> dict:
+    expectations = {}
+    if sample.get("expected_table_like_lines") is not None:
+        expectations["expected_table_like_lines"] = int(sample.get("expected_table_like_lines") or 0)
+    return expectations
+
+
+def enrich_quality_metrics(metrics: dict, *, source: Path, output_path: Path | None, category: str, expectations: dict | None = None) -> dict:
     enriched = dict(metrics or {})
     enriched.setdefault("toc_match_ratio", toc_match_ratio(source, output_path))
     enriched.setdefault("ocr_characters", ocr_character_count(enriched, category=category))
+    expectations = expectations or {}
+    expected_table_lines = int(expectations.get("expected_table_like_lines") or 0)
+    enriched["expected_table_like_lines"] = expected_table_lines
+    enriched["table_retention_ratio"] = table_retention_ratio(enriched, expected_table_lines=expected_table_lines)
     return enriched
+
+
+def table_retention_ratio(metrics: dict, *, expected_table_lines: int) -> float:
+    if expected_table_lines <= 0:
+        return 0.0
+    actual = int(metrics.get("table_like_lines") or 0)
+    return round(min(actual / expected_table_lines, 1.0), 3)
 
 
 def structure_repair_metrics(conversion_results: list[dict]) -> dict[str, int]:
@@ -507,6 +532,9 @@ def quality_regression_summary(payload: dict) -> dict:
     characters = [int((item.get("metrics") or {}).get("characters") or 0) for item in scored]
     toc_match_ratios = [float((item.get("metrics") or {}).get("toc_match_ratio") or 0) for item in scored]
     ocr_characters = [int((item.get("metrics") or {}).get("ocr_characters") or 0) for item in scored]
+    expected_table_lines = [int((item.get("metrics") or {}).get("expected_table_like_lines") or 0) for item in scored]
+    table_like_lines = [int((item.get("metrics") or {}).get("table_like_lines") or 0) for item in scored]
+    table_sample_count = sum(1 for value in expected_table_lines if value > 0)
     structure_decisions = [int((item.get("metrics") or {}).get("structure_repair_decisions") or 0) for item in scored]
     structure_promoted = [int((item.get("metrics") or {}).get("structure_repair_promoted") or 0) for item in scored]
     structure_low_confidence = [int((item.get("metrics") or {}).get("structure_repair_low_confidence") or 0) for item in scored]
@@ -523,6 +551,10 @@ def quality_regression_summary(payload: dict) -> dict:
         "avg_characters": average(characters),
         "avg_toc_match_ratio": average_float(toc_match_ratios),
         "ocr_characters": sum(ocr_characters),
+        "table_sample_count": table_sample_count,
+        "table_like_lines": sum(table_like_lines),
+        "expected_table_like_lines": sum(expected_table_lines),
+        "table_retention_ratio": ratio(sum(table_like_lines), sum(expected_table_lines)) if sum(expected_table_lines) else 0.0,
         "structure_repair_decisions": sum(structure_decisions),
         "structure_repair_promoted": sum(structure_promoted),
         "structure_repair_low_confidence": sum(structure_low_confidence),
@@ -657,6 +689,7 @@ def render_quality_regression_summary(payload: dict) -> str:
         f"- Average characters: {summary['avg_characters']}",
         f"- Average TOC match ratio: {summary['avg_toc_match_ratio']}",
         f"- OCR characters: {summary['ocr_characters']}",
+        f"- Table retention ratio: {summary.get('table_retention_ratio', 0)} ({summary.get('table_like_lines', 0)}/{summary.get('expected_table_like_lines', 0)} lines; samples={summary.get('table_sample_count', 0)})",
         f"- Structure repair decisions: {summary['structure_repair_decisions']}",
         f"- Structure repair promoted headings: {summary['structure_repair_promoted']}",
         f"- Structure repair low-confidence decisions: {summary['structure_repair_low_confidence']}",

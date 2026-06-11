@@ -117,6 +117,7 @@ def write_pdf_fixtures(root: Path) -> None:
     write_text_pdf(root / "text-layer.pdf", title="Text Layer PDF", two_column=False, slide=False)
     write_text_pdf(root / "two-column.pdf", title="Two Column PDF", two_column=True, slide=False)
     write_text_pdf(root / "ppt-exported.pdf", title="Presentation Like PDF", two_column=False, slide=True)
+    write_table_pdf(root / "table.pdf")
     write_bookmarked_pdf(root / "bookmarked.pdf")
     image_path = root / "scan-source.png"
     write_png(image_path, width=640, height=360)
@@ -180,6 +181,40 @@ def write_bookmarked_pdf(path: Path) -> None:
             [2, "Section One Point One", 1],
             [1, "Chapter Two", 2],
         ]
+    )
+    doc.save(path)
+    doc.close()
+
+
+def write_table_pdf(path: Path) -> None:
+    import fitz
+
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((50, 60), "Table Fixture PDF", fontsize=24)
+    page.insert_text((50, 105), "Quarterly Metrics", fontsize=16)
+    rows = [
+        ("Metric", "Q1", "Q2", "Q3", "Q4"),
+        ("Revenue", "120", "132", "141", "155"),
+        ("Cost", "80", "83", "90", "96"),
+        ("Margin", "40", "49", "51", "59"),
+        ("Users", "1000", "1250", "1400", "1680"),
+    ]
+    x_values = [50, 180, 260, 340, 420]
+    y = 150
+    for row_index, row in enumerate(rows):
+        for x, cell in zip(x_values, row):
+            page.insert_text((x, y), cell, fontsize=12)
+        page.draw_line((45, y + 8), (510, y + 8), color=(0, 0, 0), width=0.5)
+        if row_index == 0:
+            page.draw_line((45, y - 16), (510, y - 16), color=(0, 0, 0), width=0.8)
+        y += 32
+    for x in [45, 160, 240, 320, 400, 510]:
+        page.draw_line((x, 130), (x, y - 24), color=(0, 0, 0), width=0.5)
+    page.insert_textbox(
+        fitz.Rect(50, 350, 540, 500),
+        "This generated table PDF is public fixture content. It checks whether converters preserve tabular structure signals.",
+        fontsize=12,
     )
     doc.save(path)
     doc.close()
@@ -342,6 +377,12 @@ def write_manifests(root: Path) -> None:
         {"id": "pdf-bookmarked-01", "path": rel(root / "pdf" / "bookmarked.pdf"), "category": "pdf_bookmarked_outline"},
         {"id": "pdf-two-column-01", "path": rel(root / "pdf" / "two-column.pdf"), "category": "pdf_two_column"},
         {"id": "pdf-ppt-export-01", "path": rel(root / "pdf" / "ppt-exported.pdf"), "category": "pdf_presentation_like"},
+        {
+            "id": "pdf-table-01",
+            "path": rel(root / "pdf" / "table.pdf"),
+            "category": "pdf_table",
+            "expected_table_like_lines": 5,
+        },
         {"id": "pdf-scan-01", "path": rel(root / "pdf" / "scanned-image-only.pdf"), "category": "scanned_pdf"},
         {"id": "image-infographic-01", "path": rel(root / "images" / "infographic.png"), "category": "image_infographic"},
         {"id": "screenshots-duplicates-01", "path": rel(root / "images" / "screenshots"), "category": "image_set_duplicates"},
