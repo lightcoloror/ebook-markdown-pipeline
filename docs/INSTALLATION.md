@@ -114,6 +114,16 @@ python image_book_rebuilder.py build .\screenshots .\screenshots-out --ocr-provi
 
 Use RapidOCR for lightweight fallback or benchmark runs; keep Umi-OCR as the preferred local OCR path when it is already configured and producing better results.
 
+Compare RapidOCR with Umi-OCR on small public or local image samples:
+
+```powershell
+python scripts\compare_ocr_providers.py `
+  .\benchmarks\fixtures\generated\images `
+  --recursive `
+  --providers rapidocr umi `
+  --output .\benchmarks\runs\ocr-provider-compare
+```
+
 Check the environment:
 
 ```powershell

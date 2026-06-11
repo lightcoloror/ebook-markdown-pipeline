@@ -123,6 +123,8 @@ For legacy batch results that predate top-level handoff actions, `inspect_agent_
 
 For broad real-sample benchmarks outside agent batches, use `scripts/run_benchmarks.py` with quality gates and `scripts/compare_benchmark_quality.py` to compare a baseline `benchmark-results.json` or `quality-regression-summary.json` against a candidate run. The comparison preserves success/good/review/poor rates, heading counts, TOC/bookmark match ratio, page-heading noise, OCR character volume, structure repair decision/promoted-heading counts, duration, fallback count, timeout rate, and failed rate. This is the preferred evidence path before changing defaults such as PDF pipeline selection, Docling enablement, structure repair, or OCR cleanup rules.
 
+For image OCR backend comparison, use `scripts/compare_ocr_providers.py`. It compares RapidOCR and Umi-OCR on selected image samples and writes `ocr-provider-comparison.json/md` with status, duration, OCR character count, OCR block count, bbox count, empty OCR rate, and missing-provider reasons. Use it before changing image OCR defaults.
+
 ## Docker Agent Integration
 
 For Docker-hosted agents, use the HTTP bridge unless the project directory and all converter dependencies are mounted inside the container.

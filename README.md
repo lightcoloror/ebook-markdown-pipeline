@@ -165,6 +165,18 @@ python -m pip install -r requirements-markitdown.txt
 python scripts\run_quality_gate.py --profile backend-compare
 ```
 
+To compare lightweight image OCR providers on public or local image samples:
+
+```powershell
+python scripts\compare_ocr_providers.py `
+  .\benchmarks\fixtures\generated\images `
+  --recursive `
+  --providers rapidocr umi `
+  --output .\benchmarks\runs\ocr-provider-compare
+```
+
+The OCR comparison writes `ocr-provider-comparison.json/md` with status, duration, character count, block count, bbox count, empty OCR rate, and missing-provider reasons.
+
 ## CLI Examples
 
 Batch convert a folder:
