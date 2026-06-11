@@ -28,12 +28,14 @@ try:
     from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
     from ebook_markdown_pipeline.markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ebook_markdown_pipeline.ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
+    from ebook_markdown_pipeline.pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, camelot_available, pdfplumber_available
     from ebook_markdown_pipeline.structure_repair import HeadingCandidate, repair_markdown_structure
 except ModuleNotFoundError:  # Allows running this file directly by absolute path.
     from local_env import load_project_env
     from docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
     from markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
+    from pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, camelot_available, pdfplumber_available
     from structure_repair import HeadingCandidate, repair_markdown_structure
 
 load_project_env()
@@ -901,6 +903,22 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
     )
     checks.append(
         {
+            "name": "pdfplumber",
+            "kind": "python",
+            "status": "ok" if pdfplumber_available() else "missing",
+            "detail": "PDF layout/table diagnostics available" if pdfplumber_available() else "optional PDF diagnostics backend not installed",
+        }
+    )
+    checks.append(
+        {
+            "name": "Camelot",
+            "kind": "python",
+            "status": "ok" if camelot_available() else "missing",
+            "detail": "text-based PDF table extraction available" if camelot_available() else "optional table extraction backend not installed",
+        }
+    )
+    checks.append(
+        {
             "name": "PyMuPDF",
             "kind": "python",
             "status": "ok" if pymupdf_available() else "missing",
@@ -999,6 +1017,8 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
     docling_ok = check_ok("docling")
     markitdown_ok = check_ok("markitdown")
     ocrmypdf_ok = check_ok("OCRmyPDF")
+    pdfplumber_ok = check_ok("pdfplumber")
+    camelot_ok = check_ok("Camelot")
     umi_ok = check_ok("Umi PaddleOCR module")
     paddle_vl_ok = check_ok("PaddleOCR-VL wrapper")
     qwen_vl_ok = check_ok("Qwen-VL wrapper")
@@ -1099,6 +1119,28 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
             "Use OCRmyPDF to create searchable PDFs before fast text-layer conversion."
             if ocrmypdf_ok
             else "Install OCRmyPDF/Tesseract only if you need scanned PDF preprocessing.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
+            "pdf_layout_diagnostics",
+            "ok" if pdfplumber_ok else "missing",
+            "pdfplumber diagnostics are available." if pdfplumber_ok else "pdfplumber is not installed.",
+            "Use pdfplumber diagnostics to explain table, image, column, and header/footer risks."
+            if pdfplumber_ok
+            else "Install pdfplumber if you need PDF table/coordinate diagnostics.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
+            "pdf_table_extraction",
+            "ok" if camelot_ok else "missing",
+            "Camelot table extraction is available." if camelot_ok else "Camelot is not installed.",
+            "Use Camelot only for text-based PDF table extraction."
+            if camelot_ok
+            else "Install Camelot only if you need dedicated text-based PDF table extraction.",
         )
     )
 
@@ -3555,6 +3597,12 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
     if Path(result.source).suffix.lower() == ".pdf":
         payload["pdf_preflight"] = asdict(pdf_preflight(Path(result.source), args))
         payload["pdf_outline"] = extract_pdf_outline(Path(result.source))
+        table_output_dir = report_dir / "tables" / safe_report_name(output_path.stem)
+        payload["pdf_layout_diagnostics"] = analyze_pdf_layout_with_pdfplumber(
+            Path(result.source),
+            sample_pages=8,
+            output_dir=table_output_dir,
+        )
         if result.output and Path(result.output).exists():
             payload["pdf_outline_alignment"] = pdf_outline_markdown_alignment(
                 payload["pdf_outline"],

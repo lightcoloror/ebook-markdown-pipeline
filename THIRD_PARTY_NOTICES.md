@@ -25,6 +25,8 @@ This is an engineering compliance note, not legal advice.
 | Docling | Optional Office/document/PDF structure backend | Installed separately; check upstream license and model dependencies |
 | Microsoft MarkItDown | Optional fast multi-format Markdown baseline | MIT-licensed upstream project; installed separately |
 | OCRmyPDF | Optional scanned PDF preprocessing to searchable PDF | MPL-2.0 upstream project; installed separately with Tesseract |
+| pdfplumber | Optional PDF layout, coordinate, and table diagnostics | MIT-licensed upstream project; installed separately |
+| Camelot | Optional text-based PDF table extraction candidate | MIT-licensed upstream project; installed separately |
 | Umi-OCR / PaddleOCR-json | OCR fallback workflow | Installed separately; check upstream licenses and bundled OCR model licenses |
 | PaddleOCR-VL | Optional infographic/layout-heavy image enhancement | Installed separately or called through wrappers; check upstream model/license terms |
 | Qwen-VL | Optional heavier VLM image enhancement | Model and runtime are installed separately; check upstream model/license terms |

@@ -70,6 +70,13 @@ OCRmyPDF preprocessing:
 - It writes a searchable PDF artifact under `.reports/ocrmypdf/`, then runs the fast PDF conversion path on that generated PDF.
 - The original source PDF is not overwritten.
 
+PDF layout/table diagnostics:
+
+- When pdfplumber is installed, PDF reports may include `pdf_layout_diagnostics`.
+- The diagnostics are explanatory artifacts for table pages, image-heavy pages, two-column pages, and repeated header/footer candidates.
+- Candidate table artifacts are written under `.reports/tables/<source>/` as `table-diagnostics.json`, CSV, and Markdown when extractable.
+- pdfplumber and Camelot are not main PDF-to-Markdown routes; agents should use them to decide whether a table-focused rerun or manual review is needed.
+
 Return shape:
 
 ```json

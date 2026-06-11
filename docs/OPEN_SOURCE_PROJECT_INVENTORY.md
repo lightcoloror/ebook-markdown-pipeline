@@ -23,6 +23,7 @@
 | Docling | Office、HTML、CSV、部分文档/PDF 结构化后端 | 可选 Python 后端 | 官方仓库标注 MIT，但模型/扩展依赖仍需复核 | 继续作为结构化后端候选并记录版本 |
 | Microsoft MarkItDown | EPUB/DOCX/PPTX/XLSX/HTML/PDF 的轻量 Markdown baseline | 可选 Python 后端，显式选择后启用 | MIT，仍需记录为独立安装依赖 | 作为 fast comparison/backend-compare 使用，不替代默认推荐管道 |
 | OCRmyPDF | 扫描 PDF 预处理为 searchable PDF | 可选外部命令，显式选择后启用 | MPL-2.0，Tesseract/语言包另需记录 | 作为扫描 PDF 预处理，不直接输出 Markdown，不覆盖原 PDF |
+| pdfplumber | PDF 版面、坐标、表格候选诊断 | 可选 Python 后端，report 诊断层启用 | MIT，仍需记录为独立安装依赖 | 用于解释质量差、表格页、双栏、页眉页脚噪声，不作为主转换器 |
 | Umi-OCR / PaddleOCR-json | 图片、扫描页、本地 OCR 兜底 | 外部本地程序/模块路径 | 需检查程序、模型、PaddleOCR-json 各自许可证 | 保持外部工具接入，程序和模型分别记录 |
 | PaddleOCR-VL | 信息图、复杂版面、layout-heavy 图片补强 | 可选 wrapper/命令 | 需检查代码、模型权重、商用条款 | 作为可选增强后端，模型条款单独复核 |
 | Qwen-VL | 重型 VLM 图文理解补强 | 可选 wrapper/API | 模型许可和商用条款需逐模型复核 | 作为可选增强后端，模型条款单独复核 |
@@ -218,7 +219,7 @@
 
 | 优先级 | 项目 | 对应模块 | 理由 |
 | --- | --- | --- | --- |
-| 1 | pdfplumber + Camelot | PDF 表格和坐标诊断 | 补当前表格专项弱项，且更适合 text-based PDF。 |
+| 1 | Camelot | PDF 表格专项抽取 | pdfplumber 诊断已接入；Camelot 继续补 text-based PDF 表格专项抽取。 |
 | 2 | RapidOCR | 低配本地 OCR | 适合 CPU 机器和轻量 OCR fallback。 |
 | 3 | Apache Tika | 格式识别和兜底抽文本 | 补非主流格式嗅探和 metadata/text fallback。 |
 | 4 | GROBID | 学术论文专项 | 只在论文/参考文献场景明确时接入。 |
@@ -226,6 +227,7 @@
 
 MarkItDown 已完成第一步可选接入，后续任务转为扩大对比样本和记录质量差异，而不是继续作为待接入候选。
 OCRmyPDF 已完成可选预处理入口，后续任务转为补前后文本层质量指标、失败 fallback 和公开扫描 PDF fixture。
+pdfplumber 已完成 report 诊断入口，后续任务转为补 Camelot 专项抽取、UI 复查清单显示和表格保留率质量指标。
 
 ## 已核验来源
 

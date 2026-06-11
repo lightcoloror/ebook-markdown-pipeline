@@ -19,6 +19,8 @@ These tools are invoked as local commands, Python packages, or wrappers when ava
 | Docling | Optional Office/document/PDF structure backend | Called as an optional backend when installed. |
 | Microsoft MarkItDown | Optional fast multi-format Markdown baseline for EPUB/DOCX/PPTX/XLSX/HTML/PDF comparison | Called through its Python API when explicitly selected. |
 | OCRmyPDF | Optional scanned PDF preprocessing into searchable PDFs | Called as an external command when explicitly selected or recommended for rerun. |
+| pdfplumber | Optional PDF layout, coordinate, and table diagnostics | Used through Python API for report evidence; not a main conversion route. |
+| Camelot | Optional text-based PDF table extraction candidate | Kept as a specialized table backend candidate; not required for normal conversion. |
 | Umi-OCR / PaddleOCR-json | Local OCR fallback for images and scanned pages | Called through local executable/module paths configured by the user. |
 | PaddleOCR-VL wrapper | Optional infographic/layout-heavy image enhancement | Called through project wrapper scripts when configured. |
 | Qwen-VL wrapper | Optional heavier VLM enhancement for difficult images | Called through project wrapper scripts when configured. |

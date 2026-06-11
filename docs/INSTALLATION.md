@@ -60,6 +60,8 @@ Optional backends:
 | MinerU | Complex PDF structure recovery | Heavy; may need model downloads and enough RAM/GPU/CPU time. |
 | Marker | Short layout-heavy PDF parsing | Heavy; model/network setup can be slow. |
 | OCRmyPDF | Scanned PDF preprocessing into searchable PDF | Install with Tesseract; use explicitly or through recommended reruns. |
+| pdfplumber | PDF layout/table/coordinate diagnostics | Optional; writes diagnostic evidence, not a main Markdown conversion path. |
+| Camelot | Text-based PDF table extraction | Optional future/advanced backend; use only for table-heavy text PDFs. |
 | Umi-OCR / PaddleOCR-json | Scanned PDF/image OCR fallback | Configure paths through environment variables. |
 | Docling | Office/document formats and optional PDF comparison | Install only when needed. |
 | MarkItDown | Fast multi-format Markdown baseline | Install only when you need comparison evidence. |
