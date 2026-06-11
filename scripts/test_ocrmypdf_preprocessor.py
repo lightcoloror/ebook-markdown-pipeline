@@ -10,8 +10,10 @@ sys.path.insert(0, str(PROJECT_DIR.parent))
 from ebook_markdown_pipeline import default_options, normalize_command_options  # noqa: E402
 from ebook_markdown_pipeline.batch_convert_books import (  # noqa: E402
     PDF_PIPELINE_MODES,
+    PdfPreflight,
     dependency_health_report,
     find_missing_dependencies,
+    ocrmypdf_text_layer_summary,
     pipeline_name,
 )
 from ebook_markdown_pipeline.document_inspector import inspect_pdf  # noqa: E402
@@ -61,6 +63,61 @@ def main() -> int:
         actions = inspection.get("next_actions") or []
         if not any(action.get("pdf_pipeline_mode") == "ocrmypdf" for action in actions):
             raise AssertionError(f"Scanned-like PDF should recommend OCRmyPDF preprocessing as a next action: {actions}")
+
+        before = PdfPreflight(
+            page_count=10,
+            sampled_pages=2,
+            bookmark_count=0,
+            text_page_ratio=0.0,
+            avg_text_chars=12.0,
+            avg_text_blocks=0.0,
+            image_page_ratio=1.0,
+            avg_image_area_ratio=0.8,
+            toc_like_pages=0,
+            table_like_pages=0,
+            two_column_like_pages=0,
+            slide_aspect_page_ratio=0.0,
+            presentation_like=False,
+            scanned_likely=True,
+            complex_layout_likely=False,
+            recommended_pipeline="ocrmypdf",
+            reasons=["weak text layer"],
+        )
+        after = PdfPreflight(
+            page_count=10,
+            sampled_pages=2,
+            bookmark_count=0,
+            text_page_ratio=1.0,
+            avg_text_chars=212.0,
+            avg_text_blocks=8.0,
+            image_page_ratio=1.0,
+            avg_image_area_ratio=0.8,
+            toc_like_pages=0,
+            table_like_pages=0,
+            two_column_like_pages=0,
+            slide_aspect_page_ratio=0.0,
+            presentation_like=False,
+            scanned_likely=False,
+            complex_layout_likely=False,
+            recommended_pipeline="pymupdf4llm",
+            reasons=["text layer present"],
+        )
+        summary = ocrmypdf_text_layer_summary(before, after)
+        expected = {
+            "before_text_page_ratio": 0.0,
+            "after_text_page_ratio": 1.0,
+            "text_page_ratio_delta": 1.0,
+            "before_avg_text_chars": 12.0,
+            "after_avg_text_chars": 212.0,
+            "avg_text_chars_delta": 200.0,
+            "before_sampled_text_characters": 24,
+            "after_sampled_text_characters": 424,
+            "sampled_ocr_characters_added": 400,
+            "before_scanned_likely": True,
+            "after_scanned_likely": False,
+        }
+        if summary != expected:
+            raise AssertionError(f"OCRmyPDF text-layer summary should be stable and machine-readable: {summary}")
 
         # Availability is environment-dependent; this call should be safe either way.
         ocrmypdf_available()

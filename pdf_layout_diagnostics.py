@@ -94,6 +94,12 @@ def analyze_pdf_layout_with_pdfplumber(
         return payload
 
     table_pages = [item["page"] for item in pages if item.get("table_count")]
+    camelot_diagnostics = extract_tables_with_camelot(
+        source,
+        output_dir=output_dir,
+        candidate_pages=table_pages,
+        max_tables=max_tables,
+    )
     two_column_pages = [item["page"] for item in pages if item.get("two_column_likely")]
     image_heavy_pages = [item["page"] for item in pages if int(item.get("image_count") or 0) >= 1 and int(item.get("text_chars") or 0) < 200]
     repeated_noise = [
@@ -113,13 +119,91 @@ def analyze_pdf_layout_with_pdfplumber(
             "image_heavy_pages": image_heavy_pages,
             "repeated_header_footer_candidates": repeated_noise,
             "table_artifact_count": len(table_artifacts),
+            "camelot_table_artifact_count": len(camelot_diagnostics.get("table_artifacts") or []),
             "camelot_available": camelot_available(),
+            "camelot_status": camelot_diagnostics.get("status"),
         },
         "table_artifacts": table_artifacts,
+        "camelot_diagnostics": camelot_diagnostics,
     }
     if output_dir:
         (output_dir / "table-diagnostics.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return payload
+
+
+def extract_tables_with_camelot(
+    source: Path,
+    *,
+    output_dir: Path | None,
+    candidate_pages: list[int],
+    max_tables: int,
+) -> dict[str, Any]:
+    if not candidate_pages:
+        return {
+            "status": "skipped_no_table_pages",
+            "tool": "camelot",
+            "source": str(source),
+            "candidate_pages": [],
+            "table_artifacts": [],
+        }
+    if not camelot_available():
+        return {
+            "status": "missing_dependency",
+            "tool": "camelot",
+            "source": str(source),
+            "candidate_pages": candidate_pages,
+            "message": "Camelot is not installed.",
+            "table_artifacts": [],
+        }
+    if output_dir is None:
+        return {
+            "status": "skipped_no_output_dir",
+            "tool": "camelot",
+            "source": str(source),
+            "candidate_pages": candidate_pages,
+            "table_artifacts": [],
+        }
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    import camelot
+
+    pages_spec = ",".join(str(page) for page in candidate_pages)
+    artifacts: list[dict[str, Any]] = []
+    try:
+        tables = camelot.read_pdf(str(source), pages=pages_spec, flavor="stream")
+        for index, table in enumerate(tables, start=1):
+            if len(artifacts) >= max_tables:
+                break
+            rows = dataframe_to_rows(getattr(table, "df", None))
+            artifact = write_table_artifacts(output_dir, int(getattr(table, "page", 0) or 0), index, rows, prefix="camelot")
+            artifact.update(
+                {
+                    "page": int(getattr(table, "page", 0) or 0),
+                    "table_number": index,
+                    "rows": len(rows),
+                    "accuracy": safe_float(getattr(table, "accuracy", None)),
+                    "whitespace": safe_float(getattr(table, "whitespace", None)),
+                }
+            )
+            artifacts.append(artifact)
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "status": "failed",
+            "tool": "camelot",
+            "source": str(source),
+            "candidate_pages": candidate_pages,
+            "pages": pages_spec,
+            "message": str(exc),
+            "table_artifacts": artifacts,
+        }
+    return {
+        "status": "ok",
+        "tool": "camelot",
+        "source": str(source),
+        "candidate_pages": candidate_pages,
+        "pages": pages_spec,
+        "table_artifacts": artifacts,
+    }
 
 
 def sample_indexes(page_count: int, sample_pages: int) -> list[int]:
@@ -179,8 +263,25 @@ def looks_two_column(words: list[dict[str, Any]], page_width: float) -> bool:
     return left >= 12 and right >= 12 and middle <= max(10, int((left + right) * 0.25))
 
 
-def write_table_artifacts(output_dir: Path, page_number: int, table_number: int, rows: list[list[Any]]) -> dict[str, Any]:
-    stem = f"page-{page_number:04d}-table-{table_number:02d}"
+def dataframe_to_rows(dataframe: Any) -> list[list[Any]]:
+    if dataframe is None:
+        return []
+    try:
+        values = dataframe.values.tolist()
+    except Exception:
+        return []
+    return [["" if cell is None else str(cell) for cell in row] for row in values]
+
+
+def safe_float(value: Any) -> float | None:
+    try:
+        return round(float(value), 3)
+    except Exception:
+        return None
+
+
+def write_table_artifacts(output_dir: Path, page_number: int, table_number: int, rows: list[list[Any]], *, prefix: str = "pdfplumber") -> dict[str, Any]:
+    stem = f"{prefix}-page-{page_number:04d}-table-{table_number:02d}"
     csv_path = output_dir / f"{stem}.csv"
     md_path = output_dir / f"{stem}.md"
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:

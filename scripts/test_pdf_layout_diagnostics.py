@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
+import types
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR.parent))
 
-from ebook_markdown_pipeline.pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, pdfplumber_available  # noqa: E402
+import ebook_markdown_pipeline.pdf_layout_diagnostics as diagnostics  # noqa: E402
+from ebook_markdown_pipeline.pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, extract_tables_with_camelot, pdfplumber_available  # noqa: E402
 
 
 def make_text_pdf(path: Path) -> None:
@@ -49,8 +51,51 @@ def main() -> int:
         if persisted.get("status") != "ok" or "summary" not in persisted:
             raise AssertionError(f"Unexpected persisted diagnostics: {persisted}")
 
+        camelot_out = tmpdir / "camelot"
+        original_available = diagnostics.camelot_available
+        original_module = sys.modules.get("camelot")
+        diagnostics.camelot_available = lambda: True
+        sys.modules["camelot"] = fake_camelot_module()
+        try:
+            camelot_result = extract_tables_with_camelot(pdf, output_dir=camelot_out, candidate_pages=[1], max_tables=5)
+        finally:
+            diagnostics.camelot_available = original_available
+            if original_module is None:
+                sys.modules.pop("camelot", None)
+            else:
+                sys.modules["camelot"] = original_module
+        if camelot_result.get("status") != "ok" or not camelot_result.get("table_artifacts"):
+            raise AssertionError(f"Expected fake Camelot table artifacts: {camelot_result}")
+        artifact = camelot_result["table_artifacts"][0]
+        if not Path(artifact["csv"]).exists() or not Path(artifact["markdown"]).exists():
+            raise AssertionError(f"Expected Camelot CSV/Markdown artifacts: {artifact}")
+        if "Revenue" not in Path(artifact["markdown"]).read_text(encoding="utf-8"):
+            raise AssertionError(f"Expected Camelot Markdown table content: {artifact}")
+
     print("PDF layout diagnostics test passed.")
     return 0
+
+
+def fake_camelot_module():
+    class FakeValues:
+        def tolist(self):
+            return [["Metric", "Q1"], ["Revenue", "120"]]
+
+    class FakeDataFrame:
+        values = FakeValues()
+
+    class FakeTable:
+        page = 1
+        df = FakeDataFrame()
+        accuracy = 99.2
+        whitespace = 3.1
+
+    def read_pdf(source: str, *, pages: str, flavor: str):
+        if pages != "1" or flavor != "stream":
+            raise AssertionError(f"Unexpected Camelot call: {source}, {pages}, {flavor}")
+        return [FakeTable()]
+
+    return types.SimpleNamespace(read_pdf=read_pdf)
 
 
 if __name__ == "__main__":

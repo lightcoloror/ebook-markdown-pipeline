@@ -1698,8 +1698,7 @@ def run_ocrmypdf_pdf_convert(
         diagnostic.update(ocr_result)
         after = inspect_pdf_preflight(searchable_pdf, args, sample_pages=8)
         diagnostic["after_preflight"] = asdict(after)
-        diagnostic["text_page_ratio_delta"] = round(after.text_page_ratio - before.text_page_ratio, 3)
-        diagnostic["avg_text_chars_delta"] = round(after.avg_text_chars - before.avg_text_chars, 1)
+        diagnostic.update(ocrmypdf_text_layer_summary(before, after))
     except OCRmyPDFPreprocessError as exc:
         diagnostic.update(getattr(exc, "diagnostic", {}) or {})
         diagnostic["status"] = "failed" if diagnostic.get("status") == "running" else diagnostic.get("status", "failed")
@@ -1719,6 +1718,24 @@ def run_ocrmypdf_pdf_convert(
     args._last_pdf_pipeline = f"ocrmypdf+{converted_pipeline}"
     if previous_pipeline and previous_pipeline != args._last_pdf_pipeline:
         diagnostic["previous_pipeline"] = previous_pipeline
+
+
+def ocrmypdf_text_layer_summary(before: PdfPreflight, after: PdfPreflight) -> dict[str, object]:
+    before_sampled_chars = int(round(before.avg_text_chars * before.sampled_pages))
+    after_sampled_chars = int(round(after.avg_text_chars * after.sampled_pages))
+    return {
+        "before_text_page_ratio": before.text_page_ratio,
+        "after_text_page_ratio": after.text_page_ratio,
+        "text_page_ratio_delta": round(after.text_page_ratio - before.text_page_ratio, 3),
+        "before_avg_text_chars": before.avg_text_chars,
+        "after_avg_text_chars": after.avg_text_chars,
+        "avg_text_chars_delta": round(after.avg_text_chars - before.avg_text_chars, 1),
+        "before_sampled_text_characters": before_sampled_chars,
+        "after_sampled_text_characters": after_sampled_chars,
+        "sampled_ocr_characters_added": max(after_sampled_chars - before_sampled_chars, 0),
+        "before_scanned_likely": before.scanned_likely,
+        "after_scanned_likely": after.scanned_likely,
+    }
 
 
 def run_markitdown_backend(source: Path, output_path: Path, args: argparse.Namespace) -> dict:
@@ -3812,6 +3829,8 @@ def pdf_layout_review_summary(layout: dict) -> dict:
         "repeated_header_footer_candidates": list(summary.get("repeated_header_footer_candidates") or [])[:10],
         "table_artifact_count": summary.get("table_artifact_count", 0),
         "camelot_available": summary.get("camelot_available"),
+        "camelot_status": summary.get("camelot_status"),
+        "camelot_table_artifact_count": summary.get("camelot_table_artifact_count", 0),
     }
 
 
@@ -3838,6 +3857,10 @@ def pdf_layout_review_reasons(layout: dict) -> list[str]:
         reasons.append("疑似重复页眉页脚/页码噪声")
     if int(summary.get("table_artifact_count") or 0) > 0:
         reasons.append(f"已导出表格候选 artifact: {summary.get('table_artifact_count')}")
+    if int(summary.get("camelot_table_artifact_count") or 0) > 0:
+        reasons.append(f"Camelot 已导出表格 artifact: {summary.get('camelot_table_artifact_count')}")
+    elif summary.get("camelot_status") == "failed":
+        reasons.append("Camelot 表格专项抽取失败，需查看 table-diagnostics.json")
     return reasons
 
 

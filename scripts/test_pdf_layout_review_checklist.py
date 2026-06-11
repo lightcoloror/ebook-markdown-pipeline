@@ -37,6 +37,8 @@ def main() -> int:
                     "repeated_header_footer_candidates": [{"text": "Header", "count": 3}],
                     "table_artifact_count": 1,
                     "camelot_available": False,
+                    "camelot_status": "ok",
+                    "camelot_table_artifact_count": 2,
                 },
             },
         }
@@ -49,6 +51,11 @@ def main() -> int:
     reasons = " ".join(item.get("pdf_layout_reasons") or [])
     if "疑似表格页" not in reasons or "疑似双栏页" not in reasons or "疑似重复页眉页脚" not in reasons:
         raise AssertionError(f"Expected layout reasons in review item: {item}")
+    if "Camelot 已导出表格 artifact" not in reasons:
+        raise AssertionError(f"Expected Camelot artifact reason in review item: {item}")
+    layout_summary = item.get("pdf_layout_diagnostics") or {}
+    if layout_summary.get("camelot_status") != "ok" or layout_summary.get("camelot_table_artifact_count") != 2:
+        raise AssertionError(f"Expected Camelot fields in layout summary: {layout_summary}")
     action_names = {action.get("action") for action in item.get("next_actions") or []}
     expected_actions = {"inspect_table_diagnostics", "compare_pdf_pipelines", "inspect_noise"}
     if not expected_actions.issubset(action_names):
