@@ -165,6 +165,8 @@ python -m pip install -r requirements-markitdown.txt
 python scripts\run_quality_gate.py --profile backend-compare
 ```
 
+`backend-compare` runs the minimal public fixture set twice: first with the current default benchmark routing, then with `document/pdf = markitdown`. It writes the default run under `baseline/`, the MarkItDown run under `markitdown/`, and the delta report under `backend-comparison/benchmark-quality-comparison.md`.
+
 To compare lightweight image OCR providers on public or local image samples:
 
 ```powershell

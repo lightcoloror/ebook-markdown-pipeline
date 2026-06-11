@@ -17,6 +17,7 @@
 - pdfplumber/Camelot 方向已收束为 PDF layout diagnostics、表格候选和复查信号，不作为默认 PDF-to-Markdown 主转换器。
 - RapidOCR 已作为可选 image OCR provider 接入，并开始支持与 Umi-OCR 的 provider comparison benchmark。
 - 公开质量 fixture 已开始覆盖 OCR provider 分类，当前正在补 PDF 表格 fixture 与表格保留率指标。
+- `run_quality_gate.py --profile backend-compare` 已改为三段式：默认 baseline、MarkItDown candidate、`backend-comparison/benchmark-quality-comparison.*` 差异报告。
 - README、安装文档、开源项目清单、架构图、Agent contract 已经具备对外解释基础，但仍需要持续压缩本机化痕迹和降低新用户上手成本。
 
 ## P0：完成当前未提交质量回归改动
@@ -60,7 +61,7 @@
 - 固定公开 fixture 集，不使用版权书，覆盖 EPUB、FB2、TXT、RTF、ODT、文本层 PDF、扫描 PDF、双栏 PDF、表格 PDF、图片信息图、PPT 导出 PDF。
 - 固定质量指标：成功率、标题数量、目录匹配率、页码/脚注噪声、OCR 字符量、review/poor 数、运行时间、fallback 是否合理、表格保留率。
 - 将 `python scripts/run_quality_gate.py --profile minimal` 作为普通开发前后必跑命令。
-- 增加 `backend-compare` 和 `full` 两档，用于改 PDF/OCR/结构修复时跑更完整的回归。
+- 维护 `backend-compare` 和 `full` 两档，用于改 PDF/OCR/结构修复时跑更完整的回归。
 - 保持私人真实样本评测为本地未提交 manifest，不进入公开仓库。
 
 涉及文件：

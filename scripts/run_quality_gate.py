@@ -40,8 +40,11 @@ def main() -> int:
         raise FileNotFoundError(f"quality fixture manifest not found: {manifest}")
 
     output = (args.output or DEFAULT_OUTPUT / time.strftime("%Y%m%d-%H%M%S")).resolve()
-    document_mode = "markitdown" if args.profile == "backend-compare" else args.document_mode_for_benchmark
-    pdf_mode = "markitdown" if args.profile == "backend-compare" else args.pdf_mode_for_benchmark
+    if args.profile == "backend-compare":
+        return run_backend_compare(args, manifest, output)
+
+    document_mode = args.document_mode_for_benchmark
+    pdf_mode = args.pdf_mode_for_benchmark
     command = [
         sys.executable,
         str(PROJECT_DIR / "scripts" / "run_benchmarks.py"),
@@ -86,6 +89,124 @@ def main() -> int:
         )
     )
     return result.returncode
+
+
+def run_backend_compare(args: argparse.Namespace, manifest: Path, output: Path) -> int:
+    baseline_output = output / "baseline"
+    candidate_output = output / "markitdown"
+    comparison_output = output / "backend-comparison"
+    fail_on_quality_gate = not args.no_fail_on_quality_gate
+
+    baseline = run_benchmark_command(
+        manifest=manifest,
+        output=baseline_output,
+        sample_timeout=args.sample_timeout,
+        pdf_mode=args.pdf_mode_for_benchmark,
+        document_mode=args.document_mode_for_benchmark,
+        args=args,
+        fail_on_quality_gate=fail_on_quality_gate,
+    )
+    candidate = run_benchmark_command(
+        manifest=manifest,
+        output=candidate_output,
+        sample_timeout=args.sample_timeout,
+        pdf_mode="markitdown",
+        document_mode="markitdown",
+        args=args,
+        fail_on_quality_gate=fail_on_quality_gate,
+    )
+    comparison = run(
+        [
+            sys.executable,
+            str(PROJECT_DIR / "scripts" / "compare_benchmark_quality.py"),
+            "--baseline",
+            str(baseline_output / "quality-regression-summary.json"),
+            "--candidate",
+            str(candidate_output / "quality-regression-summary.json"),
+            "--output",
+            str(comparison_output),
+        ],
+        check=False,
+    )
+    exit_code = first_nonzero([baseline.returncode, candidate.returncode, comparison.returncode])
+    print(
+        json.dumps(
+            {
+                "profile": args.profile,
+                "manifest": str(manifest),
+                "output": str(output),
+                "baseline": {
+                    "output": str(baseline_output),
+                    "pdf_mode_for_benchmark": args.pdf_mode_for_benchmark,
+                    "document_mode_for_benchmark": args.document_mode_for_benchmark,
+                    "quality_summary": str(baseline_output / "quality-regression-summary.md"),
+                    "exit_code": baseline.returncode,
+                },
+                "candidate": {
+                    "output": str(candidate_output),
+                    "pdf_mode_for_benchmark": "markitdown",
+                    "document_mode_for_benchmark": "markitdown",
+                    "quality_summary": str(candidate_output / "quality-regression-summary.md"),
+                    "exit_code": candidate.returncode,
+                },
+                "comparison": {
+                    "output": str(comparison_output),
+                    "summary": str(comparison_output / "benchmark-quality-comparison.md"),
+                    "exit_code": comparison.returncode,
+                },
+                "exit_code": exit_code,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return exit_code
+
+
+def run_benchmark_command(
+    *,
+    manifest: Path,
+    output: Path,
+    sample_timeout: float,
+    pdf_mode: str,
+    document_mode: str,
+    args: argparse.Namespace,
+    fail_on_quality_gate: bool,
+) -> subprocess.CompletedProcess[str]:
+    command = [
+        sys.executable,
+        str(PROJECT_DIR / "scripts" / "run_benchmarks.py"),
+        "--manifest",
+        str(manifest),
+        "--output",
+        str(output),
+        "--sample-timeout",
+        str(sample_timeout),
+        "--pdf-mode-for-benchmark",
+        pdf_mode,
+        "--document-mode-for-benchmark",
+        document_mode,
+        "--min-success-rate",
+        str(args.min_success_rate),
+        "--min-good-rate",
+        str(args.min_good_rate),
+        "--max-review-poor-rate",
+        str(args.max_review_poor_rate),
+        "--max-timeout-rate",
+        str(args.max_timeout_rate),
+        "--max-failed-rate",
+        str(args.max_failed_rate),
+    ]
+    if fail_on_quality_gate:
+        command.append("--fail-on-quality-gate")
+    return run(command, check=False)
+
+
+def first_nonzero(codes: list[int]) -> int:
+    for code in codes:
+        if code:
+            return code
+    return 0
 
 
 def run(command: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:

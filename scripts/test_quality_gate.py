@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+import importlib.util
 import json
 import subprocess
 import sys
@@ -102,12 +104,81 @@ def main() -> int:
         for needle in ["Average TOC match ratio", "OCR characters", "Table retention ratio", "Structure repair decisions", "Average duration seconds", "Review or poor"]:
             if needle not in quality_text:
                 raise AssertionError(f"Quality regression Markdown missing {needle}: {quality_text}")
+
+        quality_gate_module = load_run_quality_gate()
+        backend_output = root / "backend-compare"
+        manifest = fixtures / "quality-minimal.json"
+        seen_modes: list[tuple[str, str, Path]] = []
+        original_run = quality_gate_module.run
+
+        def fake_run(command: list[str], *, check: bool = True):
+            script = Path(command[1]).name if len(command) > 1 else ""
+            if script == "run_benchmarks.py":
+                output_dir = Path(command[command.index("--output") + 1])
+                pdf_mode = command[command.index("--pdf-mode-for-benchmark") + 1]
+                document_mode = command[command.index("--document-mode-for-benchmark") + 1]
+                seen_modes.append((pdf_mode, document_mode, output_dir))
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "quality-regression-summary.json").write_text(
+                    json.dumps(
+                        {
+                            "schema_version": "quality-regression-summary-v1",
+                            "summary": {"total": 1, "scored": 1, "status_counts": {"ok": 1}, "review_or_poor": 0},
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                (output_dir / "quality-regression-summary.md").write_text("# Quality\n", encoding="utf-8")
+            elif script == "compare_benchmark_quality.py":
+                output_dir = Path(command[command.index("--output") + 1])
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "benchmark-quality-comparison.json").write_text("{}", encoding="utf-8")
+                (output_dir / "benchmark-quality-comparison.md").write_text("# Compare\n", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0)
+
+        quality_gate_module.run = fake_run
+        try:
+            exit_code = quality_gate_module.run_backend_compare(
+                argparse.Namespace(
+                    profile="backend-compare",
+                    sample_timeout=60.0,
+                    pdf_mode_for_benchmark="fast",
+                    document_mode_for_benchmark="auto",
+                    min_success_rate=0.95,
+                    min_good_rate=0.30,
+                    max_review_poor_rate=0.70,
+                    max_timeout_rate=0.0,
+                    max_failed_rate=0.0,
+                    no_fail_on_quality_gate=True,
+                ),
+                manifest,
+                backend_output,
+            )
+        finally:
+            quality_gate_module.run = original_run
+        if exit_code != 0:
+            raise AssertionError(f"Expected backend compare fake run to pass: {exit_code}")
+        expected_modes = [("fast", "auto", backend_output / "baseline"), ("markitdown", "markitdown", backend_output / "markitdown")]
+        if seen_modes != expected_modes:
+            raise AssertionError(f"Backend compare should run baseline then MarkItDown candidate: {seen_modes}")
+        if not (backend_output / "backend-comparison" / "benchmark-quality-comparison.md").exists():
+            raise AssertionError("Backend compare should write benchmark-quality-comparison.md")
     print("Quality gate smoke test passed.")
     return 0
 
 
 def run(script: str, *args: str) -> None:
     subprocess.run([sys.executable, str(PROJECT_DIR / "scripts" / script), *args], cwd=PROJECT_DIR, check=True)
+
+
+def load_run_quality_gate():
+    path = PROJECT_DIR / "scripts" / "run_quality_gate.py"
+    spec = importlib.util.spec_from_file_location("run_quality_gate", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Could not load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 if __name__ == "__main__":
