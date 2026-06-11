@@ -83,16 +83,33 @@ Return shape:
 
 ```json
 {
+  "schema_version": "process-material-v2",
   "status": "routed",
   "route": "start_image_book_rebuild",
   "inspection": {},
   "delegated": {},
   "job_id": "job-...",
+  "artifacts": [],
+  "quality_summary": {
+    "status": "pending",
+    "job_id": "job-..."
+  },
   "warnings": [],
   "errors": [],
-  "next_actions": []
+  "next_actions": [],
+  "recommended_followup": {
+    "action": "poll_job_status",
+    "tool": "get_job_status",
+    "arguments": {
+      "job_id": "job-..."
+    },
+    "safe_default": true,
+    "destructive": false
+  }
 }
 ```
+
+`next_actions` and `recommended_followup` are machine-actionable. Every action exposes `tool`, `arguments`, `safe_default`, and `destructive=false` unless the action is explicitly destructive. Multi-run comparison actions may also include `arguments_list`; `arguments` remains populated with a representative safe run so older agents can still validate non-overwriting reruns.
 
 ## Long Jobs
 
@@ -334,6 +351,7 @@ Use `risk_status` as a quick preflight:
 
 ```json
 {
+  "schema_version": "health-check-v2",
   "checks": [],
   "capabilities": [
     {
@@ -343,6 +361,17 @@ Use `risk_status` as a quick preflight:
       "action": "Use MinerU for complex PDFs."
     }
   ],
+  "provider_status": {},
+  "backend_status": {
+    "ready": ["structured_ebooks", "pdf_fast_text"],
+    "degraded": ["gpu_acceleration"],
+    "missing": ["docling_documents"]
+  },
+  "capability_status": {
+    "ready": ["structured_ebooks", "pdf_fast_text"],
+    "degraded": ["gpu_acceleration"],
+    "missing": ["docling_documents"]
+  },
   "ready_capabilities": ["structured_ebooks", "pdf_fast_text"],
   "degraded_capabilities": ["gpu_acceleration"],
   "missing_capabilities": ["docling_documents"]
@@ -351,7 +380,7 @@ Use `risk_status` as a quick preflight:
 
 Agents should use `capabilities` before choosing heavy PDF/OCR routes. For example, if `pdf_structure_recovery` is missing, prefer `pdf_fast_text`, `local_ocr`, or a user-visible health fix instead of blindly launching MinerU.
 
-`get_agent_contract` and HTTP `/contract` also expose the same operating context fields: `pipeline_capabilities`, `risk_status`, `config_sources`, `local_env_exists`, `local_env_loaded_keys`, `route_defaults`, and `long_task_guidance`. Agents should use these fields instead of guessing ports, assuming every optional backend is installed, or launching heavy whole-document OCR/VLM jobs synchronously. `local_env_loaded_keys` lists environment variable names only and must not contain secret values.
+`get_agent_contract`, HTTP `/contract`, HTTP `/health`, and HTTP `/capabilities` also expose the same operating context fields: `pipeline_capabilities`, `risk_status`, `config_sources`, `local_env_exists`, `local_env_loaded_keys`, `route_defaults`, provider/backend status, and `long_task_guidance`. Agents should use these fields instead of guessing ports, assuming every optional backend is installed, or launching heavy whole-document OCR/VLM jobs synchronously. `local_env_loaded_keys` lists environment variable names only and must not contain secret values.
 
 For persistent handoff, use `export_environment_report`. It writes `environment-report.md`, `environment-report.json`, `environment-lock.json`, and `requirements.lock.txt`, returns their paths, and exposes them as readable artifacts. Use this before large unattended batches or when another agent needs to understand or compare the machine state without shell access.
 

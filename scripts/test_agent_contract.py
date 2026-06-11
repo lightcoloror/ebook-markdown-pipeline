@@ -46,11 +46,27 @@ REQUIRED_TOOLS = {
     "rebuild_image_book_from_order",
 }
 
-PROCESS_MATERIAL_FIELDS = {"status", "route", "inspection", "job_id", "warnings", "errors", "next_actions"}
+PROCESS_MATERIAL_FIELDS = {
+    "schema_version",
+    "status",
+    "route",
+    "inspection",
+    "job_id",
+    "artifacts",
+    "quality_summary",
+    "warnings",
+    "errors",
+    "next_actions",
+    "recommended_followup",
+}
 HEALTH_FIELDS = {
+    "schema_version",
     "checks",
     "capabilities",
     "online_provider_health",
+    "provider_status",
+    "backend_status",
+    "capability_status",
     "ok",
     "ready_capabilities",
     "degraded_capabilities",
@@ -99,8 +115,12 @@ def main() -> int:
             },
         )
         assert_fields("process_material", routed, PROCESS_MATERIAL_FIELDS)
+        if routed.get("schema_version") != "process-material-v2":
+            raise AssertionError(f"process_material should expose v2 schema: {routed}")
         if routed["status"] != "routed" or routed["route"] != "start_image_book_rebuild":
             raise AssertionError(f"Unexpected process_material route: {routed}")
+        assert_executable_next_actions(routed.get("next_actions") or [])
+        assert_executable_next_actions([routed.get("recommended_followup") or {}])
 
         job = poll_job(str(routed["job_id"]))
         assert_fields("job", job, JOB_FIELDS)
@@ -119,8 +139,12 @@ def main() -> int:
 
         health = call_tool("health_check", {"input": str(image_dir), "output": str(output_dir)})
         assert_fields("health_check", health, HEALTH_FIELDS)
+        if health.get("schema_version") != "health-check-v2":
+            raise AssertionError(f"health_check should expose v2 schema: {health}")
         if not isinstance(health.get("capabilities"), list) or not health["capabilities"]:
             raise AssertionError(f"health_check must expose capability matrix: {health}")
+        if not isinstance(health.get("backend_status"), dict) or not isinstance(health.get("provider_status"), dict):
+            raise AssertionError(f"health_check must expose backend/provider status: {health}")
         online_health = health.get("online_provider_health") or {}
         if online_health.get("schema_version") != "online-model-providers-v1":
             raise AssertionError(f"health_check must expose online provider config health: {health}")
@@ -174,6 +198,18 @@ def assert_fields(label: str, payload: dict[str, Any], fields: set[str]) -> None
     missing = sorted(fields - set(payload))
     if missing:
         raise AssertionError(f"{label} missing fields {missing}: {payload}")
+
+
+def assert_executable_next_actions(actions: list[dict[str, Any]]) -> None:
+    for action in actions:
+        if not isinstance(action.get("tool"), str) or not action.get("tool"):
+            raise AssertionError(f"next_action must expose tool: {action}")
+        if not isinstance(action.get("arguments"), dict):
+            raise AssertionError(f"next_action must expose dict arguments: {action}")
+        if not isinstance(action.get("safe_default"), bool):
+            raise AssertionError(f"next_action must expose safe_default bool: {action}")
+        if action.get("destructive") is not False:
+            raise AssertionError(f"next_action must be explicitly non-destructive by default: {action}")
 
 
 def assert_quality_summary_next_actions(tmpdir: Path) -> None:

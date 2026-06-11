@@ -93,6 +93,17 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
                         },
                         "pipeline_capabilities": capabilities,
                         "risk_status": agent_risk_status(capabilities),
+                        "provider_status": operating_context.get("online_provider_health", {}),
+                        "backend_status": {
+                            "ready": capabilities.get("ready", []),
+                            "degraded": capabilities.get("degraded", []),
+                            "missing": capabilities.get("missing", []),
+                        },
+                        "capability_status": {
+                            "ready": capabilities.get("ready", []),
+                            "degraded": capabilities.get("degraded", []),
+                            "missing": capabilities.get("missing", []),
+                        },
                         "operating_context": operating_context,
                         "config_sources": operating_context.get("config_sources", {}),
                         "local_env_exists": operating_context.get("local_env_exists", False),
@@ -100,6 +111,24 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
                         "route_defaults": operating_context.get("route_defaults", {}),
                         "long_task_guidance": operating_context.get("long_task_guidance", {}),
                         "uptime_seconds": round(time.time() - started_at, 3),
+                    }
+                )
+                return
+            if self.path == "/capabilities":
+                capabilities = cached_capability_summary(capability_cache)
+                operating_context = agent_operating_context()
+                self.write_json(
+                    {
+                        "ok": True,
+                        "server": SERVER_NAME,
+                        "version": SERVER_VERSION,
+                        "schema_version": "ebook-capabilities-v1",
+                        "transport": "http",
+                        "pipeline_capabilities": capabilities,
+                        "risk_status": agent_risk_status(capabilities),
+                        "provider_status": operating_context.get("online_provider_health", {}),
+                        "route_defaults": operating_context.get("route_defaults", {}),
+                        "long_task_guidance": operating_context.get("long_task_guidance", {}),
                     }
                 )
                 return
@@ -215,6 +244,7 @@ def http_contract_payload(config: HttpConfig | None = None, *, bind_host: str | 
         ],
         "supports_async_jobs": True,
         "supports_artifacts": True,
+        "capability_endpoints": ["/health", "/capabilities", "/contract"],
         "operating_context": operating_context,
         "pipeline_capabilities": operating_context["pipeline_capabilities"],
         "risk_status": operating_context["risk_status"],

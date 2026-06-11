@@ -847,15 +847,32 @@ def health_check(arguments: dict[str, Any]) -> dict[str, Any]:
     checks = dependency_health_report(sources, options, fast=fast)
     capability_checks = dependency_health_report([], options, fast=fast)
     capabilities = environment_capability_summary(capability_checks)
+    online_health = provider_registry_health(arguments.get("online_providers_config") or arguments.get("online_models_config"))
+    ready = [item["name"] for item in capabilities if item.get("status") == "ok"]
+    degraded = [item["name"] for item in capabilities if item.get("status") == "degraded"]
+    missing = [item["name"] for item in capabilities if item.get("status") == "missing"]
     return {
+        "schema_version": "health-check-v2",
         "checks": checks,
         "capability_checks": capability_checks,
         "capabilities": capabilities,
-        "online_provider_health": provider_registry_health(arguments.get("online_providers_config") or arguments.get("online_models_config")),
+        "online_provider_health": online_health,
+        "provider_status": online_health,
+        "backend_status": {
+            "ready": ready,
+            "degraded": degraded,
+            "missing": missing,
+            "slow_risk": [item["name"] for item in capabilities if str(item.get("detail") or "").lower().find("slow") >= 0],
+        },
+        "capability_status": {
+            "ready": ready,
+            "degraded": degraded,
+            "missing": missing,
+        },
         "ok": all(item["status"] != "missing" for item in checks),
-        "ready_capabilities": [item["name"] for item in capabilities if item.get("status") == "ok"],
-        "degraded_capabilities": [item["name"] for item in capabilities if item.get("status") == "degraded"],
-        "missing_capabilities": [item["name"] for item in capabilities if item.get("status") == "missing"],
+        "ready_capabilities": ready,
+        "degraded_capabilities": degraded,
+        "missing_capabilities": missing,
     }
 
 
@@ -1021,23 +1038,40 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
         next_actions = artifact_next_actions(delegated.get("artifacts", []))
     else:
         return {
+            "schema_version": "process-material-v2",
             "status": "unsupported",
             "route": route,
             "inspection": inspection,
+            "artifacts": [],
+            "quality_summary": {"status": "not_applicable", "reason": "unsupported_route"},
             "warnings": inspection.get("warnings", []) + [f"No route available for intent={intent}."],
             "errors": [],
             "next_actions": [],
+            "recommended_followup": {
+                "action": "inspect_document",
+                "tool": "inspect_document",
+                "arguments": {"input": str(input_path), "recursive": recursive, "include_hidden": include_hidden},
+                "safe_default": True,
+                "destructive": False,
+            },
         }
 
+    artifacts = delegated.get("artifacts", []) if isinstance(delegated, dict) else []
+    job_id = delegated.get("job_id") if isinstance(delegated, dict) else None
+    normalized_next_actions = normalize_agent_next_actions(next_actions)
     return {
+        "schema_version": "process-material-v2",
         "status": "routed",
         "route": route,
         "inspection": inspection,
         "delegated": delegated,
-        "job_id": delegated.get("job_id"),
+        "job_id": job_id,
+        "artifacts": artifacts,
+        "quality_summary": delegated.get("quality_summary") if isinstance(delegated, dict) and delegated.get("quality_summary") else pending_quality_summary(route, job_id),
         "warnings": inspection.get("warnings", []),
         "errors": [],
-        "next_actions": next_actions,
+        "next_actions": normalized_next_actions,
+        "recommended_followup": recommended_followup_for_route(route, normalized_next_actions, job_id=job_id),
     }
 
 
@@ -1841,10 +1875,83 @@ def rerun_arguments_for_pipeline(
     return arguments
 
 
+SAFE_DEFAULT_TOOLS = {
+    "get_job_status",
+    "read_artifact",
+    "read_report",
+    "inspect_document",
+    "query_location_index",
+    "enhance_markdown_structure",
+    "manual_review",
+}
+
+
+def pending_quality_summary(route: str, job_id: str | None) -> dict[str, Any]:
+    if job_id:
+        return {
+            "status": "pending",
+            "route": route,
+            "job_id": job_id,
+            "message": "Poll get_job_status and read quality_summary after the asynchronous job finishes.",
+        }
+    return {"status": "not_applicable", "route": route}
+
+
+def recommended_followup_for_route(route: str, next_actions: list[dict[str, Any]], *, job_id: str | None = None) -> dict[str, Any]:
+    if job_id:
+        return normalize_agent_action(
+            {
+                "action": "poll_job_status",
+                "tool": "get_job_status",
+                "arguments": {"job_id": job_id},
+                "why": "wait for conversion/OCR artifacts and quality_summary",
+            }
+        )
+    if next_actions:
+        return normalize_agent_action(next_actions[0])
+    return normalize_agent_action(
+        {
+            "action": "inspect_result",
+            "tool": "manual_review",
+            "arguments": {"route": route},
+            "why": "No automatic follow-up was generated for this route.",
+        }
+    )
+
+
+def normalize_agent_next_actions(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return unique_actions([normalize_agent_action(action) for action in actions])
+
+
+def normalize_agent_action(action: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(action)
+    tool = normalized.get("tool")
+    if not tool:
+        tool = "manual_review"
+        normalized["tool"] = tool
+    normalized.setdefault("action", str(tool))
+    if "arguments" not in normalized:
+        if "artifact_type" in normalized:
+            normalized["arguments"] = {"artifact_type": normalized["artifact_type"]}
+        elif "arguments_list" in normalized:
+            runs = normalized["arguments_list"]
+            normalized["arguments"] = dict(runs[0]) if isinstance(runs, list) and runs and isinstance(runs[0], dict) else {"runs": runs}
+        else:
+            normalized["arguments"] = {}
+    arguments = normalized.get("arguments")
+    destructive = bool(normalized.get("destructive", False))
+    if isinstance(arguments, dict) and arguments.get("overwrite") is True:
+        destructive = True
+    normalized["destructive"] = destructive
+    normalized.setdefault("safe_default", bool(tool in SAFE_DEFAULT_TOOLS and not destructive))
+    return normalized
+
+
 def unique_actions(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     seen: set[str] = set()
     unique: list[dict[str, Any]] = []
     for action in actions:
+        action = normalize_agent_action(action)
         key = json.dumps(action, ensure_ascii=False, sort_keys=True, default=str)
         if key in seen:
             continue

@@ -146,7 +146,13 @@ Container-side health check:
 curl -H "Authorization: Bearer replace-with-a-local-token" "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/health"
 ```
 
-The health response includes `schema_version`, `tool_count`, `tools`, `supports_async_jobs`, `supports_artifacts`, `http_config`, `config_sources`, `local_env_exists`, `local_env_loaded_keys`, `pipeline_capabilities`, and `risk_status`. Agents should use it for capability discovery before making tool calls and should read `http_config.config_path` and `config_sources.local_env` instead of guessing ports or local override files. `local_env_loaded_keys` contains key names only; it must not expose environment variable values.
+The health response includes `schema_version`, `tool_count`, `tools`, `supports_async_jobs`, `supports_artifacts`, `http_config`, `config_sources`, `local_env_exists`, `local_env_loaded_keys`, `pipeline_capabilities`, `provider_status`, `backend_status`, `capability_status`, and `risk_status`. Agents should use it for capability discovery before making tool calls and should read `http_config.config_path` and `config_sources.local_env` instead of guessing ports or local override files. `local_env_loaded_keys` contains key names only; it must not expose environment variable values.
+
+For a smaller capability-only payload, call:
+
+```bash
+curl -H "Authorization: Bearer replace-with-a-local-token" "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/capabilities"
+```
 
 For HTTP-native agents, `/contract` is the one-shot discovery endpoint. It returns `schema_version=ebook-http-contract-v1`, preferred entrypoints, specialist tools, full tool schemas, artifact/error contract versions, HTTP config, and docs pointers:
 
@@ -181,11 +187,13 @@ One-shot discovery tool for MCP-native agents. It returns `schema_version=ebook-
 
 ### `process_material`
 
-High-level router for unknown inputs. It calls lightweight inspection, chooses the next tool, starts a background job when needed, and returns `job_id`, `route`, `inspection`, `warnings`, `errors`, and `next_actions`.
+High-level router for unknown inputs. It calls lightweight inspection, chooses the next tool, starts a background job when needed, and returns `schema_version=process-material-v2`, `job_id`, `route`, `inspection`, `artifacts`, `quality_summary`, `warnings`, `errors`, `next_actions`, and `recommended_followup`.
 
 Use this as the default entry point for agents. In `intent=auto`, the router recognizes/converts by default: documents and PDFs go to conversion, while single images and image folders go to image-book recognition. Page/image location indexing is only selected when the caller passes `intent=locate` or a non-empty `query`.
 
 For `web-content-fetcher` archive folders, `process_material` routes to `process_web_archive` and returns `visual_check/` artifacts directly. It does not start a background job in that route.
+
+Every `next_actions` entry is machine-actionable and includes `tool`, `arguments`, `safe_default`, and `destructive=false` unless the action is explicitly destructive. Prefer `recommended_followup` for the next single safe step, usually polling `get_job_status` for asynchronous routes.
 
 ### `process_web_archive`
 

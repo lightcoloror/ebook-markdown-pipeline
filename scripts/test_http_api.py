@@ -57,6 +57,8 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"Health response is missing HTTP config: {health}")
     if not isinstance(health.get("pipeline_capabilities"), dict) or health.get("risk_status") not in {"ok", "degraded", "missing_dependencies"}:
         raise RuntimeError(f"Health response is missing capability/risk summary: {health}")
+    if not isinstance(health.get("provider_status"), dict) or not isinstance(health.get("backend_status"), dict):
+        raise RuntimeError(f"Health response is missing provider/backend status: {health}")
     if not health.get("config_sources", {}).get("http") or not health.get("config_sources", {}).get("example_env"):
         raise RuntimeError(f"Health response is missing config sources: {health}")
     if not health.get("config_sources", {}).get("local_env") or "local_env_exists" not in health or "local_env_loaded_keys" not in health:
@@ -65,6 +67,14 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"Health response should expose recognition-first route defaults: {health}")
     if not health.get("long_task_guidance", {}).get("prefer_async_tools"):
         raise RuntimeError(f"Health response is missing long task guidance: {health}")
+
+    capabilities = request_json(f"{url.rstrip('/')}/capabilities", headers=headers)
+    if capabilities.get("schema_version") != "ebook-capabilities-v1" or capabilities.get("transport") != "http":
+        raise RuntimeError(f"Capabilities endpoint has wrong schema: {capabilities}")
+    if not capabilities.get("pipeline_capabilities", {}).get("capabilities"):
+        raise RuntimeError(f"Capabilities endpoint is missing pipeline capabilities: {capabilities}")
+    if capabilities.get("risk_status") not in {"ok", "degraded", "missing_dependencies"}:
+        raise RuntimeError(f"Capabilities endpoint is missing risk status: {capabilities}")
 
     contract = request_json(f"{url.rstrip('/')}/contract", headers=headers)
     if contract.get("schema_version") != "ebook-http-contract-v1" or contract.get("transport") != "http":
@@ -75,6 +85,8 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"HTTP contract entrypoints are wrong: {contract}")
     if not contract.get("supports_async_jobs") or not contract.get("supports_artifacts"):
         raise RuntimeError(f"HTTP contract missing capability flags: {contract}")
+    if "/capabilities" not in contract.get("capability_endpoints", []):
+        raise RuntimeError(f"HTTP contract should advertise /capabilities: {contract}")
     if contract.get("tool_count", 0) < 10 or not isinstance(contract.get("tools"), list):
         raise RuntimeError(f"HTTP contract missing tool schemas: {contract}")
     if contract.get("route_defaults", {}).get("location_index") != "requires intent=locate or query":
