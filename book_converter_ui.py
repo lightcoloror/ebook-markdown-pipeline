@@ -168,20 +168,9 @@ class BookConverterUI:
         ttk.Entry(paths, textvariable=self.output_var).grid(row=1, column=1, sticky="ew", padx=8)
         ttk.Button(paths, text="浏览 / Browse", command=self.pick_output_folder).grid(row=1, column=2, padx=4)
 
-        ttk.Label(paths, text="历史批次 / History").grid(row=3, column=0, sticky="w", pady=4)
-        self.history_combo = ttk.Combobox(paths, textvariable=self.history_var, state="readonly")
-        self.history_combo.grid(row=3, column=1, sticky="ew", padx=8, pady=(4, 0))
-        self.history_combo.bind("<<ComboboxSelected>>", lambda _event: self.open_selected_history())
-        ttk.Button(paths, text="打开历史 / Open", command=self.open_selected_history).grid(row=3, column=2, padx=4, pady=(4, 0))
-        ttk.Button(paths, text="只看问题 / Problems", command=self.open_selected_history_problems).grid(row=3, column=3, padx=4, pady=(4, 0))
-        ttk.Button(paths, text="发现历史 / Discover", command=self.discover_history_batches).grid(row=3, column=4, padx=4, pady=(4, 0))
-        self.history_detail_var = tk.StringVar()
-        ttk.Label(paths, textvariable=self.history_detail_var).grid(row=4, column=1, columnspan=4, sticky="ew", padx=8, pady=(2, 0))
-
-        settings = ttk.LabelFrame(container, text="选项 / Options", padding=10)
+        settings = ttk.LabelFrame(container, text="普通选项 / Basic Options", padding=10)
         settings.grid(row=1, column=0, sticky="ew", pady=(10, 0))
         settings.columnconfigure(1, weight=1)
-        settings.columnconfigure(3, weight=1)
 
         ttk.Label(settings, text="输出格式 / Format").grid(row=0, column=0, sticky="w", pady=4)
         ttk.Combobox(
@@ -192,58 +181,16 @@ class BookConverterUI:
             width=16,
         ).grid(row=0, column=1, sticky="w", padx=8)
 
-        ttk.Label(settings, text="文档模式 / Doc mode").grid(row=0, column=2, sticky="w", pady=4)
-        ttk.Combobox(
-            settings,
-            textvariable=self.document_mode_var,
-            values=list(DOCUMENT_PIPELINE_MODES),
-            state="readonly",
-            width=12,
-        ).grid(row=0, column=3, sticky="w", padx=8)
-
-        ttk.Label(settings, text="PDF 模式 / PDF mode").grid(row=0, column=5, sticky="w", pady=4)
-        ttk.Combobox(
-            settings,
-            textvariable=self.pdf_mode_var,
-            values=list(PDF_PIPELINE_MODES),
-            state="readonly",
-            width=14,
-        ).grid(row=0, column=6, sticky="w", padx=8)
-
         ttk.Checkbutton(settings, text="递归 / Recursive", variable=self.recursive_var).grid(
-            row=0, column=4, sticky="w", padx=8
-        )
-        ttk.Checkbutton(settings, text="含隐藏 / Hidden", variable=self.include_hidden_var).grid(
-            row=0, column=8, sticky="w", padx=8
+            row=0, column=2, sticky="w", padx=8
         )
         ttk.Checkbutton(settings, text="覆盖 / Overwrite", variable=self.overwrite_var).grid(
-            row=0, column=9, sticky="w", padx=8
+            row=0, column=3, sticky="w", padx=8
         )
         ttk.Checkbutton(settings, text="续跑 / Resume", variable=self.resume_var).grid(
-            row=0, column=10, sticky="w", padx=8
+            row=0, column=4, sticky="w", padx=8
         )
-
-        ttk.Label(settings, text="Pandoc").grid(row=1, column=0, sticky="w", pady=4)
-        ttk.Entry(settings, textvariable=self.pandoc_var).grid(row=1, column=1, sticky="ew", padx=8)
-        ttk.Label(settings, text="Calibre").grid(row=1, column=2, sticky="w", pady=4)
-        ttk.Entry(settings, textvariable=self.calibre_var).grid(row=1, column=3, sticky="ew", padx=8)
-        ttk.Label(settings, text="Marker").grid(row=1, column=4, sticky="w", pady=4)
-        ttk.Entry(settings, textvariable=self.marker_var, width=20).grid(row=1, column=5, sticky="ew", padx=8)
-        ttk.Label(settings, text="MinerU").grid(row=2, column=0, sticky="w", pady=4)
-        ttk.Entry(settings, textvariable=self.mineru_var).grid(row=2, column=1, sticky="ew", padx=8)
-
-        ttk.Label(settings, text="Marker 参数 / Args").grid(row=2, column=2, sticky="w", pady=4)
-        ttk.Entry(settings, textvariable=self.marker_extra_var).grid(
-            row=2, column=3, columnspan=3, sticky="ew", padx=8
-        )
-        ttk.Label(settings, text="无输出超时(s) / Idle").grid(row=3, column=0, sticky="w", pady=4)
-        ttk.Entry(settings, textvariable=self.pdf_idle_timeout_var, width=10).grid(row=3, column=1, sticky="w", padx=8)
-        ttk.Label(settings, text="收尾超时(s) / Finalize").grid(row=3, column=2, sticky="w", pady=4)
-        ttk.Entry(settings, textvariable=self.pdf_finalize_timeout_var, width=10).grid(row=3, column=3, sticky="w", padx=8)
-        ttk.Label(settings, text="对比超时(s) / Compare").grid(row=3, column=4, sticky="w", pady=4)
-        ttk.Entry(settings, textvariable=self.compare_pipeline_timeout_var, width=10).grid(row=3, column=5, sticky="w", padx=8)
-        ttk.Label(settings, text="对比页码 / Pages").grid(row=3, column=6, sticky="w", pady=4)
-        ttk.Entry(settings, textvariable=self.compare_page_ranges_var, width=18).grid(row=3, column=7, sticky="w", padx=8)
+        ttk.Button(settings, text="高级设置 / Advanced", command=self.open_advanced_tools).grid(row=0, column=5, sticky="w", padx=8)
 
         actions = ttk.Frame(container)
         actions.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
@@ -308,17 +255,13 @@ class BookConverterUI:
             self.scan_button,
             self.start_button,
             self.run_recommended_button,
-            self.health_button,
-            self.cleanup_button,
             ttk.Button(buttons, text="选中输出 / Output", command=self.open_selected_output),
             ttk.Button(buttons, text="选中报告 / Report", command=self.open_selected_report),
-            ttk.Button(buttons, text="清空日志 / Clear", command=self.clear_log),
-            self.advanced_button,
         ]
-        toolbar_rows = self.grid_toolbar_items(buttons, toolbar_items, columns=8)
+        toolbar_rows = self.grid_toolbar_items(buttons, toolbar_items, columns=6)
 
         status_row = ttk.Frame(buttons)
-        status_row.grid(row=toolbar_rows, column=0, columnspan=8, sticky="ew", pady=(6, 0))
+        status_row.grid(row=toolbar_rows, column=0, columnspan=6, sticky="ew", pady=(6, 0))
         status_row.columnconfigure(2, weight=1)
         self.progress = ttk.Progressbar(status_row, mode="determinate", length=220)
         self.progress.grid(row=0, column=0, sticky="w", padx=(0, 8))
@@ -351,8 +294,8 @@ class BookConverterUI:
         window = tk.Toplevel(self.root)
         self.advanced_window = window
         window.title("高级工具 / Advanced Tools")
-        window.geometry("760x520")
-        window.minsize(680, 460)
+        window.geometry("920x720")
+        window.minsize(820, 620)
         window.transient(self.root)
         window.protocol("WM_DELETE_WINDOW", self.close_advanced_tools)
 
@@ -361,10 +304,12 @@ class BookConverterUI:
         container.columnconfigure(0, weight=1)
         container.columnconfigure(1, weight=1)
 
+        self.add_advanced_options_group(container)
+
         self.add_advanced_group(
             container,
             "复查与重跑 / Review And Retry",
-            0,
+            1,
             0,
             [
                 ("执行建议 / Do Action", self.execute_selected_suggestion),
@@ -382,7 +327,7 @@ class BookConverterUI:
         self.add_advanced_group(
             container,
             "PDF 与 Artifact / PDF And Artifacts",
-            0,
+            1,
             1,
             [
                 ("PDF对比 / Compare", self.start_pdf_pipeline_compare),
@@ -395,29 +340,33 @@ class BookConverterUI:
         self.add_advanced_group(
             container,
             "环境 / Environment",
-            1,
+            2,
             0,
             [
+                ("检查环境 / Health", self.health_check),
                 ("导出环境 / Env Export", self.export_environment_report_ui),
                 ("对比环境 / Env Compare", self.compare_environment_lock_ui),
                 ("重新启动自检 / Startup Check", self.startup_health_check_async),
+                ("清理残留 / Cleanup", self.cleanup_mineru_processes),
+                ("清空日志 / Clear Log", self.clear_log),
             ],
         )
         self.add_advanced_group(
             container,
             "历史与 Agent / History And Agent",
-            1,
+            2,
             1,
             [
                 ("加载历史 / History", self.load_history_batch),
                 ("只载问题 / Problems", self.load_history_problems),
+                ("发现历史 / Discover", self.discover_history_batches),
                 ("复制Agent调用 / Copy Agent", self.copy_agent_call),
             ],
         )
         self.add_advanced_group(
             container,
             "图文材料 / Image And Location",
-            2,
+            3,
             0,
             [
                 ("定位索引 / Location Index", self.start_location_index),
@@ -426,7 +375,7 @@ class BookConverterUI:
         )
 
         filters = ttk.LabelFrame(container, text="显示过滤 / Filters", padding=8)
-        filters.grid(row=2, column=1, sticky="nsew", padx=(6, 0), pady=(8, 0))
+        filters.grid(row=3, column=1, sticky="nsew", padx=(6, 0), pady=(8, 0))
         ttk.Checkbutton(filters, text="只看复查 / Review only", variable=self.review_only_var, command=self.apply_review_filter).grid(
             row=0, column=0, sticky="w", padx=(0, 8), pady=(0, 4)
         )
@@ -440,6 +389,54 @@ class BookConverterUI:
         if self.advanced_window is not None and self.advanced_window.winfo_exists():
             self.advanced_window.destroy()
         self.advanced_window = None
+
+    def add_advanced_options_group(self, parent: ttk.Frame) -> None:
+        frame = ttk.LabelFrame(parent, text="高级设置 / Advanced Settings", padding=8)
+        frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        for column in (1, 3, 5):
+            frame.columnconfigure(column, weight=1)
+
+        ttk.Label(frame, text="文档模式 / Doc mode").grid(row=0, column=0, sticky="w", pady=3)
+        ttk.Combobox(frame, textvariable=self.document_mode_var, values=list(DOCUMENT_PIPELINE_MODES), state="readonly", width=14).grid(
+            row=0, column=1, sticky="w", padx=6
+        )
+        ttk.Label(frame, text="PDF 模式 / PDF mode").grid(row=0, column=2, sticky="w", pady=3)
+        ttk.Combobox(frame, textvariable=self.pdf_mode_var, values=list(PDF_PIPELINE_MODES), state="readonly", width=16).grid(
+            row=0, column=3, sticky="w", padx=6
+        )
+        ttk.Checkbutton(frame, text="含隐藏 / Hidden", variable=self.include_hidden_var).grid(row=0, column=4, sticky="w", padx=6)
+
+        ttk.Label(frame, text="Pandoc").grid(row=1, column=0, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=self.pandoc_var).grid(row=1, column=1, sticky="ew", padx=6)
+        ttk.Label(frame, text="Calibre").grid(row=1, column=2, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=self.calibre_var).grid(row=1, column=3, sticky="ew", padx=6)
+        ttk.Label(frame, text="Marker").grid(row=1, column=4, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=self.marker_var).grid(row=1, column=5, sticky="ew", padx=6)
+
+        ttk.Label(frame, text="MinerU").grid(row=2, column=0, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=self.mineru_var).grid(row=2, column=1, sticky="ew", padx=6)
+        ttk.Label(frame, text="Marker 参数 / Args").grid(row=2, column=2, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=self.marker_extra_var).grid(row=2, column=3, columnspan=3, sticky="ew", padx=6)
+
+        ttk.Label(frame, text="无输出超时(s) / Idle").grid(row=3, column=0, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=self.pdf_idle_timeout_var, width=10).grid(row=3, column=1, sticky="w", padx=6)
+        ttk.Label(frame, text="收尾超时(s) / Finalize").grid(row=3, column=2, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=self.pdf_finalize_timeout_var, width=10).grid(row=3, column=3, sticky="w", padx=6)
+        ttk.Label(frame, text="对比超时(s) / Compare").grid(row=3, column=4, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=self.compare_pipeline_timeout_var, width=10).grid(row=3, column=5, sticky="w", padx=6)
+        ttk.Label(frame, text="对比页码 / Pages").grid(row=4, column=0, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=self.compare_page_ranges_var, width=18).grid(row=4, column=1, sticky="w", padx=6)
+
+        ttk.Label(frame, text="历史批次 / History").grid(row=5, column=0, sticky="w", pady=3)
+        self.history_combo = ttk.Combobox(frame, textvariable=self.history_var, state="readonly")
+        self.history_combo.grid(row=5, column=1, columnspan=3, sticky="ew", padx=6)
+        self.history_combo.bind("<<ComboboxSelected>>", lambda _event: self.open_selected_history())
+        ttk.Button(frame, text="打开 / Open", command=self.open_selected_history).grid(row=5, column=4, sticky="w", padx=6)
+        ttk.Button(frame, text="只看问题 / Problems", command=self.open_selected_history_problems).grid(row=5, column=5, sticky="w", padx=6)
+        if not hasattr(self, "history_detail_var"):
+            self.history_detail_var = tk.StringVar()
+        ttk.Label(frame, textvariable=self.history_detail_var).grid(row=6, column=1, columnspan=5, sticky="ew", padx=6, pady=(2, 0))
+        self.update_history_combo()
 
     def add_advanced_group(
         self,
