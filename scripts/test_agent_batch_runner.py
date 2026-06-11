@@ -128,15 +128,41 @@ def main() -> int:
                     },
                 },
                 {"id": "ok-job", "status": "ok"},
+                {
+                    "id": "poor-job",
+                    "status": "ok",
+                    "job": {
+                        "quality_summary": {
+                            "counts": {"poor": 1},
+                            "review_items": [{"quality_level": "poor"}],
+                        }
+                    },
+                },
             ]
         }
         selected = runner.select_jobs(
-            [{"id": "archive", "input": str(root / "archive"), "output": str(root / "out")}, {"id": "ok-job", "input": "x", "output": "y"}],
+            [
+                {"id": "archive", "input": str(root / "archive"), "output": str(root / "out")},
+                {"id": "ok-job", "input": "x", "output": "y"},
+                {"id": "poor-job", "input": "p", "output": "q"},
+            ],
             previous_payload,
             "review",
         )
         if [item.get("id") for item in selected] != ["archive"]:
             raise AssertionError(f"Expected only review job to be selected: {selected}")
+
+        poor_selected = runner.select_jobs(
+            [
+                {"id": "archive", "input": str(root / "archive"), "output": str(root / "out")},
+                {"id": "ok-job", "input": "x", "output": "y"},
+                {"id": "poor-job", "input": "p", "output": "q"},
+            ],
+            previous_payload,
+            "poor",
+        )
+        if [item.get("id") for item in poor_selected] != ["poor-job"]:
+            raise AssertionError(f"Expected only poor job to be selected: {poor_selected}")
 
         selected_ids = runner.selected_job_ids(
             [{"input": str(root / "skip"), "output": str(root / "skip-out")}, {"input": str(root / "anon"), "output": str(root / "anon-out")}],

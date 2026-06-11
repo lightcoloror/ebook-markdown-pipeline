@@ -43,7 +43,7 @@ READABLE_TYPES = {
 ALLOWED_INTENTS = {"auto", "convert", "locate", "rebuild"}
 ALLOWED_OUTPUT_FORMATS = {"markdown", "html", "text"}
 ALLOWED_OCR = {"auto", "always", "never"}
-SELECT_MODES = {"all", "failed", "review", "failed-or-review"}
+SELECT_MODES = {"all", "failed", "review", "poor", "failed-or-review"}
 RERUN_MODES = {"as-manifest", "recommended"}
 AGENT_BATCH_SCHEMA_VERSION = "agent-batch-v1"
 AGENT_BATCH_PLAN_SCHEMA_VERSION = "agent-batch-plan-v1"
@@ -74,7 +74,7 @@ def main() -> int:
     parser.add_argument("--validate-only", action="store_true", help="alias for --dry-run")
     parser.add_argument("--select", choices=sorted(SELECT_MODES), default="all", help="Run all jobs or select jobs from --previous-results.")
     parser.add_argument("--rerun-mode", choices=sorted(RERUN_MODES), default="as-manifest", help="Use manifest arguments or recommended rerun arguments when available.")
-    parser.add_argument("--previous-results", type=Path, help="Prior agent-batch-results.json used by --select failed/review/failed-or-review.")
+    parser.add_argument("--previous-results", type=Path, help="Prior agent-batch-results.json used by --select failed/review/poor/failed-or-review.")
     parser.add_argument("--baseline-results", type=Path, help="Prior agent-batch-results.json used for quality comparison after this run.")
     parser.add_argument("--fail-on-regression", action="store_true", help="Exit non-zero when --baseline-results comparison fails.")
     args = parser.parse_args()
@@ -702,6 +702,8 @@ def select_jobs(jobs: list[Any], previous_payload: dict[str, Any] | None, select
             selected.append(job)
         elif select == "review" and status == "review":
             selected.append(job)
+        elif select == "poor" and is_poor_result(previous):
+            selected.append(job)
         elif select == "failed-or-review" and (status == "review" or is_hard_failed_status(status)):
             selected.append(job)
     return selected
@@ -723,6 +725,8 @@ def selected_job_ids(jobs: list[Any], previous_payload: dict[str, Any] | None, s
         if select == "failed" and is_hard_failed_status(status):
             selected.append(job_id)
         elif select == "review" and status == "review":
+            selected.append(job_id)
+        elif select == "poor" and is_poor_result(previous):
             selected.append(job_id)
         elif select == "failed-or-review" and (status == "review" or is_hard_failed_status(status)):
             selected.append(job_id)
@@ -762,6 +766,22 @@ def previous_results_by_id(previous_payload: dict[str, Any] | None) -> dict[str,
 
 def is_hard_failed_status(status: str) -> bool:
     return status in {"failed", "timeout", "unsupported", "no_job"}
+
+
+def is_poor_result(previous: dict[str, Any]) -> bool:
+    if str(previous.get("status") or "") == "poor":
+        return True
+    quality = ((previous.get("job") or {}).get("quality_summary") or {})
+    counts = quality.get("counts") or {}
+    if int(counts.get("poor") or 0) > 0:
+        return True
+    for item in quality.get("review_items") or []:
+        if isinstance(item, dict) and str(item.get("quality_level") or "") == "poor":
+            return True
+    result_quality = ((previous.get("result") or {}).get("quality_summary") or {})
+    if int((result_quality.get("counts") or {}).get("poor") or 0) > 0:
+        return True
+    return False
 
 
 def apply_recommended_rerun(job_id: str, material_args: dict[str, Any], previous_payload: dict[str, Any] | None, rerun_mode: str) -> dict[str, Any]:
