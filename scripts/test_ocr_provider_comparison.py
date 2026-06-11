@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 import sys
@@ -54,6 +55,17 @@ def main() -> int:
             raise AssertionError(f"Expected comparison status ok: {payload}")
         if not Path(payload["json_report"]).exists() or not Path(payload["markdown_report"]).exists():
             raise AssertionError(f"Expected comparison reports: {payload}")
+        blocks_path = Path(payload["ocr_blocks_jsonl"])
+        if not blocks_path.exists():
+            raise AssertionError(f"Expected OCR blocks JSONL artifact: {payload}")
+        block_rows = [json.loads(line) for line in blocks_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        if len(block_rows) != 4:
+            raise AssertionError(f"Expected provider/image OCR block rows: {block_rows}")
+        providers = {row.get("provider") for row in block_rows}
+        if providers != {"rapidocr", "umi"}:
+            raise AssertionError(f"Expected RapidOCR and Umi block rows: {block_rows}")
+        if not all(row.get("schema_version") == "ocr-blocks-v1" and row.get("blocks") for row in block_rows):
+            raise AssertionError(f"Expected unified OCR block schema rows: {block_rows}")
         by_provider = {item["provider"]: item for item in payload["providers"]}
         if by_provider["rapidocr"]["metrics"]["total_char_count"] <= 0:
             raise AssertionError(f"Expected RapidOCR char metrics: {payload}")
@@ -63,7 +75,7 @@ def main() -> int:
         if "image_ocr_chinese" not in rapid_categories or "image_ocr_lowres" not in rapid_categories:
             raise AssertionError(f"Expected per-category OCR metrics: {rapid_categories}")
         markdown = Path(payload["markdown_report"]).read_text(encoding="utf-8")
-        if "OCR Provider Comparison" not in markdown or "By Category" not in markdown or "image_ocr_chinese" not in markdown:
+        if "OCR Provider Comparison" not in markdown or "OCR blocks JSONL" not in markdown or "By Category" not in markdown or "image_ocr_chinese" not in markdown:
             raise AssertionError(f"Unexpected markdown report: {markdown}")
 
         missing = compare_ocr_providers(

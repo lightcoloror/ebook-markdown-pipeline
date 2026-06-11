@@ -104,10 +104,13 @@ def compare_ocr_providers(
         "images": [{"path": str(path), "category": infer_image_category(path)} for path in images],
         "providers": provider_results,
     }
+    blocks_path = output_dir / "ocr-blocks.jsonl"
+    write_ocr_blocks_jsonl(blocks_path, provider_results)
     payload["summary"] = summarize_provider_results(provider_results, image_count=len(images))
     payload["status"] = payload["summary"]["status"]
     json_path = output_dir / "ocr-provider-comparison.json"
     md_path = output_dir / "ocr-provider-comparison.md"
+    payload["ocr_blocks_jsonl"] = str(blocks_path)
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
     md_path.write_text(render_markdown(payload), encoding="utf-8", newline="\n")
     payload["json_report"] = str(json_path)
@@ -181,7 +184,7 @@ def run_rapidocr_item(image: Path, engine: Any) -> dict[str, Any]:
     started = time.monotonic()
     try:
         result = recognize_image_with_rapidocr(image, engine)
-        return item_result(image, result.get("text") or "", result.get("blocks") or [], started=started)
+        return item_result(image, result.get("text") or "", result.get("blocks") or [], started=started, provider="rapidocr")
     except Exception as exc:  # noqa: BLE001
         return item_result(image, "", [], started=started, status="failed", message=str(exc))
 
@@ -192,7 +195,7 @@ def run_umi_item(image: Path, engine: Any) -> dict[str, Any]:
         text, blocks = umi_ocr_image_with_blocks(image, engine)
         for block in blocks:
             block.setdefault("provider", "umi")
-        return item_result(image, text, blocks, started=started)
+        return item_result(image, text, blocks, started=started, provider="umi")
     except Exception as exc:  # noqa: BLE001
         return item_result(image, "", [], started=started, status="failed", message=str(exc))
 
@@ -205,11 +208,13 @@ def item_result(
     started: float,
     status: str = "ok",
     message: str = "",
+    provider: str = "",
 ) -> dict[str, Any]:
     text = str(text or "").strip()
     blocks = list(blocks or [])
     return {
         "image": str(image),
+        "provider": provider,
         "category": infer_image_category(image),
         "status": status,
         "message": message,
@@ -220,7 +225,41 @@ def item_result(
         "bbox_count": sum(1 for block in blocks if block.get("bbox")),
         "empty": not bool(text),
         "text_preview": text[:120],
+        "blocks": normalize_provider_blocks(blocks, provider=provider),
     }
+
+
+def normalize_provider_blocks(blocks: list[dict[str, Any]], *, provider: str) -> list[dict[str, Any]]:
+    normalized = []
+    for index, block in enumerate(blocks, start=1):
+        item = dict(block or {})
+        item.setdefault("index", index)
+        if provider:
+            item.setdefault("provider", provider)
+        normalized.append(item)
+    return normalized
+
+
+def write_ocr_blocks_jsonl(path: Path, provider_results: list[dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        for provider in provider_results:
+            provider_name = str(provider.get("provider") or "")
+            for item in provider.get("items") or []:
+                handle.write(
+                    json.dumps(
+                        {
+                            "schema_version": OCR_BLOCK_SCHEMA_VERSION,
+                            "provider": provider_name,
+                            "image": item.get("image"),
+                            "category": item.get("category"),
+                            "status": item.get("status"),
+                            "text_preview": item.get("text_preview"),
+                            "blocks": item.get("blocks") or [],
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
 
 
 def infer_image_category(path: Path) -> str:
@@ -312,6 +351,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
         f"- Status: {payload.get('status')}",
         f"- Images: {payload.get('image_count')}",
         f"- JSON: `{payload.get('json_report', 'ocr-provider-comparison.json')}`",
+        f"- OCR blocks JSONL: `{payload.get('ocr_blocks_jsonl', 'ocr-blocks.jsonl')}`",
         "",
         "| Provider | Status | Samples | Empty | Chars | Blocks | BBox coverage | Avg sec | Message |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",

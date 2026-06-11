@@ -585,6 +585,7 @@ Image OCR provider options for `rebuild_image_book`, `start_image_book_rebuild`,
 - `ocr_provider=auto`: prefer Umi-OCR and fall back to RapidOCR only when Umi startup fails and RapidOCR is installed.
 - `ocr_provider=umi`: use the configured Umi-OCR/PaddleOCR-json backend.
 - `ocr_provider=rapidocr`: use the optional Python-native RapidOCR backend. The output still uses the same `pages_jsonl` and OCR block schema.
+- OCR provider comparison writes `ocr-provider-comparison.json/md` plus `ocr-blocks.jsonl`; agents should read the JSONL artifact when they need per-image OCR text blocks, bbox coverage, or RapidOCR-vs-Umi block-level differences.
 
 ## Failure Handling
 

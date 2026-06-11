@@ -177,7 +177,7 @@ python scripts\compare_ocr_providers.py `
   --output .\benchmarks\runs\ocr-provider-compare
 ```
 
-The OCR comparison writes `ocr-provider-comparison.json/md` with status, duration, character count, block count, bbox count, empty OCR rate, and missing-provider reasons.
+The OCR comparison writes `ocr-provider-comparison.json/md` with status, duration, character count, block count, bbox count, empty OCR rate, and missing-provider reasons. It also writes `ocr-blocks.jsonl` so agents and reviewers can inspect the normalized OCR block schema for each provider/image pair.
 
 ## CLI Examples
 
