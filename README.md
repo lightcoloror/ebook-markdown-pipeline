@@ -6,6 +6,8 @@ Stable internal id: `ebook-markdown-pipeline`. The Python package is still `eboo
 
 Start with [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) for the public-facing project summary, GitHub About text, architecture diagram, and reuse boundary. Installation steps are in [docs/INSTALLATION.md](docs/INSTALLATION.md). A shareable architecture diagram is in [docs/ARCHITECTURE_DIAGRAM.md](docs/ARCHITECTURE_DIAGRAM.md), while full architecture diagrams and module boundaries are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Third-party tools, reuse boundaries, and license notes are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md).
 
+Current development roadmap: [docs/plans/2026-06-11-next-stage-development-plan.md](docs/plans/2026-06-11-next-stage-development-plan.md).
+
 ## Quick Flow
 
 ```mermaid

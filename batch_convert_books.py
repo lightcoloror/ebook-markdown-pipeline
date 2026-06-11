@@ -3761,11 +3761,61 @@ def render_batch_summary_markdown(entries: list[dict], summary_json: Path) -> st
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_page_list(pages: list[object], limit: int = 12) -> str:
+    values = [str(page) for page in pages[:limit]]
+    suffix = "..." if len(pages) > limit else ""
+    return ",".join(values) + suffix
+
+
+def pdf_layout_review_summary(layout: dict) -> dict:
+    if not isinstance(layout, dict):
+        layout = {}
+    summary = layout.get("summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    return {
+        "status": layout.get("status"),
+        "table_pages": list(summary.get("table_pages") or [])[:30],
+        "two_column_pages": list(summary.get("two_column_pages") or [])[:30],
+        "image_heavy_pages": list(summary.get("image_heavy_pages") or [])[:30],
+        "repeated_header_footer_candidates": list(summary.get("repeated_header_footer_candidates") or [])[:10],
+        "table_artifact_count": summary.get("table_artifact_count", 0),
+        "camelot_available": summary.get("camelot_available"),
+    }
+
+
+def pdf_layout_review_needed(layout: dict) -> bool:
+    summary = pdf_layout_review_summary(layout)
+    return bool(
+        summary.get("table_pages")
+        or summary.get("two_column_pages")
+        or summary.get("image_heavy_pages")
+        or summary.get("repeated_header_footer_candidates")
+    )
+
+
+def pdf_layout_review_reasons(layout: dict) -> list[str]:
+    summary = pdf_layout_review_summary(layout)
+    reasons: list[str] = []
+    if summary.get("table_pages"):
+        reasons.append(f"疑似表格页: {format_page_list(summary['table_pages'])}")
+    if summary.get("two_column_pages"):
+        reasons.append(f"疑似双栏页: {format_page_list(summary['two_column_pages'])}")
+    if summary.get("image_heavy_pages"):
+        reasons.append(f"图片重/弱文本页: {format_page_list(summary['image_heavy_pages'])}")
+    if summary.get("repeated_header_footer_candidates"):
+        reasons.append("疑似重复页眉页脚/页码噪声")
+    if int(summary.get("table_artifact_count") or 0) > 0:
+        reasons.append(f"已导出表格候选 artifact: {summary.get('table_artifact_count')}")
+    return reasons
+
+
 def build_review_checklist_entries(entries: list[dict]) -> list[dict]:
     checklist = []
     for item in entries:
         quality = item.get("quality") or {}
         preflight = item.get("pdf_preflight") or {}
+        layout = item.get("pdf_layout_diagnostics") or {}
         outline = item.get("pdf_outline") or {}
         outline_alignment = item.get("pdf_outline_alignment") or {}
         status = item.get("status")
@@ -3774,13 +3824,21 @@ def build_review_checklist_entries(entries: list[dict]) -> list[dict]:
         if manual_review.get("human_status") == "accepted":
             continue
         outline_alignment_low = bool(outline_alignment.get("status") == "low_alignment")
-        if status != "failed" and level not in {"review", "poor"} and not preflight.get("scanned_likely") and not outline_alignment_low:
+        layout_review_needed = pdf_layout_review_needed(layout)
+        if (
+            status != "failed"
+            and level not in {"review", "poor"}
+            and not preflight.get("scanned_likely")
+            and not outline_alignment_low
+            and not layout_review_needed
+        ):
             continue
         quality_reasons = list(quality.get("reasons") or [])
         if outline_alignment_low:
             quality_reasons.append(
                 f"PDF 书签与 Markdown 标题匹配率低：{outline_alignment.get('match_ratio')}"
             )
+        layout_reasons = pdf_layout_review_reasons(layout)
         checklist.append(
             {
                 "source": item.get("source"),
@@ -3798,6 +3856,8 @@ def build_review_checklist_entries(entries: list[dict]) -> list[dict]:
                 "pdf_outline_items": (outline.get("items") or [])[:10],
                 "pdf_outline_alignment": outline_alignment,
                 "pdf_reasons": preflight.get("reasons") or [],
+                "pdf_layout_reasons": layout_reasons,
+                "pdf_layout_diagnostics": pdf_layout_review_summary(layout),
                 "suggested_action": suggest_review_action(item),
                 "next_actions": suggest_review_next_actions(item),
             }
@@ -3819,7 +3879,7 @@ def render_review_checklist_markdown(entries: list[dict], checklist_json: Path) 
     if not entries:
         lines.append("| ok | good | No review candidates | - | - |")
     for item in entries:
-        reasons = "; ".join((item.get("quality_reasons") or []) + (item.get("pdf_reasons") or []))
+        reasons = "; ".join((item.get("quality_reasons") or []) + (item.get("pdf_reasons") or []) + (item.get("pdf_layout_reasons") or []))
         next_actions = ", ".join(action.get("action", "") for action in item.get("next_actions") or [])
         lines.append(
             f"| {escape_table(str(item.get('status') or ''))} | "
@@ -3950,12 +4010,20 @@ def suggest_review_action(item: dict) -> str:
     pipeline = str(item.get("pipeline") or "")
     quality = item.get("quality") or {}
     preflight = item.get("pdf_preflight") or {}
+    layout = item.get("pdf_layout_diagnostics") or {}
+    layout_summary = pdf_layout_review_summary(layout)
     outline_alignment = item.get("pdf_outline_alignment") or {}
     reasons = "；".join(quality.get("reasons") or [])
     if status == "failed":
         return "先打开 report 查看 message；若是 PDF 工具失败，按顺序尝试 --pdf-pipeline-mode pymupdf4llm、mineru、umi"
     if outline_alignment.get("status") in {"low_alignment", "no_markdown_headings"}:
         return "PDF 原书书签与 Markdown 标题未对齐：先检查书签对齐结果，再用 mineru/docling 重跑对比"
+    if layout_summary.get("table_pages"):
+        return "检测到疑似表格页：先打开 report/table artifacts；表格重的 text PDF 可考虑 Camelot 专项抽取"
+    if layout_summary.get("two_column_pages"):
+        return "检测到疑似双栏页：建议用 mineru/docling 对比结构，必要时人工复查阅读顺序"
+    if layout_summary.get("repeated_header_footer_candidates"):
+        return "检测到疑似页眉页脚/页码噪声：抽查 Markdown 噪声并按需清理"
     if preflight.get("scanned_likely") and "mineru" not in pipeline.lower():
         return "疑似扫描 PDF：优先用 --pdf-pipeline-mode mineru 重跑；如果只需文字或页级定位，用 umi 或定位索引"
     if preflight.get("complex_layout_likely") and "mineru" not in pipeline.lower():
@@ -3982,6 +4050,8 @@ def suggest_review_next_actions(item: dict) -> list[dict[str, str]]:
     quality = item.get("quality") or {}
     reasons = "；".join(quality.get("reasons") or [])
     preflight = item.get("pdf_preflight") or {}
+    layout = item.get("pdf_layout_diagnostics") or {}
+    layout_summary = pdf_layout_review_summary(layout)
     outline = item.get("pdf_outline") or {}
     outline_alignment = item.get("pdf_outline_alignment") or {}
     source_suffix = Path(source).suffix.lower()
@@ -4012,6 +4082,14 @@ def suggest_review_next_actions(item: dict) -> list[dict[str, str]]:
         if outline_status in {"low_alignment", "no_markdown_headings"}:
             actions.append({"action": "compare_pdf_pipelines", "pipelines": "mineru,docling,pymupdf4llm", "why": "bookmark titles did not align with generated Markdown headings"})
             actions.append({"action": "rerun", "pipeline": "mineru", "why": "try structure-aware extraction guided by built-in PDF bookmarks"})
+        if layout_summary.get("table_pages"):
+            actions.append({"action": "inspect_table_diagnostics", "why": "review table-diagnostics.json and exported table candidates before accepting table-heavy PDF output"})
+            if layout_summary.get("camelot_available"):
+                actions.append({"action": "extract_pdf_tables", "pipeline": "camelot", "why": "run dedicated text-based table extraction for suspected table pages"})
+        if layout_summary.get("two_column_pages"):
+            actions.append({"action": "compare_pdf_pipelines", "pipelines": "mineru,docling,pymupdf4llm", "why": "compare reading order for suspected two-column pages"})
+        if layout_summary.get("repeated_header_footer_candidates"):
+            actions.append({"action": "inspect_noise", "why": "check repeated header/footer or page-number noise before accepting Markdown"})
         if preflight.get("scanned_likely"):
             actions.append({"action": "rerun", "pipeline": "umi", "why": "long or scanned PDF may need OCR-first extraction"})
             actions.append({"action": "export_location_review_pack", "why": "verify representative OCR pages/images before accepting output"})
