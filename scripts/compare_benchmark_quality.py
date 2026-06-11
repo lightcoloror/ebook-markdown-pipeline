@@ -46,6 +46,7 @@ def compare_reports(args: argparse.Namespace) -> dict[str, Any]:
     }
     checks = regression_checks(args, deltas)
     status = "passed" if all(item["passed"] for item in checks) else "failed"
+    regression_tags = classify_regression_tags(deltas)
     return {
         "schema_version": SCHEMA_VERSION,
         "created_at": now(),
@@ -57,6 +58,7 @@ def compare_reports(args: argparse.Namespace) -> dict[str, Any]:
             "candidate_metrics": candidate_metrics,
             "deltas": deltas,
             "checks": checks,
+            "regression_tags": regression_tags,
         },
     }
 
@@ -206,6 +208,24 @@ def regression_checks(args: argparse.Namespace, deltas: dict[str, float]) -> lis
     return checks
 
 
+def classify_regression_tags(deltas: dict[str, float]) -> list[str]:
+    tags: list[str] = []
+    if (
+        deltas.get("avg_headings", 0.0) <= -0.5
+        or deltas.get("avg_toc_match_ratio", 0.0) <= -0.1
+        or deltas.get("page_heading_ratio", 0.0) >= 0.1
+        or deltas.get("review_poor_rate", 0.0) >= 0.05
+    ):
+        tags.append("structure_regression")
+    if deltas.get("ocr_characters", 0.0) <= -50:
+        tags.append("ocr_regression")
+    if deltas.get("table_retention_ratio", 0.0) <= -0.1 or deltas.get("table_like_lines", 0.0) <= -2:
+        tags.append("table_regression")
+    if deltas.get("avg_duration_seconds", 0.0) >= 1.0 or deltas.get("max_duration_seconds", 0.0) >= 2.0:
+        tags.append("duration_regression")
+    return tags
+
+
 def ratio(numerator: int, denominator: int) -> float:
     return round(numerator / denominator, 3) if denominator else 0.0
 
@@ -223,6 +243,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
         f"- Status: {summary['status']}",
         f"- Baseline: `{payload['baseline']['path']}`",
         f"- Candidate: `{payload['candidate']['path']}`",
+        f"- Regression tags: {', '.join(summary.get('regression_tags') or []) or 'none'}",
         "",
         "## Metrics",
         "",

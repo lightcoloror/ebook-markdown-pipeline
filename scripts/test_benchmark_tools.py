@@ -199,6 +199,8 @@ def main() -> int:
         comparison_payload = json.loads((quality_compare_dir / "benchmark-quality-comparison.json").read_text(encoding="utf-8"))
         if comparison_payload.get("summary", {}).get("status") != "passed":
             raise RuntimeError(f"Expected passing quality comparison: {comparison_payload}")
+        if comparison_payload.get("summary", {}).get("regression_tags"):
+            raise RuntimeError(f"Expected no regression tags for improved candidate: {comparison_payload}")
         deltas = comparison_payload.get("summary", {}).get("deltas", {})
         for field in ["avg_toc_match_ratio", "ocr_characters", "table_retention_ratio", "table_like_lines", "expected_table_like_lines", "structure_repair_decisions", "structure_repair_promoted", "avg_duration_seconds", "max_duration_seconds"]:
             if field not in deltas:
@@ -253,6 +255,14 @@ def main() -> int:
         )
         if bad.returncode != 5:
             raise RuntimeError(f"Expected quality comparison regression exit 5, got {bad.returncode}")
+        bad_payload = json.loads((bad_compare_dir / "benchmark-quality-comparison.json").read_text(encoding="utf-8"))
+        expected_tags = {"structure_regression", "ocr_regression", "table_regression", "duration_regression"}
+        actual_tags = set(bad_payload.get("summary", {}).get("regression_tags") or [])
+        if not expected_tags.issubset(actual_tags):
+            raise RuntimeError(f"Expected regression tags {expected_tags}, got {actual_tags}: {bad_payload}")
+        bad_markdown = (bad_compare_dir / "benchmark-quality-comparison.md").read_text(encoding="utf-8")
+        if "Regression tags:" not in bad_markdown:
+            raise RuntimeError(f"Expected regression tags in Markdown report: {bad_markdown}")
 
         compare_dir = root / "compare"
         run_cmd("compare_pipelines.py", "--input", str(pdf), "--output", str(compare_dir), "--pipelines", "pymupdf4llm", "--overwrite", "--pipeline-timeout", "20")
