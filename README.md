@@ -4,7 +4,7 @@ Graphic-Text Material Converter is a local-first converter for ebooks, PDFs, Off
 
 Stable internal id: `ebook-markdown-pipeline`. The Python package is still `ebook_markdown_pipeline` for compatibility with existing MCP, HTTP, CLI, Docker, and script integrations.
 
-Start with [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) for the public-facing project summary, GitHub About text, architecture diagram, and reuse boundary. Installation steps are in [docs/INSTALLATION.md](docs/INSTALLATION.md). A shareable architecture diagram is in [docs/ARCHITECTURE_DIAGRAM.md](docs/ARCHITECTURE_DIAGRAM.md), while full architecture diagrams and module boundaries are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Third-party tools, reuse boundaries, and license notes are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md).
+Start with [docs/QUICKSTART.md](docs/QUICKSTART.md) for the smallest useful install path and [docs/BACKENDS.md](docs/BACKENDS.md) for optional backend choices. [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) contains the public-facing project summary, GitHub About text, architecture diagram, and reuse boundary. Installation steps are in [docs/INSTALLATION.md](docs/INSTALLATION.md). A shareable architecture diagram is in [docs/ARCHITECTURE_DIAGRAM.md](docs/ARCHITECTURE_DIAGRAM.md), while full architecture diagrams and module boundaries are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Third-party tools, reuse boundaries, and license notes are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md).
 
 Current development roadmap: [docs/plans/2026-06-11-next-stage-development-plan.md](docs/plans/2026-06-11-next-stage-development-plan.md).
 
@@ -89,6 +89,7 @@ This project is already useful as a local personal workflow tool, but the public
 - **Agent/API**: use MCP or HTTP after the local CLI/UI path works.
 
 See [docs/INSTALLATION.md](docs/INSTALLATION.md) for commands, optional environment variables, and troubleshooting.
+For the minimal path only, see [docs/QUICKSTART.md](docs/QUICKSTART.md). For backend tradeoffs and install cost, see [docs/BACKENDS.md](docs/BACKENDS.md).
 
 ## 5-Minute Start
 
@@ -178,6 +179,15 @@ python scripts\compare_ocr_providers.py `
 ```
 
 The OCR comparison writes `ocr-provider-comparison.json/md` with status, duration, character count, block count, bbox count, empty OCR rate, and missing-provider reasons. It also writes `ocr-blocks.jsonl` so agents and reviewers can inspect the normalized OCR block schema for each provider/image pair.
+
+Before a public release, run the aggregate release gate:
+
+```powershell
+python scripts\run_quality_gate.py --profile release
+python scripts\check_public_release.py
+```
+
+The release profile runs the minimal quality gate, MarkItDown backend comparison, OCR provider comparison, docs contract, and public release checks. It writes `release-summary.json/md` and updates the ignored `benchmarks/runs/latest/release-index.json/md` handoff index.
 
 ## CLI Examples
 

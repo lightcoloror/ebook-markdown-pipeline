@@ -163,6 +163,71 @@ def main() -> int:
             raise AssertionError(f"Backend compare should run baseline then MarkItDown candidate: {seen_modes}")
         if not (backend_output / "backend-comparison" / "benchmark-quality-comparison.md").exists():
             raise AssertionError("Backend compare should write benchmark-quality-comparison.md")
+
+        release_output = root / "release"
+        release_calls: list[str] = []
+
+        def fake_release_run(command: list[str], *, check: bool = True):
+            script = Path(command[1]).name if len(command) > 1 else ""
+            release_calls.append(script)
+            if script == "run_benchmarks.py":
+                output_dir = Path(command[command.index("--output") + 1])
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "quality-regression-summary.json").write_text(
+                    json.dumps(
+                        {
+                            "schema_version": "quality-regression-summary-v1",
+                            "summary": {"total": 1, "scored": 1, "status_counts": {"ok": 1}, "review_or_poor": 0},
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                (output_dir / "quality-regression-summary.md").write_text("# Quality\n", encoding="utf-8")
+            elif script == "compare_benchmark_quality.py":
+                output_dir = Path(command[command.index("--output") + 1])
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "benchmark-quality-comparison.md").write_text("# Compare\n", encoding="utf-8")
+            elif script == "compare_ocr_providers.py":
+                output_dir = Path(command[command.index("--output") + 1])
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "ocr-provider-comparison.md").write_text("# OCR\n", encoding="utf-8")
+            elif script == "test_docs_contract.py":
+                pass
+            elif script == "check_public_release.py":
+                output_dir = Path(command[command.index("--output") + 1])
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "public-release-check.md").write_text("# Public\n", encoding="utf-8")
+            else:
+                raise AssertionError(f"Unexpected release command: {command}")
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+        quality_gate_module.run = fake_release_run
+        try:
+            release_code = quality_gate_module.run_release_profile(
+                argparse.Namespace(
+                    profile="release",
+                    sample_timeout=60.0,
+                    pdf_mode_for_benchmark="fast",
+                    document_mode_for_benchmark="auto",
+                    min_success_rate=0.95,
+                    min_good_rate=0.30,
+                    max_review_poor_rate=0.70,
+                    max_timeout_rate=0.0,
+                    max_failed_rate=0.0,
+                    no_fail_on_quality_gate=True,
+                ),
+                fixtures,
+                release_output,
+            )
+        finally:
+            quality_gate_module.run = original_run
+        if release_code != 0:
+            raise AssertionError(f"Expected release fake run to pass: {release_code}")
+        for expected in ["run_benchmarks.py", "compare_benchmark_quality.py", "compare_ocr_providers.py", "test_docs_contract.py", "check_public_release.py"]:
+            if expected not in release_calls:
+                raise AssertionError(f"Release profile did not call {expected}: {release_calls}")
+        if not (release_output / "release-summary.json").exists() or not (release_output / "release-summary.md").exists():
+            raise AssertionError("Release profile should write release-summary.json/md")
     print("Quality gate smoke test passed.")
     return 0
 
