@@ -351,14 +351,14 @@ def pdf_structure_strategy(preflight) -> dict[str, Any]:
         if preflight.scanned_likely:
             base["confidence"] = "medium"
             base["reason"] = "PDF has bookmarks, but weak text layer means OCR output still needs manual structure review."
-            base["preferred_tools"] = ["mineru", "umi"]
+            base["preferred_tools"] = ["ocrmypdf", "mineru", "umi"]
         return base
     if preflight.scanned_likely:
         return {
             "mode": "ocr_first_with_review",
             "confidence": "medium",
             "reason": "Weak text layer means structure must be inferred from OCR text, page images, and manual review.",
-            "preferred_tools": ["umi", "mineru"],
+            "preferred_tools": ["ocrmypdf", "umi", "mineru"],
         }
     if preflight.complex_layout_likely:
         return {
@@ -386,6 +386,7 @@ def pdf_next_actions(preflight, strategy: dict[str, Any]) -> list[dict[str, str]
     if mode == "ocr_first_with_review":
         return [
             {"tool": "start_location_index", "why": "build a page-level index quickly before full OCR conversion if only coarse location is needed"},
+            {"tool": "start_conversion", "pdf_pipeline_mode": "ocrmypdf", "why": "create a searchable PDF first, then run a fast text-layer conversion without overwriting the original PDF"},
             {"tool": "start_conversion", "pdf_pipeline_mode": "umi", "why": "OCR-first fallback for long scanned materials"},
             {"tool": "export_location_review_pack", "why": "review representative OCR pages/images"},
         ]

@@ -133,13 +133,13 @@ You do not need to install every backend on day one.
 | Ebook | Minimal + Calibre | AZW, AZW3, MOBI, RTF | Best first setup for ebook collections. |
 | Document | Minimal + `requirements-docling.txt` | DOCX, PPTX, XLSX, HTML, CSV | Docling is optional and can be installed later. |
 | Baseline comparison | Minimal + `requirements-markitdown.txt` | EPUB, DOCX, PPTX, XLSX, HTML, PDF | MarkItDown is optional; use it as a fast comparison backend, not the default router. |
-| OCR/Layout | Umi-OCR, MinerU, Marker | scanned PDF, long PDF, complex layout | Larger downloads; may need more disk and RAM. |
+| OCR/Layout | OCRmyPDF, Umi-OCR, MinerU, Marker | scanned PDF, long PDF, complex layout | Larger downloads; may need more disk and RAM. |
 | Vision-heavy | PaddleOCR-VL / Qwen-VL wrappers | screenshots, infographics, image books | Optional heavy backends; use only when needed. |
 
 ## What To Use When
 
 - **Normal ebook to Markdown**: use the UI or `batch_convert_books.py` with defaults.
-- **Long or scanned PDF**: scan first; review `.reports/summary.md`; use MinerU/Umi-OCR only when needed.
+- **Long or scanned PDF**: scan first; review `.reports/summary.md`; use OCRmyPDF, MinerU, or Umi-OCR only when needed.
 - **PPT exported as PDF**: the preflight marks it as `presentation_like`; treat each page as a slide and compare a fast text baseline with layout-aware output.
 - **Only need "which page/image contains this keyword"**: use `定位索引 / Location Index`, pass `intent=locate`, or include a `query`; otherwise PDF/image inputs default to recognition/conversion, not location indexing.
 - **Messy screenshot set**: use `截图成书 / Image Book` or `image_book_rebuilder.py`.

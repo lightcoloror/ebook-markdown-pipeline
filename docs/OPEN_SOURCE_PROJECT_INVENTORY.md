@@ -22,6 +22,7 @@
 | Marker | 版面感知 PDF/文档解析 | 可选外部后端 | GPL-3.0 级别/商业授权风险需复核 | 保持可选后端，避免把许可证边界写模糊 |
 | Docling | Office、HTML、CSV、部分文档/PDF 结构化后端 | 可选 Python 后端 | 官方仓库标注 MIT，但模型/扩展依赖仍需复核 | 继续作为结构化后端候选并记录版本 |
 | Microsoft MarkItDown | EPUB/DOCX/PPTX/XLSX/HTML/PDF 的轻量 Markdown baseline | 可选 Python 后端，显式选择后启用 | MIT，仍需记录为独立安装依赖 | 作为 fast comparison/backend-compare 使用，不替代默认推荐管道 |
+| OCRmyPDF | 扫描 PDF 预处理为 searchable PDF | 可选外部命令，显式选择后启用 | MPL-2.0，Tesseract/语言包另需记录 | 作为扫描 PDF 预处理，不直接输出 Markdown，不覆盖原 PDF |
 | Umi-OCR / PaddleOCR-json | 图片、扫描页、本地 OCR 兜底 | 外部本地程序/模块路径 | 需检查程序、模型、PaddleOCR-json 各自许可证 | 保持外部工具接入，程序和模型分别记录 |
 | PaddleOCR-VL | 信息图、复杂版面、layout-heavy 图片补强 | 可选 wrapper/命令 | 需检查代码、模型权重、商用条款 | 作为可选增强后端，模型条款单独复核 |
 | Qwen-VL | 重型 VLM 图文理解补强 | 可选 wrapper/API | 模型许可和商用条款需逐模型复核 | 作为可选增强后端，模型条款单独复核 |
@@ -36,7 +37,7 @@
 | P0 | Microsoft MarkItDown | 多格式轻量 baseline、MCP/CLI/API 参考 | 格式覆盖广，LLM-friendly Markdown，MIT，生态热度高 | MIT | 做成可选 fast path 或对标 benchmark |
 | P0 | Docling | 结构化文档对象、Office/PDF/HTML 解析 | MIT，本地优先，输出 Markdown/JSON/DoclingDocument | MIT | 已集成，继续加强质量对比和默认策略 |
 | P0 | Unstructured | 企业级 ingest、partition、chunking 工作流 | RAG/Agent 文档摄取成熟样板，格式覆盖广 | Apache-2.0 | 重点研究其 partition/chunking/report 设计 |
-| P0 | OCRmyPDF | 扫描 PDF 预处理为 searchable PDF | 可先给扫描件加文本层，再走 fast path | MPL-2.0 常见，需复核 | 作为扫描 PDF 预处理候选 |
+| P0 | OCRmyPDF | 扫描 PDF 预处理为 searchable PDF | 可先给扫描件加文本层，再走 fast path | MPL-2.0 常见，需复核 | 已接入可选预处理入口；继续补 fixture、fallback 和质量对比 |
 | P0 | PaddleOCR / PP-Structure | 中文 OCR、表格、版面结构 | 中文场景强，生态成熟 | Apache-2.0 常见，模型另查 | 重点实测中文扫描件和表格 |
 | P1 | Apache Tika | 格式嗅探、元数据、兜底抽文本 | 格式识别/抽文本覆盖极广 | Apache-2.0 | 可作为 inspect/fallback 参考 |
 | P1 | pdfplumber | 文本层 PDF 表格/坐标调试 | 适合 text-based PDF 的表格和坐标分析 | MIT | 用于表格/坐标诊断，不做主转换 |
@@ -123,7 +124,7 @@
 ## 下一步调研队列
 
 1. MarkItDown：跑公开 fixture，对比 fast path、MCP、Office/HTML/图片能力。
-2. OCRmyPDF：验证扫描 PDF 先加文本层后再走 PyMuPDF/Docling 的效果。
+2. OCRmyPDF：基础入口已接入；继续验证扫描 PDF 先加文本层后再走 PyMuPDF/Docling 的效果。
 3. PaddleOCR / RapidOCR：验证中文扫描件、截图、表格块坐标。
 4. pdfplumber / Camelot：验证 text-based PDF 表格检测和表格 repair。
 5. Apache Tika：验证格式嗅探和非主流格式抽文本。
@@ -182,7 +183,7 @@
 | PDF fast path | PyMuPDF、PyMuPDF4LLM、自研 PyMuPDF text fallback | pdfplumber、pypdf、pdfminer.six、PDFBox | 优先评估 pdfplumber，用于表格/坐标诊断；pypdf/pdfminer 可做轻量兜底。 |
 | 复杂 PDF / 结构化 PDF | MinerU、Marker、Docling 可选管道 | RAGFlow DeepDoc、Surya、MegaParse | 先用真实样本压测现有三条重管道，再决定是否接新后端。 |
 | PDF bookmark / 字体标题修复 | PyMuPDF outline、font candidates、自研 `structure_repair` | GROBID、pdf-craft | GROBID 只适合论文专项；pdf-craft 适合扫描书/截图书专项。 |
-| 扫描 PDF | Umi-OCR、MinerU、Marker、Docling fallback | OCRmyPDF、PaddleOCR、RapidOCR、Tesseract | OCRmyPDF 最值得优先接：先给扫描 PDF 加文本层，再走现有 fast path。 |
+| 扫描 PDF | OCRmyPDF 预处理、Umi-OCR、MinerU、Marker、Docling fallback | PaddleOCR、RapidOCR、Tesseract | OCRmyPDF 已作为显式预处理入口；下一步补扫描 PDF fixture 和失败 fallback。 |
 
 ### 图片、信息图与截图书
 
@@ -217,14 +218,14 @@
 
 | 优先级 | 项目 | 对应模块 | 理由 |
 | --- | --- | --- | --- |
-| 1 | OCRmyPDF | 扫描 PDF 预处理 | 可把扫描 PDF 先变成 searchable PDF，复用现有 PDF fast path。 |
-| 2 | pdfplumber + Camelot | PDF 表格和坐标诊断 | 补当前表格专项弱项，且更适合 text-based PDF。 |
-| 3 | RapidOCR | 低配本地 OCR | 适合 CPU 机器和轻量 OCR fallback。 |
-| 4 | Apache Tika | 格式识别和兜底抽文本 | 补非主流格式嗅探和 metadata/text fallback。 |
-| 5 | GROBID | 学术论文专项 | 只在论文/参考文献场景明确时接入。 |
-| 6 | Crawl4AI / Trafilatura | 网页资料采集 | 不在本项目直接接入；作为 `web-content-fetcher` 的参考候选。 |
+| 1 | pdfplumber + Camelot | PDF 表格和坐标诊断 | 补当前表格专项弱项，且更适合 text-based PDF。 |
+| 2 | RapidOCR | 低配本地 OCR | 适合 CPU 机器和轻量 OCR fallback。 |
+| 3 | Apache Tika | 格式识别和兜底抽文本 | 补非主流格式嗅探和 metadata/text fallback。 |
+| 4 | GROBID | 学术论文专项 | 只在论文/参考文献场景明确时接入。 |
+| 5 | Crawl4AI / Trafilatura | 网页资料采集 | 不在本项目直接接入；作为 `web-content-fetcher` 的参考候选。 |
 
 MarkItDown 已完成第一步可选接入，后续任务转为扩大对比样本和记录质量差异，而不是继续作为待接入候选。
+OCRmyPDF 已完成可选预处理入口，后续任务转为补前后文本层质量指标、失败 fallback 和公开扫描 PDF fixture。
 
 ## 已核验来源
 

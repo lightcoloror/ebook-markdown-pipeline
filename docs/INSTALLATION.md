@@ -59,6 +59,7 @@ Optional backends:
 | PyMuPDF4LLM | Fast text-layer PDF baseline | Installed by `requirements.txt`. |
 | MinerU | Complex PDF structure recovery | Heavy; may need model downloads and enough RAM/GPU/CPU time. |
 | Marker | Short layout-heavy PDF parsing | Heavy; model/network setup can be slow. |
+| OCRmyPDF | Scanned PDF preprocessing into searchable PDF | Install with Tesseract; use explicitly or through recommended reruns. |
 | Umi-OCR / PaddleOCR-json | Scanned PDF/image OCR fallback | Configure paths through environment variables. |
 | Docling | Office/document formats and optional PDF comparison | Install only when needed. |
 | MarkItDown | Fast multi-format Markdown baseline | Install only when you need comparison evidence. |
@@ -83,6 +84,8 @@ python batch_convert_books.py .\samples .\out --pdf-pipeline-mode markitdown
 ```
 
 Configure Umi-OCR if you use it:
+
+OCRmyPDF is optional. When selected with `--pdf-pipeline-mode ocrmypdf`, the project writes a searchable PDF under `.reports/ocrmypdf/` and then runs the fast PDF conversion path. The original PDF is not overwritten.
 
 ```powershell
 Copy-Item config.example.env .env

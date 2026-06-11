@@ -20,7 +20,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--reuse-fixtures", action="store_true", help="Do not regenerate public fixtures before running.")
     parser.add_argument("--sample-timeout", type=float, default=90.0)
-    parser.add_argument("--pdf-mode-for-benchmark", default="fast", choices=["auto", "fast", "pymupdf4llm", "mineru", "marker", "umi", "docling", "markitdown"])
+    parser.add_argument("--pdf-mode-for-benchmark", default="fast", choices=["auto", "fast", "pymupdf4llm", "mineru", "marker", "umi", "docling", "markitdown", "ocrmypdf"])
     parser.add_argument("--document-mode-for-benchmark", default="auto", choices=["auto", "docling", "markitdown"])
     parser.add_argument("--min-success-rate", type=float, default=0.95)
     parser.add_argument("--min-good-rate", type=float, default=0.30)

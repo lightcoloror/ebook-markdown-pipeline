@@ -27,11 +27,13 @@ try:
     from ebook_markdown_pipeline.local_env import load_project_env
     from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
     from ebook_markdown_pipeline.markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
+    from ebook_markdown_pipeline.ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
     from ebook_markdown_pipeline.structure_repair import HeadingCandidate, repair_markdown_structure
 except ModuleNotFoundError:  # Allows running this file directly by absolute path.
     from local_env import load_project_env
     from docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
     from markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
+    from ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
     from structure_repair import HeadingCandidate, repair_markdown_structure
 
 load_project_env()
@@ -54,7 +56,7 @@ OUTPUT_FORMATS = {
     "text": {"suffix": ".txt", "pandoc_target": "plain"},
 }
 
-PDF_PIPELINE_MODES = ("auto", "marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown")
+PDF_PIPELINE_MODES = ("auto", "marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown", "ocrmypdf")
 
 COMMON_WINDOWS_COMMAND_PATHS = {
     "pandoc": [
@@ -68,6 +70,7 @@ COMMON_WINDOWS_COMMAND_PATHS = {
     ],
     "marker_single": [],
     "mineru": [],
+    "ocrmypdf": [],
 }
 
 
@@ -362,6 +365,22 @@ def parse_args() -> argparse.Namespace:
         help="Abort MarkItDown baseline conversion after this many seconds; 0 disables isolation/timeout. Default: 45.",
     )
     parser.add_argument(
+        "--ocrmypdf-command",
+        default="ocrmypdf",
+        help="OCRmyPDF command/path for searchable PDF preprocessing. Default: ocrmypdf.",
+    )
+    parser.add_argument(
+        "--ocrmypdf-timeout",
+        type=float,
+        default=600.0,
+        help="Abort OCRmyPDF preprocessing after this many seconds; 0 disables timeout. Default: 600.",
+    )
+    parser.add_argument(
+        "--ocrmypdf-language",
+        default="chi_sim+eng",
+        help="OCRmyPDF/Tesseract language list. Default: chi_sim+eng.",
+    )
+    parser.add_argument(
         "--no-docling-fallback",
         action="store_true",
         help="Disable automatic fallback to Pandoc/lightweight text output when Docling fails or times out.",
@@ -404,6 +423,9 @@ def default_options(**overrides) -> SimpleNamespace:
         "pdf_tool_finalize_timeout": 480.0,
         "docling_timeout": 45.0,
         "markitdown_timeout": 45.0,
+        "ocrmypdf_command": "ocrmypdf",
+        "ocrmypdf_timeout": 600.0,
+        "ocrmypdf_language": "chi_sim+eng",
         "docling_fallback_to_pandoc": True,
         "pdf_pipeline_mode": "auto",
         "document_pipeline_mode": "auto",
@@ -761,6 +783,10 @@ def find_missing_dependencies(sources: Iterable[Path], args: argparse.Namespace)
             if not markitdown_available():
                 missing.append("Missing optional Python dependency: markitdown. Install with: pip install markitdown")
             continue
+        if command == "ocrmypdf":
+            if not ocrmypdf_available(getattr(args, "ocrmypdf_command", "ocrmypdf")):
+                missing.append("Missing optional command: ocrmypdf. Install OCRmyPDF/Tesseract or pass --ocrmypdf-command.")
+            continue
         if resolve_command_path(command):
             continue
         missing.append(
@@ -793,6 +819,8 @@ def required_dependencies(sources: Iterable[Path], args: argparse.Namespace) -> 
                 required.add("docling")
             elif selected == "markitdown" and not markitdown_available():
                 required.add("markitdown")
+            elif selected == "ocrmypdf" and not ocrmypdf_available(getattr(args, "ocrmypdf_command", "ocrmypdf")):
+                required.add("ocrmypdf")
             if args.output_format != "markdown":
                 required.add(args.pandoc_command)
         elif kind == "docling":
@@ -859,6 +887,16 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
             "kind": "python",
             "status": "ok" if markitdown_available() else "missing",
             "detail": "importable" if markitdown_available() else "optional baseline backend not installed",
+        }
+    )
+    checks.append(
+        {
+            "name": "OCRmyPDF",
+            "kind": "command",
+            "status": "ok" if ocrmypdf_available(getattr(args, "ocrmypdf_command", "ocrmypdf")) else "missing",
+            "detail": "searchable PDF preprocessing available"
+            if ocrmypdf_available(getattr(args, "ocrmypdf_command", "ocrmypdf"))
+            else "optional scanned PDF preprocessing command not found",
         }
     )
     checks.append(
@@ -960,6 +998,7 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
     pymupdf4llm_ok = check_ok("pymupdf4llm")
     docling_ok = check_ok("docling")
     markitdown_ok = check_ok("markitdown")
+    ocrmypdf_ok = check_ok("OCRmyPDF")
     umi_ok = check_ok("Umi PaddleOCR module")
     paddle_vl_ok = check_ok("PaddleOCR-VL wrapper")
     qwen_vl_ok = check_ok("Qwen-VL wrapper")
@@ -1054,6 +1093,17 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
 
     capabilities.append(
         capability_item(
+            "scanned_pdf_preprocess",
+            "ok" if ocrmypdf_ok else "missing",
+            "OCRmyPDF preprocessing is available." if ocrmypdf_ok else "OCRmyPDF is not installed or not configured.",
+            "Use OCRmyPDF to create searchable PDFs before fast text-layer conversion."
+            if ocrmypdf_ok
+            else "Install OCRmyPDF/Tesseract only if you need scanned PDF preprocessing.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
             "gpu_acceleration",
             "ok" if cuda_status == "ok" else "degraded",
             "Torch CUDA is available." if cuda_status == "ok" else "Torch CUDA is unavailable; model pipelines may run on CPU.",
@@ -1123,6 +1173,7 @@ def convert_one(
     args._pdf_fallback_diagnostics = []
     args._docling_diagnostics = []
     args._markitdown_diagnostics = []
+    args._ocrmypdf_diagnostics = []
     args._calibre_fallback_diagnostics = []
     args._last_pdf_pipeline = None
     args._last_docling_pipeline = None
@@ -1541,6 +1592,62 @@ def run_markitdown_convert(
         convert_markdown_file(temp_md, output_path, args, progress_callback, source, progress_index, progress_total)
 
 
+def run_ocrmypdf_pdf_convert(
+    source: Path,
+    output_path: Path,
+    args: argparse.Namespace,
+    progress_callback=None,
+    progress_index: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    emit_stage(progress_callback, source, progress_index, progress_total, "ocrmypdf", "OCRmyPDF 预处理扫描 PDF")
+    if args.dry_run:
+        return
+    report_root = output_path.parent / ".reports" / "ocrmypdf"
+    searchable_pdf = report_root / f"{safe_report_name(source.stem)}.searchable.pdf"
+    before = inspect_pdf_preflight(source, args, sample_pages=8)
+    diagnostic: dict[str, object] = {
+        "tool": "OCRmyPDF",
+        "source": str(source),
+        "searchable_pdf": str(searchable_pdf),
+        "before_preflight": asdict(before),
+        "status": "running",
+    }
+    getattr(args, "_ocrmypdf_diagnostics", []).append(diagnostic)
+    try:
+        ocr_result = preprocess_pdf_with_ocrmypdf(
+            source,
+            searchable_pdf,
+            command=getattr(args, "ocrmypdf_command", "ocrmypdf"),
+            language=getattr(args, "ocrmypdf_language", "chi_sim+eng"),
+            timeout=float(getattr(args, "ocrmypdf_timeout", 600.0) or 0.0),
+        )
+        diagnostic.update(ocr_result)
+        after = inspect_pdf_preflight(searchable_pdf, args, sample_pages=8)
+        diagnostic["after_preflight"] = asdict(after)
+        diagnostic["text_page_ratio_delta"] = round(after.text_page_ratio - before.text_page_ratio, 3)
+        diagnostic["avg_text_chars_delta"] = round(after.avg_text_chars - before.avg_text_chars, 1)
+    except OCRmyPDFPreprocessError as exc:
+        diagnostic.update(getattr(exc, "diagnostic", {}) or {})
+        diagnostic["status"] = "failed" if diagnostic.get("status") == "running" else diagnostic.get("status", "failed")
+        diagnostic["error"] = str(exc)
+        diagnostic["error_type"] = type(exc).__name__
+        raise
+    except Exception as exc:  # noqa: BLE001
+        diagnostic["status"] = "failed"
+        diagnostic["error"] = str(exc)
+        diagnostic["error_type"] = type(exc).__name__
+        raise
+
+    emit_stage(progress_callback, source, progress_index, progress_total, "ocrmypdf", "OCRmyPDF 完成，使用 fast PDF 管道转换 searchable PDF")
+    previous_pipeline = getattr(args, "_last_pdf_pipeline", None)
+    run_pymupdf4llm_pdf_convert(searchable_pdf, output_path, args, progress_callback, progress_index, progress_total)
+    converted_pipeline = getattr(args, "_last_pdf_pipeline", None) or "pymupdf4llm"
+    args._last_pdf_pipeline = f"ocrmypdf+{converted_pipeline}"
+    if previous_pipeline and previous_pipeline != args._last_pdf_pipeline:
+        diagnostic["previous_pipeline"] = previous_pipeline
+
+
 def run_markitdown_backend(source: Path, output_path: Path, args: argparse.Namespace) -> dict:
     timeout = float(getattr(args, "markitdown_timeout", 45.0) or 0.0)
     diagnostic: dict[str, object] = {
@@ -1832,6 +1939,8 @@ def run_pdf_convert(
             run_docling_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         elif selected == "markitdown":
             run_markitdown_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        elif selected == "ocrmypdf":
+            run_ocrmypdf_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         else:
             run_marker_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         return
@@ -3463,6 +3572,9 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
     markitdown_diagnostics = getattr(args, "_markitdown_diagnostics", [])
     if markitdown_diagnostics:
         payload["markitdown_diagnostics"] = markitdown_diagnostics
+    ocrmypdf_diagnostics = getattr(args, "_ocrmypdf_diagnostics", [])
+    if ocrmypdf_diagnostics:
+        payload["ocrmypdf_diagnostics"] = ocrmypdf_diagnostics
     calibre_fallback_diagnostics = getattr(args, "_calibre_fallback_diagnostics", [])
     if calibre_fallback_diagnostics:
         payload["calibre_fallback_diagnostics"] = calibre_fallback_diagnostics
@@ -5058,6 +5170,8 @@ def estimate_conversion_seconds(source: Path, args: argparse.Namespace) -> float
         return page_count * 2.0
     if selected == "markitdown":
         return page_count * 0.8
+    if selected == "ocrmypdf":
+        return page_count * 2.5
     return None
 
 
@@ -5080,6 +5194,8 @@ def selected_pdf_pipeline_label(source: Path, args: argparse.Namespace) -> str:
         return "docling"
     if selected == "markitdown":
         return "markitdown"
+    if selected == "ocrmypdf":
+        return "ocrmypdf+pymupdf4llm"
     return selected
 
 
@@ -5115,6 +5231,8 @@ def plan_note(source: Path, args: argparse.Namespace) -> str:
         return f"{page_count} pages; {metrics}; using Docling document converter"
     if selected == "markitdown":
         return f"{page_count} pages; {metrics}; using MarkItDown baseline converter"
+    if selected == "ocrmypdf":
+        return f"{page_count} pages; {metrics}; OCRmyPDF searchable PDF preprocessing, then fast PDF conversion"
     if mode == "auto":
         return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s; auto-use Marker ({reason})"
     return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s"

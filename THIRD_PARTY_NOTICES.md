@@ -24,6 +24,7 @@ This is an engineering compliance note, not legal advice.
 | Marker | PDF parsing option | GPL-3.0-level project; installed separately |
 | Docling | Optional Office/document/PDF structure backend | Installed separately; check upstream license and model dependencies |
 | Microsoft MarkItDown | Optional fast multi-format Markdown baseline | MIT-licensed upstream project; installed separately |
+| OCRmyPDF | Optional scanned PDF preprocessing to searchable PDF | MPL-2.0 upstream project; installed separately with Tesseract |
 | Umi-OCR / PaddleOCR-json | OCR fallback workflow | Installed separately; check upstream licenses and bundled OCR model licenses |
 | PaddleOCR-VL | Optional infographic/layout-heavy image enhancement | Installed separately or called through wrappers; check upstream model/license terms |
 | Qwen-VL | Optional heavier VLM image enhancement | Model and runtime are installed separately; check upstream model/license terms |

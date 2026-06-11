@@ -38,7 +38,7 @@ Optional:
 - `include_hidden`: default `false`.
 - `output_format`: `markdown`, `html`, or `text`.
 - `document_pipeline_mode`: `auto`, `docling`, or `markitdown`. Use `markitdown` only for explicit baseline comparison on supported non-PDF documents.
-- `pdf_pipeline_mode`: `auto`, `marker`, `mineru`, `umi`, `pymupdf4llm`, `docling`, or `markitdown`. Use `markitdown` only for explicit PDF baseline comparison.
+- `pdf_pipeline_mode`: `auto`, `marker`, `mineru`, `umi`, `pymupdf4llm`, `docling`, `markitdown`, or `ocrmypdf`. Use `markitdown` only for explicit PDF baseline comparison; use `ocrmypdf` only when the caller wants searchable-PDF preprocessing before fast conversion.
 - `image_book_threshold`: retained for compatibility; auto routing now recognizes image folders by default.
 - `ocr`: `auto`, `always`, or `never`.
 - `model_mode`: `local`, `online`, `hybrid`, or `auto`. Current implementation uses this for recommendation/risk reporting only; default conversion remains local-first.
@@ -63,6 +63,12 @@ MarkItDown baseline:
 - MarkItDown is exposed as an optional comparison backend, not as the default recommended route.
 - Agents may pass `document_pipeline_mode=markitdown` or `pdf_pipeline_mode=markitdown` when they need a fast baseline artifact for heading count, noise, success rate, or Markdown-shape comparison.
 - If MarkItDown is missing, `health_check` and dependency checks should report it as optional rather than blocking the default local-first workflow.
+
+OCRmyPDF preprocessing:
+
+- OCRmyPDF is exposed as `pdf_pipeline_mode=ocrmypdf`.
+- It writes a searchable PDF artifact under `.reports/ocrmypdf/`, then runs the fast PDF conversion path on that generated PDF.
+- The original source PDF is not overwritten.
 
 Return shape:
 
