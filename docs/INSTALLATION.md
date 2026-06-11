@@ -105,6 +105,15 @@ EBOOK_CONVERTER_UMI_PADDLE_EXE=C:\path\to\PaddleOCR-json.exe
 EBOOK_CONVERTER_UMI_PADDLE_MODULE=C:\path\to\PPOCR_api.py
 ```
 
+RapidOCR is an optional Python-native OCR fallback for image and screenshot workflows. It is easier for scripts and agents to call than a desktop Umi-OCR bundle, but it is not the default replacement:
+
+```powershell
+python -m pip install -r requirements-rapidocr.txt
+python image_book_rebuilder.py build .\screenshots .\screenshots-out --ocr-provider rapidocr
+```
+
+Use RapidOCR for lightweight fallback or benchmark runs; keep Umi-OCR as the preferred local OCR path when it is already configured and producing better results.
+
 Check the environment:
 
 ```powershell

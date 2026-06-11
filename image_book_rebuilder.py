@@ -30,6 +30,7 @@ from ebook_markdown_pipeline.batch_convert_books import (  # noqa: E402
 )
 from ebook_markdown_pipeline.artifact_schema import artifact, with_artifacts  # noqa: E402
 from ebook_markdown_pipeline.document_locator import IMAGE_EXTENSIONS  # noqa: E402
+from ebook_markdown_pipeline.ocr_providers import create_rapidocr_engine, recognize_image_with_rapidocr, rapidocr_available  # noqa: E402
 
 
 @dataclass
@@ -86,6 +87,11 @@ def default_qwen_vl_command() -> str:
     return f'"{default_vlm_python()}" "{script}" --input {{input}} --output {{output}}'
 
 
+def default_ocr_provider() -> str:
+    value = os.environ.get("EBOOK_CONVERTER_OCR_PROVIDER", "auto").strip().lower()
+    return value if value in {"auto", "umi", "rapidocr"} else "auto"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Rebuild an ordered Markdown document from screenshots.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -95,6 +101,7 @@ def main() -> int:
     build_parser.add_argument("output", type=Path)
     build_parser.add_argument("--recursive", action="store_true")
     build_parser.add_argument("--ocr", choices=["auto", "never"], default="auto")
+    build_parser.add_argument("--ocr-provider", choices=["auto", "umi", "rapidocr"], default=default_ocr_provider())
     build_parser.add_argument("--include-hidden", action="store_true")
     build_parser.add_argument("--umi-paddle-exe", default=suggested_umi_paddle_exe())
     build_parser.add_argument("--umi-paddle-module", default=suggested_umi_paddle_module())
@@ -127,6 +134,7 @@ def main() -> int:
             recursive=args.recursive,
             include_hidden=args.include_hidden,
             ocr_mode=args.ocr,
+            ocr_provider=args.ocr_provider,
             umi_paddle_exe=args.umi_paddle_exe,
             umi_paddle_module=args.umi_paddle_module,
             auto_split_long_images=not args.no_auto_split_long_images,
@@ -160,6 +168,7 @@ def rebuild_image_book(
     recursive: bool = True,
     include_hidden: bool = False,
     ocr_mode: str = "auto",
+    ocr_provider: str = "",
     umi_paddle_exe: str | None = None,
     umi_paddle_module: str | None = None,
     auto_split_long_images: bool = True,
@@ -186,6 +195,7 @@ def rebuild_image_book(
         input_label=str(input_path),
         title=input_path.stem if input_path.is_file() else input_path.name,
         ocr_mode=ocr_mode,
+        ocr_provider=ocr_provider,
         umi_paddle_exe=umi_paddle_exe,
         umi_paddle_module=umi_paddle_module,
         auto_split_long_images=auto_split_long_images,
@@ -213,6 +223,7 @@ def rebuild_image_book_from_sources(
     input_label: str = "selected images",
     title: str = "Rebuilt Image Book",
     ocr_mode: str = "auto",
+    ocr_provider: str = "",
     umi_paddle_exe: str | None = None,
     umi_paddle_module: str | None = None,
     auto_split_long_images: bool = True,
@@ -252,6 +263,7 @@ def rebuild_image_book_from_sources(
     pages = ocr_screenshot_pages(
         source_list,
         ocr_mode=ocr_mode,
+        ocr_provider=ocr_provider,
         umi_paddle_exe=umi_paddle_exe,
         umi_paddle_module=umi_paddle_module,
         progress_callback=progress_callback,
@@ -648,8 +660,9 @@ def ocr_screenshot_pages(
     sources: Iterable[Path],
     *,
     ocr_mode: str,
-    umi_paddle_exe: str | None,
-    umi_paddle_module: str | None,
+    ocr_provider: str = "auto",
+    umi_paddle_exe: str | None = None,
+    umi_paddle_module: str | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> list[ScreenshotPage]:
     options = normalize_command_options(
@@ -659,6 +672,9 @@ def ocr_screenshot_pages(
         )
     )
     ocr_engine = None
+    rapidocr_engine = None
+    active_provider = "none"
+    provider_startup_message = ""
     pages: list[ScreenshotPage] = []
     def reset_ocr_engine() -> None:
         nonlocal ocr_engine
@@ -666,17 +682,35 @@ def ocr_screenshot_pages(
             close_umi_paddle_engine(ocr_engine)
         ocr_engine = create_umi_paddle_engine(options)
 
+    def reset_rapidocr_engine() -> None:
+        nonlocal rapidocr_engine
+        rapidocr_engine = create_rapidocr_engine()
+
     try:
         if ocr_mode != "never":
-            reset_ocr_engine()
+            requested_provider = (ocr_provider or default_ocr_provider()).lower()
+            if requested_provider == "rapidocr":
+                reset_rapidocr_engine()
+                active_provider = "rapidocr"
+            else:
+                try:
+                    reset_ocr_engine()
+                    active_provider = "umi"
+                except Exception as exc:  # noqa: BLE001
+                    if requested_provider == "auto" and rapidocr_available():
+                        reset_rapidocr_engine()
+                        active_provider = "rapidocr"
+                        provider_startup_message = f"Umi-OCR startup failed; fell back to RapidOCR: {exc}"
+                    else:
+                        raise
         source_list = list(sources)
         for index, source in enumerate(source_list, start=1):
             emit_progress(progress_callback, "ocr_page", f"OCR image {index}/{len(source_list)}: {source.name}", index=index, total=len(source_list), source=source)
             text = ""
             ocr_blocks: list[dict] = []
-            ocr_status = "skipped" if ocr_engine is None else "ok"
-            ocr_message = ""
-            if ocr_engine is not None:
+            ocr_status = "skipped" if active_provider == "none" else "ok"
+            ocr_message = provider_startup_message
+            if active_provider == "umi" and ocr_engine is not None:
                 try:
                     text, ocr_blocks = umi_ocr_image_with_blocks(source, ocr_engine)
                     text = text.strip()
@@ -687,6 +721,22 @@ def ocr_screenshot_pages(
                         text, ocr_blocks = umi_ocr_image_with_blocks(source, ocr_engine)
                         text = text.strip()
                         ocr_message = f"Recovered after OCR engine restart: {first_error}"
+                    except Exception as retry_exc:  # noqa: BLE001
+                        ocr_status = "failed"
+                        ocr_message = f"{first_error}; retry failed: {retry_exc}"
+            elif active_provider == "rapidocr" and rapidocr_engine is not None:
+                try:
+                    result = recognize_image_with_rapidocr(source, rapidocr_engine)
+                    text = str(result.get("text") or "").strip()
+                    ocr_blocks = list(result.get("blocks") or [])
+                except Exception as exc:  # noqa: BLE001
+                    first_error = str(exc)
+                    try:
+                        reset_rapidocr_engine()
+                        result = recognize_image_with_rapidocr(source, rapidocr_engine)
+                        text = str(result.get("text") or "").strip()
+                        ocr_blocks = list(result.get("blocks") or [])
+                        ocr_message = f"Recovered after RapidOCR engine restart: {first_error}"
                     except Exception as retry_exc:  # noqa: BLE001
                         ocr_status = "failed"
                         ocr_message = f"{first_error}; retry failed: {retry_exc}"

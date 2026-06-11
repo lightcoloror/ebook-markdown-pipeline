@@ -72,7 +72,7 @@
 - 对长文档继续保留超时、分段、fallback 和复查报告。
 - VLM/hybrid 模式作为高质量增强，不作为默认轻量模式。
 
-### Umi-OCR / PaddleOCR
+### Umi-OCR / PaddleOCR / RapidOCR
 
 定位：本地 OCR fallback。
 
@@ -85,7 +85,7 @@
 
 项目策略：
 
-- 继续作为图片定位索引和截图成书的 OCR 后端。
+- 继续作为图片定位索引和截图成书的 OCR 后端；RapidOCR 作为更易被脚本和 Agent 调用的 Python-native fallback/benchmark 后端。
 - OCR 结果必须写入 `pages.jsonl` 或类似中间文件，便于复查和重跑。
 
 ### Marker

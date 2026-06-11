@@ -1,0 +1,4 @@
+# Optional lightweight Python OCR provider for image/screenshot workflows.
+# The main project works without this file; install it only when you want
+# --ocr-provider rapidocr or RapidOCR benchmark/fallback runs.
+rapidocr_onnxruntime>=1.4.4

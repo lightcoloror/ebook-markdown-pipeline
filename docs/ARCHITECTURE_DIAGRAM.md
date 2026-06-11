@@ -45,7 +45,7 @@ flowchart TD
 | MinerU | Optional structured PDF parsing for complex or scanned documents. | Optional external backend. |
 | Marker | Optional layout-aware PDF parsing. | Optional external backend. |
 | Docling | Optional Office/document/PDF structure backend. | Optional Python package/backend. |
-| Umi-OCR / PaddleOCR-json | Local OCR blocks for images and scanned pages. | External local OCR engine. |
+| Umi-OCR / PaddleOCR-json / RapidOCR | Local OCR blocks for images and scanned pages. | External local/Python OCR engine. |
 | PaddleOCR-VL / Qwen-VL / MinerU VLM | Optional layout-heavy image, infographic, or difficult-page enhancement. | Optional wrappers/backends. |
 
 ## Reference Patterns

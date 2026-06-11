@@ -83,7 +83,7 @@ There are two different relationships:
 | MinerU | Optional structured PDF parsing for complex/scanned PDFs | Optional external backend |
 | Marker | Optional layout-aware PDF parsing | Optional external backend |
 | Docling | Optional Office/document/PDF structure backend | Optional Python package/backend |
-| Umi-OCR / PaddleOCR-json | Local OCR blocks for images and scanned pages | External local OCR engine |
+| Umi-OCR / PaddleOCR-json / RapidOCR | Local OCR blocks for images and scanned pages | External local/Python OCR engine |
 | PaddleOCR-VL | Optional layout-heavy image/infographic enhancement | Optional wrapper/backend |
 | Qwen-VL | Optional heavier VLM fallback for difficult images | Optional wrapper/backend |
 

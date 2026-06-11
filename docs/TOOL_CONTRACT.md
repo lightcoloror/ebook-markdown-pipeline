@@ -578,6 +578,12 @@ Use specialist tools when the desired action is already known:
 - `read_report`: JSON conversion report reader.
 - `read_pdf_tool_log`: PDF tool log tail reader.
 
+Image OCR provider options for `rebuild_image_book`, `start_image_book_rebuild`, and `process_material` image routes:
+
+- `ocr_provider=auto`: prefer Umi-OCR and fall back to RapidOCR only when Umi startup fails and RapidOCR is installed.
+- `ocr_provider=umi`: use the configured Umi-OCR/PaddleOCR-json backend.
+- `ocr_provider=rapidocr`: use the optional Python-native RapidOCR backend. The output still uses the same `pages_jsonl` and OCR block schema.
+
 ## Failure Handling
 
 If a tool returns `error=true`, agents should:

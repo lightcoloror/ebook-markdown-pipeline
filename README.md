@@ -72,7 +72,7 @@ This project follows a tool-first integration principle: use mature tools direct
 | MinerU | Optional structured PDF parsing for complex/scanned documents. |
 | Marker | Optional layout-aware PDF parsing. |
 | Docling | Optional Office/document/PDF structure backend. |
-| Umi-OCR / PaddleOCR-json | Local OCR blocks for images and scanned pages. |
+| Umi-OCR / PaddleOCR-json / RapidOCR | Local OCR blocks for images and scanned pages. |
 | PaddleOCR-VL / Qwen-VL / MinerU VLM | Optional layout-heavy image or infographic enhancement. |
 
 Several design ideas are also documented as architectural references: Marker-style pluggable LLM services, MinerU-style local/remote VLM backend split, PaddleOCR MCP-style stable tool contracts, and Docling-style artifact boundaries. These are reference patterns, not copied upstream source code. See [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the detailed boundary and license notes.
@@ -85,7 +85,7 @@ This project is already useful as a local personal workflow tool, but the public
 
 - **Minimal**: Python dependencies plus Pandoc for common ebooks and text-layer PDFs.
 - **PDF enhanced**: add MinerU, Marker, Umi-OCR, or Docling only when your PDFs need structure/OCR/layout recovery.
-- **Local VLM/image layout**: add PaddleOCR-VL or Qwen-VL wrappers only for infographics and layout-heavy screenshots.
+- **Local OCR/VLM/image layout**: add RapidOCR for lightweight Python OCR fallback, and PaddleOCR-VL or Qwen-VL wrappers only for infographics and layout-heavy screenshots.
 - **Agent/API**: use MCP or HTTP after the local CLI/UI path works.
 
 See [docs/INSTALLATION.md](docs/INSTALLATION.md) for commands, optional environment variables, and troubleshooting.

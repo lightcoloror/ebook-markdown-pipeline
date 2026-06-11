@@ -365,6 +365,12 @@ Outputs:
 - `pages.jsonl`: per-image OCR and metadata.
 - `clusters.json`: duplicate/near-duplicate groups.
 
+OCR provider selection:
+
+- `ocr_provider=auto`: default. Prefer Umi-OCR; if Umi startup fails and RapidOCR is installed, fall back to RapidOCR.
+- `ocr_provider=umi`: use the configured Umi-OCR/PaddleOCR-json backend.
+- `ocr_provider=rapidocr`: use the optional Python-native RapidOCR backend. Install `requirements-rapidocr.txt` first.
+
 ### `start_image_book_rebuild`
 
 Starts `rebuild_image_book` as a background job and returns `job_id`.

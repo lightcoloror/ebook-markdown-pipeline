@@ -28,6 +28,7 @@ try:
     from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
     from ebook_markdown_pipeline.markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ebook_markdown_pipeline.ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
+    from ebook_markdown_pipeline.ocr_providers import rapidocr_available, rapidocr_package_name
     from ebook_markdown_pipeline.pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, camelot_available, pdfplumber_available
     from ebook_markdown_pipeline.structure_repair import HeadingCandidate, repair_markdown_structure
 except ModuleNotFoundError:  # Allows running this file directly by absolute path.
@@ -35,6 +36,7 @@ except ModuleNotFoundError:  # Allows running this file directly by absolute pat
     from docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
     from markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
+    from ocr_providers import rapidocr_available, rapidocr_package_name
     from pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, camelot_available, pdfplumber_available
     from structure_repair import HeadingCandidate, repair_markdown_structure
 
@@ -933,6 +935,15 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
             "detail": getattr(args, "umi_paddle_module", suggested_umi_paddle_module()),
         }
     )
+    rapidocr_package = rapidocr_package_name()
+    checks.append(
+        {
+            "name": "RapidOCR",
+            "kind": "python",
+            "status": "ok" if rapidocr_available() else "missing",
+            "detail": f"importable via {rapidocr_package}" if rapidocr_package else "optional Python OCR provider not installed",
+        }
+    )
     checks.extend(vlm_image_backend_health())
     cache_status, cache_detail = mineru_model_cache_status(fast=fast)
     checks.append(
@@ -1020,6 +1031,7 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
     pdfplumber_ok = check_ok("pdfplumber")
     camelot_ok = check_ok("Camelot")
     umi_ok = check_ok("Umi PaddleOCR module")
+    rapidocr_ok = check_ok("RapidOCR")
     paddle_vl_ok = check_ok("PaddleOCR-VL wrapper")
     qwen_vl_ok = check_ok("Qwen-VL wrapper")
     mineru_cache = check_status("MinerU model cache")
@@ -1071,9 +1083,28 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
     capabilities.append(
         capability_item(
             "local_ocr",
-            "ok" if umi_ok else "missing",
-            "Umi-OCR Paddle module is available." if umi_ok else "Umi-OCR Paddle module is not configured.",
-            "Use Umi-OCR for long scanned documents or image batches." if umi_ok else "Configure Umi-OCR path for scanned PDFs/images.",
+            "ok" if umi_ok or rapidocr_ok else "missing",
+            "Umi-OCR Paddle module is available."
+            if umi_ok
+            else "RapidOCR is available as a lightweight Python OCR fallback."
+            if rapidocr_ok
+            else "No local OCR provider is configured.",
+            "Use Umi-OCR for long scanned documents or image batches."
+            if umi_ok
+            else "Use --ocr-provider rapidocr for script/agent-friendly image OCR fallback."
+            if rapidocr_ok
+            else "Configure Umi-OCR or install RapidOCR for scanned PDFs/images.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
+            "rapidocr_fallback",
+            "ok" if rapidocr_ok else "missing",
+            "RapidOCR Python provider is importable." if rapidocr_ok else "RapidOCR optional provider is not installed.",
+            "Use RapidOCR for lightweight image OCR comparison/fallback."
+            if rapidocr_ok
+            else "Install rapidocr_onnxruntime or rapidocr only if you need Python-native OCR fallback.",
         )
     )
 
