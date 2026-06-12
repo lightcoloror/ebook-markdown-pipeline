@@ -75,6 +75,9 @@ def main() -> int:
                 raise RuntimeError(f"MCP agent contract failed: {contract}")
             if contract.get("entrypoints")[:3] != ["process_material", "get_job_status", "read_artifact"]:
                 raise RuntimeError(f"MCP agent contract entrypoints failed: {contract}")
+            pm_contract = contract.get("process_material_contract") or {}
+            if pm_contract.get("schema_version") != "process-material-v2" or "recommended_followup" not in pm_contract.get("required_fields", []):
+                raise RuntimeError(f"MCP contract missing process_material v2 schema: {contract}")
             if contract.get("route_defaults", {}).get("images") != "start_image_book_rebuild":
                 raise RuntimeError(f"MCP contract should expose recognition-first route defaults: {contract}")
             if not contract.get("pipeline_capabilities", {}).get("capabilities"):

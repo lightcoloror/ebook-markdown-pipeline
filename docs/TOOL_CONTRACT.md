@@ -8,6 +8,8 @@ The stable machine-readable server id remains `ebook-markdown-pipeline` for comp
 
 MCP-native agents can call `get_agent_contract` to retrieve the same stable calling contract in machine-readable form. The response uses `schema_version=ebook-agent-contract-v1` and includes `display_name=图文材料转换器`, preferred entrypoints, specialist tools, full tool schemas, artifact/error contract versions, and docs pointers.
 
+The discovery payload also includes `process_material_contract` with `schema_version=process-material-v2`, required response fields, and required machine-actionable `next_actions` fields. Older agents may keep using the v1 discovery schema, while newer agents should read this nested contract before calling `process_material`.
+
 Preferred order:
 
 1. `process_material`

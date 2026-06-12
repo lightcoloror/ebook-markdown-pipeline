@@ -83,6 +83,9 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"HTTP contract has wrong display name: {contract}")
     if contract.get("entrypoints")[:3] != ["process_material", "get_job_status", "read_artifact"]:
         raise RuntimeError(f"HTTP contract entrypoints are wrong: {contract}")
+    pm_contract = contract.get("process_material_contract") or {}
+    if pm_contract.get("schema_version") != "process-material-v2" or "recommended_followup" not in pm_contract.get("required_fields", []):
+        raise RuntimeError(f"HTTP contract missing process_material v2 schema: {contract}")
     if not contract.get("supports_async_jobs") or not contract.get("supports_artifacts"):
         raise RuntimeError(f"HTTP contract missing capability flags: {contract}")
     if "/capabilities" not in contract.get("capability_endpoints", []):

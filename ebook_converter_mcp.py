@@ -695,6 +695,7 @@ def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
         "protocol_version": PROTOCOL_VERSION if transport == "mcp-stdio" else "",
         "artifact_schema_version": "artifact-schema-v1",
         "entrypoints": ["process_material", "get_job_status", "read_artifact"],
+        "process_material_contract": process_material_contract_payload(),
         "specialist_tools": [
             "health_check",
             "inspect_document",
@@ -727,6 +728,24 @@ def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
             "retryable": False,
             "schema_version": "artifact-schema-v1",
         },
+    }
+
+
+def process_material_contract_payload() -> dict[str, Any]:
+    return {
+        "schema_version": "process-material-v2",
+        "required_fields": [
+            "schema_version",
+            "status",
+            "route",
+            "job_id",
+            "artifacts",
+            "quality_summary",
+            "next_actions",
+            "recommended_followup",
+        ],
+        "next_action_required_fields": ["tool", "arguments", "safe_default", "destructive"],
+        "safe_default": "Recognition/conversion is local-first. Location indexing requires intent=locate or query.",
     }
 
 

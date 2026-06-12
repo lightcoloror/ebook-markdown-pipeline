@@ -21,6 +21,7 @@ from ebook_markdown_pipeline.ebook_converter_mcp import (  # noqa: E402
     agent_operating_context,
     agent_risk_status,
     call_tool,
+    process_material_contract_payload,
     tool_schemas,
 )
 from ebook_markdown_pipeline.artifact_schema import SCHEMA_VERSION  # noqa: E402
@@ -234,6 +235,7 @@ def http_contract_payload(config: HttpConfig | None = None, *, bind_host: str | 
         "transport": "http",
         "artifact_schema_version": SCHEMA_VERSION,
         "entrypoints": ["process_material", "get_job_status", "read_artifact"],
+        "process_material_contract": process_material_contract_payload(),
         "specialist_tools": [
             "health_check",
             "inspect_document",
