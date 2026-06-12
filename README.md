@@ -190,6 +190,8 @@ python scripts\show_latest_quality_gate.py
 
 The release profile runs the minimal quality gate, MarkItDown backend comparison, OCR provider comparison, docs contract, and public release checks. It writes `release-summary.json/md` and updates the ignored `benchmarks/runs/latest/release-index.json/md` handoff index. `show_latest_quality_gate.py` prints that latest handoff summary for humans and agents.
 
+Use `--no-update-latest` for temporary release-profile experiments when you do not want to replace the latest handoff index.
+
 ## CLI Examples
 
 Batch convert a folder:

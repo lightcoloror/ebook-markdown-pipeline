@@ -29,6 +29,7 @@ def main() -> int:
     parser.add_argument("--max-timeout-rate", type=float, default=0.0)
     parser.add_argument("--max-failed-rate", type=float, default=0.0)
     parser.add_argument("--no-fail-on-quality-gate", action="store_true")
+    parser.add_argument("--no-update-latest", action="store_true", help="Do not update benchmarks/runs/latest when running the release profile.")
     args = parser.parse_args()
 
     fixtures_dir = args.fixtures_dir.resolve()
@@ -180,7 +181,8 @@ def run_release_profile(args: argparse.Namespace, fixtures_dir: Path, output: Pa
         "failed_steps": [step["name"] for step in payload["steps"] if int(step["exit_code"]) != 0],
     }
     write_release_reports(output, payload)
-    write_latest_release_index(payload)
+    if not bool(getattr(args, "no_update_latest", False)):
+        write_latest_release_index(payload)
     print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
     return first_nonzero([int(step["exit_code"]) for step in payload["steps"]])
 

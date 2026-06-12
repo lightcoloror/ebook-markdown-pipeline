@@ -216,6 +216,9 @@ def main() -> int:
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
         quality_gate_module.run = fake_release_run
+        latest_payloads: list[dict] = []
+        original_write_latest = quality_gate_module.write_latest_release_index
+        quality_gate_module.write_latest_release_index = latest_payloads.append
         try:
             release_code = quality_gate_module.run_release_profile(
                 argparse.Namespace(
@@ -229,14 +232,18 @@ def main() -> int:
                     max_timeout_rate=0.0,
                     max_failed_rate=0.0,
                     no_fail_on_quality_gate=True,
+                    no_update_latest=True,
                 ),
                 fixtures,
                 release_output,
             )
         finally:
             quality_gate_module.run = original_run
+            quality_gate_module.write_latest_release_index = original_write_latest
         if release_code != 0:
             raise AssertionError(f"Expected release fake run to pass: {release_code}")
+        if latest_payloads:
+            raise AssertionError(f"Release test runs should not update latest quality gate: {latest_payloads}")
         for expected in ["run_benchmarks.py", "compare_benchmark_quality.py", "compare_ocr_providers.py", "test_docs_contract.py", "check_public_release.py"]:
             if expected not in release_calls:
                 raise AssertionError(f"Release profile did not call {expected}: {release_calls}")
