@@ -73,7 +73,7 @@ Use `python scripts\test_agent_smoke_suite.py --list` to inspect the planned fas
 
 Pass `--output <dir>` to persist `agent-smoke-summary.json/md` as handoff evidence for another session or agent. The JSON report includes `contract`, `contract_validation`, `artifacts`, and `next_actions`; failed runs include failed test names and per-test rerun commands.
 
-Agents can call `show_latest_quality_gate` through MCP/HTTP to read the ignored local `benchmarks/runs/latest/release-index.json` handoff summary without shell access. If no latest summary exists, the tool returns `status=missing` with a safe manual command suggestion.
+Agents can call `show_latest_quality_gate` through MCP/HTTP to read the ignored local `benchmarks/runs/latest/release-index.json` handoff summary without shell access. If no latest summary exists, the tool returns `status=missing` with a safe manual command suggestion. If the index exists but points at deleted temporary reports, it returns `status=stale`, `artifact_status=stale`, and `missing_artifacts` so agents can ask for or run a fresh release gate instead of trusting dangling paths.
 
 When running release-profile experiments in temporary directories, pass `--no-update-latest` so the shared latest handoff index continues to point at the last intentional release gate run.
 

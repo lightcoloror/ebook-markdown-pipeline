@@ -140,7 +140,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         headers=headers,
         payload={"name": "show_latest_quality_gate", "arguments": {"format": "markdown"}},
     )
-    if latest_quality.get("error") or latest_quality.get("status") not in {"ok", "missing"}:
+    if latest_quality.get("error") or latest_quality.get("status") not in {"ok", "missing", "stale"}:
         raise RuntimeError(f"Latest quality gate tool returned unexpected payload: {latest_quality}")
 
     scan = request_json(
