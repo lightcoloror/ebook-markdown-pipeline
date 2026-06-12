@@ -71,6 +71,8 @@ python scripts\test_agent_smoke_suite.py
 
 Pass `--output <dir>` to persist `agent-smoke-summary.json/md` as handoff evidence for another session or agent. The JSON report includes `contract`, `contract_validation`, `artifacts`, and `next_actions`; failed runs include failed test names and per-test rerun commands.
 
+Agents can call `show_latest_quality_gate` through MCP/HTTP to read the ignored local `benchmarks/runs/latest/release-index.json` handoff summary without shell access. If no latest summary exists, the tool returns `status=missing` with a safe manual command suggestion.
+
 Use `--fail-fast` for local debugging when the first failure is enough; omit it when you want a complete handoff report.
 
 Use `--full` before releases or broad contract changes to include the slower full agent contract test.

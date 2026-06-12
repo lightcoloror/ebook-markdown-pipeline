@@ -50,7 +50,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     if not health.get("supports_async_jobs") or not health.get("supports_artifacts"):
         raise RuntimeError(f"Health response is missing capability flags: {health}")
     health_tool_names = set(health.get("tools", []))
-    if not {"get_agent_contract", "read_artifact", "inspect_agent_batch_results", "list_agent_batch_results", "build_agent_handoff_bundle"}.issubset(health_tool_names):
+    if not {"get_agent_contract", "read_artifact", "show_latest_quality_gate", "inspect_agent_batch_results", "list_agent_batch_results", "build_agent_handoff_bundle"}.issubset(health_tool_names):
         raise RuntimeError(f"Health response is missing tool names: {health}")
     http_config = health.get("http_config") or {}
     if not http_config.get("config_path") or not http_config.get("local_url") or not http_config.get("docker_url"):
@@ -101,7 +101,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     if not contract.get("long_task_guidance", {}).get("poll_tool"):
         raise RuntimeError(f"HTTP contract missing long task guidance: {contract}")
     contract_tool_names = {item.get("name") for item in contract.get("tools") or []}
-    if not {"get_agent_contract", "process_material", "read_artifact", "build_agent_handoff_bundle"}.issubset(contract_tool_names):
+    if not {"get_agent_contract", "process_material", "read_artifact", "show_latest_quality_gate", "build_agent_handoff_bundle"}.issubset(contract_tool_names):
         raise RuntimeError(f"HTTP contract missing key tools: {contract}")
     docs = contract.get("docs") or {}
     if not docs.get("tool_contract") or not docs.get("agent_integration"):
@@ -115,6 +115,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     required = {
         "get_agent_contract",
         "scan_books",
+        "show_latest_quality_gate",
         "inspect_document",
         "process_material",
         "process_web_archive",
@@ -130,6 +131,15 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     missing_tools = required - tool_names
     if missing_tools:
         raise RuntimeError(f"Missing tools: {sorted(missing_tools)}")
+
+    latest_quality = request_json(
+        f"{url.rstrip('/')}/call",
+        method="POST",
+        headers=headers,
+        payload={"name": "show_latest_quality_gate", "arguments": {"format": "markdown"}},
+    )
+    if latest_quality.get("error") or latest_quality.get("status") not in {"ok", "missing"}:
+        raise RuntimeError(f"Latest quality gate tool returned unexpected payload: {latest_quality}")
 
     scan = request_json(
         f"{url.rstrip('/')}/call",

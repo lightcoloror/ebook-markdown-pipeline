@@ -47,6 +47,7 @@ def main() -> int:
                 "get_agent_contract",
                 "scan_books",
                 "health_check",
+                "show_latest_quality_gate",
                 "inspect_document",
                 "process_material",
                 "process_web_archive",

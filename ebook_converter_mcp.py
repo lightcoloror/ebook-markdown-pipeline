@@ -273,6 +273,16 @@ def tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "show_latest_quality_gate",
+            "description": "Read the latest local release quality-gate handoff summary without running shell commands.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "format": {"type": "string", "enum": ["json", "markdown"], "default": "json"},
+                },
+            },
+        },
+        {
             "name": "export_environment_report",
             "description": "Export environment diagnostics as Markdown/JSON artifacts for handoff or debugging.",
             "inputSchema": {
@@ -634,6 +644,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return scan_books(arguments)
     if name == "health_check":
         return health_check(arguments)
+    if name == "show_latest_quality_gate":
+        return show_latest_quality_gate(arguments)
     if name == "export_environment_report":
         return export_environment_report_tool(arguments)
     if name == "compare_environment_lock":
@@ -894,6 +906,65 @@ def health_check(arguments: dict[str, Any]) -> dict[str, Any]:
         "degraded_capabilities": degraded,
         "missing_capabilities": missing,
     }
+
+
+def show_latest_quality_gate(arguments: dict[str, Any]) -> dict[str, Any]:
+    project_dir = Path(__file__).resolve().parent
+    preferred = project_dir / "benchmarks" / "runs" / "latest" / "release-index.json"
+    source = preferred if preferred.exists() else latest_release_summary(project_dir)
+    if source is None:
+        return {
+            "status": "missing",
+            "found": False,
+            "message": "No release quality-gate summary found. Run: python scripts\\run_quality_gate.py --profile release",
+            "next_actions": [
+                normalize_agent_action(
+                    {
+                        "action": "run_release_quality_gate",
+                        "tool": "manual_shell",
+                        "arguments": {"command": "python scripts\\run_quality_gate.py --profile release"},
+                        "why": "generate the latest release quality-gate handoff summary",
+                    }
+                )
+            ],
+        }
+    payload = json.loads(source.read_text(encoding="utf-8-sig"))
+    result = {
+        "status": "ok",
+        "found": True,
+        "source": str(source),
+        "payload": payload,
+        "summary": payload.get("summary") or {},
+    }
+    if str(arguments.get("format") or "json") == "markdown":
+        result["markdown"] = render_latest_quality_gate_markdown(result)
+    return result
+
+
+def latest_release_summary(project_dir: Path) -> Path | None:
+    quality_gate_root = project_dir / "benchmarks" / "runs" / "quality-gate"
+    candidates = sorted(quality_gate_root.glob("*/release-summary.json"), key=lambda path: path.stat().st_mtime, reverse=True)
+    return candidates[0] if candidates else None
+
+
+def render_latest_quality_gate_markdown(result: dict[str, Any]) -> str:
+    payload = result.get("payload") or {}
+    summary = payload.get("summary") or {}
+    lines = [
+        "# Latest Quality Gate",
+        "",
+        f"- Source: `{result.get('source', '')}`",
+        f"- Status: {summary.get('status', 'unknown')}",
+        f"- Output: `{payload.get('output', '')}`",
+        f"- Failed steps: {', '.join(summary.get('failed_steps') or []) or 'none'}",
+        "",
+        "| Step | Status | Exit | Report |",
+        "| --- | --- | ---: | --- |",
+    ]
+    for step in payload.get("steps") or []:
+        if isinstance(step, dict):
+            lines.append(f"| {step.get('name', '')} | {step.get('status', '')} | {step.get('exit_code', '')} | `{step.get('report', '')}` |")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def export_environment_report_tool(arguments: dict[str, Any]) -> dict[str, Any]:

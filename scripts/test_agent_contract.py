@@ -36,6 +36,7 @@ REQUIRED_TOOLS = {
     "inspect_document",
     "scan_books",
     "health_check",
+    "show_latest_quality_gate",
     "export_environment_report",
     "compare_environment_lock",
     "start_conversion",
