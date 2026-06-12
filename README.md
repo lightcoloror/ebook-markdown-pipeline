@@ -239,14 +239,14 @@ MCP 配置示例：
 {
   "mcpServers": {
     "ebook-markdown-pipeline": {
-      "command": "C:\\path\\to\\ebook_markdown_pipeline\\start_mcp.cmd",
+      "command": "<project-path>\\start_mcp.cmd",
       "args": []
     }
   }
 }
 ```
 
-把 `C:\path\to\ebook_markdown_pipeline` 改成实际项目路径即可。
+把 `<project-path>` 改成实际项目路径即可。
 
 MCP 工具包括：
 
@@ -456,7 +456,7 @@ python scripts\test_agent_smoke_suite.py
 
 只想查看将要运行哪些 smoke 测试时，用 `python scripts\test_agent_smoke_suite.py --list`，它只输出 JSON 列表，不执行测试。
 
-需要留下可交接证据时加 `--output D:\agent-smoke-report`，会写入 `agent-smoke-summary.json/md`。JSON 报告包含 `contract`、`contract_validation`、`artifacts` 和 `next_actions`，失败时会列出失败测试和逐条重跑命令。
+需要留下可交接证据时加 `--output .\agent-smoke-report`，会写入 `agent-smoke-summary.json/md`。JSON 报告包含 `contract`、`contract_validation`、`artifacts` 和 `next_actions`，失败时会列出失败测试和逐条重跑命令。
 
 本地快速定位问题时可加 `--fail-fast`，失败后会停止后续测试；默认会继续跑完以保留完整证据。
 
@@ -582,11 +582,11 @@ python batch_convert_books.py `
 推荐顺序：
 
 ```powershell
-python -m web_content_fetcher.cli archive rebuild D:\path\to\archive --with-visual-check --format summary
+python -m web_content_fetcher.cli archive rebuild .\web-archives\example-archive --with-visual-check --format summary
 
-.\process-web-archive.cmd C:\path\to\archive --format summary
+.\process-web-archive.cmd .\web-archives\example-archive --format summary
 
-python -m web_content_fetcher.cli archive rebuild D:\path\to\archive --with-visual-check --format summary
+python -m web_content_fetcher.cli archive rebuild .\web-archives\example-archive --with-visual-check --format summary
 ```
 
 `process-web-archive.cmd` 会读取 `rebuild_input/manifest.json`，优先复用 `image_book_rebuilder` 对页面截图做 OCR/结构推断，并在 archive 下准备：
@@ -623,8 +623,8 @@ python batch_convert_books.py `
   .\books `
   .\books-md `
   --recursive `
-  --pandoc-command C:\path\to\pandoc.exe `
-  --calibre-command "C:\Program Files\Calibre2\ebook-convert.exe" `
+  --pandoc-command .\tools\pandoc\pandoc.exe `
+  --calibre-command .\tools\calibre\ebook-convert.exe `
   --marker-command marker_single
 ```
 

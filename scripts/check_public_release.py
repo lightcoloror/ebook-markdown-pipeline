@@ -66,6 +66,7 @@ def main() -> int:
         check_required_docs(),
         check_quickstart_commands(),
         check_public_commands_are_relative(),
+        check_homepage_paths_are_portable(),
         check_private_patterns(files),
         check_secret_patterns(files),
         check_model_cache_markers(files),
@@ -138,6 +139,26 @@ def check_public_commands_are_relative() -> Check:
             if command_pattern.search(line):
                 hits.append({"path": relative(path), "line": line_no, "text": line.strip()[:160]})
     return Check("public commands use relative paths", not hits, ", ".join(relative(path) for path in paths), f"hits={hits[:20]}" if hits else "no absolute-path command examples")
+
+
+def check_homepage_paths_are_portable() -> Check:
+    paths = [
+        PROJECT_DIR / "README.md",
+        PROJECT_DIR / "docs" / "QUICKSTART.md",
+    ]
+    drive_path_pattern = re.compile(r"\b[A-Za-z]:[\\/][^\s`'\"\]\)<>]+")
+    hits = []
+    for path in paths:
+        text = read_text(path) or ""
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if drive_path_pattern.search(line):
+                hits.append({"path": relative(path), "line": line_no, "text": line.strip()[:160]})
+    return Check(
+        "homepage paths are portable",
+        not hits,
+        ", ".join(relative(path) for path in paths),
+        f"hits={hits[:20]}" if hits else "no drive-letter paths in homepage docs",
+    )
 
 
 def check_private_patterns(files: list[Path]) -> Check:
