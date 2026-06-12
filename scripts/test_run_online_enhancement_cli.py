@@ -26,6 +26,14 @@ def main() -> int:
         artifact_paths = [Path(item.get("path") or "") for item in structure.get("artifacts") or []]
         if not artifact_paths or not all(path.exists() for path in artifact_paths):
             raise AssertionError(f"Expected persisted CLI artifacts: {structure}")
+        request_summary = structure.get("request_summary") or {}
+        if request_summary.get("input_kind") != "text" or not request_summary.get("input_sha256"):
+            raise AssertionError(f"Expected request summary with input hash: {structure}")
+        if structure.get("duration_seconds") is None:
+            raise AssertionError(f"Expected duration in enhancement payload: {structure}")
+        persisted = json.loads(next(path for path in artifact_paths if path.suffix == ".json").read_text(encoding="utf-8"))
+        if "Title\n\nBody" in json.dumps(persisted.get("request_summary") or {}, ensure_ascii=False):
+            raise AssertionError(f"Request summary should not include raw input text: {persisted}")
 
         embedding = run_cli("embedding", "--input-texts", "alpha", "beta")
         vectors = (embedding.get("result") or {}).get("vectors") or []

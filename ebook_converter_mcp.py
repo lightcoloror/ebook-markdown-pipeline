@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import queue
@@ -1163,6 +1164,8 @@ def run_enhancement_provider_task(
     remote_call_enabled: bool,
     provider_name: str,
 ) -> dict[str, Any]:
+    started = time.monotonic()
+    request_summary = enhancement_request_summary(task, arguments, provider_name=provider_name, remote_call_enabled=remote_call_enabled)
     if task == "text_structure":
         text = read_text_input(arguments, label="input_text")
         result = provider.repair_structure(text, context=context)
@@ -1190,6 +1193,8 @@ def run_enhancement_provider_task(
         "provider": provider_name,
         "provider_mode": "remote" if remote_call_enabled else "fake",
         "remote_call_enabled": remote_call_enabled,
+        "duration_seconds": round(time.monotonic() - started, 3),
+        "request_summary": request_summary,
         "result": result,
     }
     artifacts = write_online_enhancement_artifacts(payload, arguments)
@@ -1228,6 +1233,55 @@ def read_texts_input(arguments: dict[str, Any]) -> list[str]:
             chunks = [chunk.strip() for chunk in content.splitlines() if chunk.strip()]
             return chunks or [content]
     raise ValueError("input_texts, input_text, or input_path is required for embedding.")
+
+
+def enhancement_request_summary(
+    task: str,
+    arguments: dict[str, Any],
+    *,
+    provider_name: str,
+    remote_call_enabled: bool,
+) -> dict[str, Any]:
+    input_path = Path(str(arguments.get("input_path") or ""))
+    text = arguments.get("input_text")
+    texts = arguments.get("input_texts")
+    summary: dict[str, Any] = {
+        "schema_version": "online-enhancement-request-summary-v1",
+        "task": task,
+        "provider": provider_name,
+        "remote_call_enabled": remote_call_enabled,
+        "model_mode": str(arguments.get("model_mode") or "local"),
+        "provider_mode": str(arguments.get("provider_mode") or "fake"),
+        "mime_type": str(arguments.get("mime_type") or ""),
+        "prompt_chars": len(str(arguments.get("prompt") or "")),
+        "context_keys": sorted((arguments.get("context") or {}).keys()) if isinstance(arguments.get("context"), dict) else [],
+    }
+    if input_path.is_file():
+        data = input_path.read_bytes()
+        summary.update(
+            {
+                "input_kind": "file",
+                "input_name": input_path.name,
+                "input_bytes": len(data),
+                "input_sha256": hashlib.sha256(data).hexdigest(),
+            }
+        )
+    elif isinstance(text, str) and text:
+        data = text.encode("utf-8")
+        summary.update({"input_kind": "text", "input_chars": len(text), "input_sha256": hashlib.sha256(data).hexdigest()})
+    elif isinstance(texts, list):
+        joined = "\n".join(str(item) for item in texts)
+        summary.update(
+            {
+                "input_kind": "texts",
+                "input_count": len(texts),
+                "input_chars": len(joined),
+                "input_sha256": hashlib.sha256(joined.encode("utf-8")).hexdigest(),
+            }
+        )
+    else:
+        summary["input_kind"] = "unknown"
+    return summary
 
 
 def enhance_markdown_structure(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1396,8 +1450,23 @@ def render_online_enhancement_markdown(payload: dict[str, Any]) -> str:
         f"- Provider: {payload.get('provider', '')}",
         f"- Provider mode: {payload.get('provider_mode', '')}",
         f"- Remote call enabled: {bool(payload.get('remote_call_enabled'))}",
+        f"- Duration seconds: {payload.get('duration_seconds', '')}",
         "",
     ]
+    request_summary = payload.get("request_summary") if isinstance(payload.get("request_summary"), dict) else {}
+    if request_summary:
+        lines.extend(
+            [
+                "## Request Summary",
+                "",
+                f"- Input kind: {request_summary.get('input_kind', '')}",
+                f"- Input name: {request_summary.get('input_name', '')}",
+                f"- Input SHA256: `{request_summary.get('input_sha256', '')}`",
+                f"- Prompt chars: {request_summary.get('prompt_chars', 0)}",
+                f"- Context keys: {', '.join(request_summary.get('context_keys') or []) or 'none'}",
+                "",
+            ]
+        )
     markdown = str(result.get("markdown") or "").strip()
     if markdown:
         lines.extend(["## Markdown", "", markdown, ""])
