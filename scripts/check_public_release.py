@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -14,7 +15,10 @@ SCHEMA_VERSION = "public-release-check-v1"
 MAX_PUBLIC_FILE_BYTES = 20 * 1024 * 1024
 
 PRIVATE_PATTERNS = [
+    "D:\\used-by-codex",
+    "D:/used-by-codex",
     "C:\\Users\\lightcolor",
+    "C:/Users/lightcolor",
     "D:\\downloads",
     "D:\\Baidu",
     "D:\\Umi-OCR",
@@ -61,6 +65,7 @@ def main() -> int:
     checks = [
         check_required_docs(),
         check_quickstart_commands(),
+        check_public_commands_are_relative(),
         check_private_patterns(files),
         check_secret_patterns(files),
         check_model_cache_markers(files),
@@ -105,8 +110,8 @@ def check_required_docs() -> Check:
 
 
 def check_quickstart_commands() -> Check:
-    readme = read_text(PROJECT_DIR / "README.md")
-    quickstart = read_text(PROJECT_DIR / "docs" / "QUICKSTART.md")
+    readme = read_text(PROJECT_DIR / "README.md") or ""
+    quickstart = read_text(PROJECT_DIR / "docs" / "QUICKSTART.md") or ""
     needles = [
         "git clone https://github.com/lightcoloror/ebook-markdown-pipeline.git",
         "python -m pip install -r requirements.txt",
@@ -116,6 +121,23 @@ def check_quickstart_commands() -> Check:
     ]
     missing = [needle for needle in needles if needle not in (readme + "\n" + quickstart)]
     return Check("quickstart commands documented", not missing, "README.md; docs/QUICKSTART.md", f"missing={missing}" if missing else "all present")
+
+
+def check_public_commands_are_relative() -> Check:
+    paths = [
+        PROJECT_DIR / "README.md",
+        PROJECT_DIR / "docs" / "QUICKSTART.md",
+        PROJECT_DIR / "docs" / "INSTALLATION.md",
+        PROJECT_DIR / "docs" / "AGENT_INTEGRATION.md",
+    ]
+    command_pattern = re.compile(r"\b(?:python|py|pip|uv|powershell|pwsh)\s+(?:[A-Za-z]:\\|/[A-Za-z]/|[A-Za-z]:/)", re.IGNORECASE)
+    hits = []
+    for path in paths:
+        text = read_text(path) or ""
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if command_pattern.search(line):
+                hits.append({"path": relative(path), "line": line_no, "text": line.strip()[:160]})
+    return Check("public commands use relative paths", not hits, ", ".join(relative(path) for path in paths), f"hits={hits[:20]}" if hits else "no absolute-path command examples")
 
 
 def check_private_patterns(files: list[Path]) -> Check:
@@ -146,6 +168,8 @@ def check_large_files(files: list[Path]) -> Check:
 def scan_patterns(name: str, files: list[Path], patterns: list[str]) -> Check:
     hits = []
     for path in files:
+        if path.resolve() == (PROJECT_DIR / "scripts" / "check_public_release.py").resolve():
+            continue
         text = read_text(path)
         if text is None:
             continue
