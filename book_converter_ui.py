@@ -118,6 +118,7 @@ class BookConverterUI:
         self.compare_pipeline_timeout_var = tk.StringVar(value="600")
         self.compare_page_ranges_var = tk.StringVar()
         self.review_only_var = tk.BooleanVar(value=False)
+        self.show_pipeline_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="就绪 / Ready")
         self.current_stage_var = tk.StringVar(value="")
         self.selected_input_files: list[Path] = []
@@ -202,8 +203,9 @@ class BookConverterUI:
         preview_box.columnconfigure(0, weight=1)
         preview_box.rowconfigure(0, weight=1)
 
-        columns = ("source", "format", "pipeline", "quality", "action", "note", "output_format", "output")
-        self.tree = ttk.Treeview(preview_box, columns=columns, show="headings", height=12)
+        self.tree_columns = ("source", "format", "pipeline", "quality", "action", "note", "output_format", "output")
+        self.basic_tree_columns = ("source", "format", "quality", "action", "note", "output_format", "output")
+        self.tree = ttk.Treeview(preview_box, columns=self.tree_columns, show="headings", height=12)
         self.tree.grid(row=0, column=0, sticky="nsew")
 
         labels = {
@@ -226,9 +228,10 @@ class BookConverterUI:
             "output_format": 100,
             "output": 380,
         }
-        for key in columns:
+        for key in self.tree_columns:
             self.tree.heading(key, text=labels[key], command=lambda col=key: self.sort_tree_by_column(col))
             self.tree.column(key, width=widths[key], minwidth=70, anchor="w", stretch=True)
+        self.update_tree_display_columns()
         self.tree.tag_configure("quality_good", background="#edf7ed")
         self.tree.tag_configure("quality_review", background="#fff7db")
         self.tree.tag_configure("quality_poor", background="#ffe8e3")
@@ -285,6 +288,12 @@ class BookConverterUI:
             row, column = divmod(index, columns)
             widget.grid(row=row, column=column, sticky="w", padx=(0, 8), pady=(0, 4))
         return (len(widgets) + columns - 1) // columns
+
+    def update_tree_display_columns(self) -> None:
+        if not hasattr(self, "tree"):
+            return
+        columns = self.tree_columns if self.show_pipeline_var.get() else self.basic_tree_columns
+        self.tree.configure(displaycolumns=columns)
 
     def open_advanced_tools(self) -> None:
         if self.advanced_window is not None and self.advanced_window.winfo_exists():
@@ -378,6 +387,9 @@ class BookConverterUI:
         filters.grid(row=3, column=1, sticky="nsew", padx=(6, 0), pady=(8, 0))
         ttk.Checkbutton(filters, text="只看复查 / Review only", variable=self.review_only_var, command=self.apply_review_filter).grid(
             row=0, column=0, sticky="w", padx=(0, 8), pady=(0, 4)
+        )
+        ttk.Checkbutton(filters, text="显示管道 / Show pipeline", variable=self.show_pipeline_var, command=self.update_tree_display_columns).grid(
+            row=0, column=1, sticky="w", padx=(0, 8), pady=(0, 4)
         )
         ttk.Label(
             filters,
@@ -2860,9 +2872,11 @@ class BookConverterUI:
             "include_hidden": self.include_hidden_var,
             "overwrite": self.overwrite_var,
             "resume": self.resume_var,
+            "show_pipeline": self.show_pipeline_var,
         }.items():
             if key in data:
                 variable.set(bool(data[key]))
+        self.update_tree_display_columns()
         records = data.get("history_records")
         if isinstance(records, list):
             self.history_records = [item for item in records if isinstance(item, dict) and item.get("output")]
@@ -2879,6 +2893,7 @@ class BookConverterUI:
             "include_hidden": self.include_hidden_var.get(),
             "overwrite": self.overwrite_var.get(),
             "resume": self.resume_var.get(),
+            "show_pipeline": self.show_pipeline_var.get(),
             "pandoc": self.pandoc_var.get(),
             "calibre": self.calibre_var.get(),
             "marker": self.marker_var.get(),
