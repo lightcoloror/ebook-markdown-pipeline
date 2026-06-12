@@ -157,7 +157,7 @@ Before and after ordinary changes, run the public lightweight regression gate:
 python scripts\run_quality_gate.py
 ```
 
-It generates small public fixtures under `benchmarks/fixtures/generated`, runs the minimal benchmark profile, and writes `benchmark-summary.md` plus `quality-regression-summary.md` under `benchmarks/runs/quality-gate/`. The public fixture set covers generated TXT, EPUB, AZW3-substitute EPUB, text-layer PDF, bookmarked/outline PDF, two-column PDF, PPT-like PDF, scanned PDF, infographic image, duplicate screenshot folders, and OCR-focused English/Chinese/low-resolution/infographic images. Use `--profile full` when you intentionally want to include OCR/image-heavy fixtures.
+It reuses the committed public fixtures under `benchmarks/fixtures/generated` by default, generates them only when the manifest is missing, runs the minimal benchmark profile, and writes `benchmark-summary.md` plus `quality-regression-summary.md` under `benchmarks/runs/quality-gate/`. Use `--regenerate-fixtures` only when you intentionally want to refresh the generated fixture files. The public fixture set covers generated TXT, EPUB, AZW3-substitute EPUB, text-layer PDF, bookmarked/outline PDF, two-column PDF, PPT-like PDF, scanned PDF, infographic image, duplicate screenshot folders, and OCR-focused English/Chinese/low-resolution/infographic images. Use `--profile full` when you intentionally want to include OCR/image-heavy fixtures.
 
 To compare the optional MarkItDown baseline against the current default routing, install it and run the backend comparison profile:
 

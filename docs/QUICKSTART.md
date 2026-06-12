@@ -45,4 +45,4 @@ python scripts\test_minimal_entrypoints.py
 python scripts\run_quality_gate.py --profile minimal
 ```
 
-If those pass, the minimal local workflow is ready. Install heavier backends only when a report recommends them.
+The quality gate reuses the committed public fixtures by default and only generates them when missing; use `--regenerate-fixtures` when you intentionally want to refresh those sample files. If those checks pass, the minimal local workflow is ready. Install heavier backends only when a report recommends them.

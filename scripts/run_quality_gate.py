@@ -18,7 +18,8 @@ def main() -> int:
     parser.add_argument("--profile", choices=["minimal", "full", "backend-compare", "release"], default="minimal")
     parser.add_argument("--fixtures-dir", type=Path, default=GENERATED_FIXTURES)
     parser.add_argument("--output", type=Path, default=None)
-    parser.add_argument("--reuse-fixtures", action="store_true", help="Do not regenerate public fixtures before running.")
+    parser.add_argument("--reuse-fixtures", action="store_true", help="Compatibility flag; existing fixture manifests are reused by default.")
+    parser.add_argument("--regenerate-fixtures", action="store_true", help="Force regeneration of public fixtures before running.")
     parser.add_argument("--sample-timeout", type=float, default=90.0)
     parser.add_argument("--pdf-mode-for-benchmark", default="fast", choices=["auto", "fast", "pymupdf4llm", "mineru", "marker", "umi", "docling", "markitdown", "ocrmypdf"])
     parser.add_argument("--document-mode-for-benchmark", default="auto", choices=["auto", "docling", "markitdown"])
@@ -31,11 +32,10 @@ def main() -> int:
     args = parser.parse_args()
 
     fixtures_dir = args.fixtures_dir.resolve()
-    if not args.reuse_fixtures:
-        run([sys.executable, str(PROJECT_DIR / "scripts" / "generate_quality_fixtures.py"), "--output", str(fixtures_dir)])
-
     manifest_profile = "minimal" if args.profile in {"backend-compare", "release"} else args.profile
     manifest = fixtures_dir / f"quality-{manifest_profile}.json"
+    if should_generate_fixtures(args, manifest):
+        run([sys.executable, str(PROJECT_DIR / "scripts" / "generate_quality_fixtures.py"), "--output", str(fixtures_dir)])
     if not manifest.exists():
         raise FileNotFoundError(f"quality fixture manifest not found: {manifest}")
 
@@ -91,6 +91,14 @@ def main() -> int:
         )
     )
     return result.returncode
+
+
+def should_generate_fixtures(args: argparse.Namespace, manifest: Path) -> bool:
+    if bool(getattr(args, "regenerate_fixtures", False)):
+        return True
+    if bool(getattr(args, "reuse_fixtures", False)):
+        return False
+    return not manifest.exists()
 
 
 def run_release_profile(args: argparse.Namespace, fixtures_dir: Path, output: Path) -> int:
