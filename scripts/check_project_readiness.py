@@ -59,6 +59,7 @@ def stage1_checks() -> list[Check]:
     env = read_text("config.example.env")
     minimal_test = read_text("scripts/test_minimal_entrypoints.py")
     local_env_test = read_text("scripts/test_local_env.py")
+    public_release = read_text("scripts/check_public_release.py")
     return [
         contains_all(
             "stage1_open_source_usability",
@@ -102,6 +103,13 @@ def stage1_checks() -> list[Check]:
             ["book_converter_ui.py", "batch_convert_books.py", "--help", "Minimal TXT conversion"],
             "scripts/test_minimal_entrypoints.py",
         ),
+        contains_all(
+            "stage1_open_source_usability",
+            "portable homepage guard",
+            public_release,
+            ["check_homepage_paths_are_portable", "homepage paths are portable", "README.md", "docs", "QUICKSTART.md"],
+            "scripts/check_public_release.py",
+        ),
     ]
 
 
@@ -121,6 +129,7 @@ def stage2_checks() -> list[Check]:
     run_benchmarks = read_text("scripts/run_benchmarks.py")
     gitignore = read_text(".gitignore")
     quality_test = read_text("scripts/test_quality_gate.py")
+    run_quality_gate = read_text("scripts/run_quality_gate.py")
     readme = read_text("README.md")
     tracked_private_manifest_check = private_manifest_tracking_check()
     return [
@@ -134,7 +143,7 @@ def stage2_checks() -> list[Check]:
         contains_all(
             "stage2_quality_regression",
             "quality gate command",
-            read_text("scripts/run_quality_gate.py"),
+            run_quality_gate,
             ["Run the public quality regression gate", "quality-regression-summary.md", "--fail-on-quality-gate"],
             "scripts/run_quality_gate.py",
         ),
@@ -174,6 +183,13 @@ def stage2_checks() -> list[Check]:
             gitignore,
             ["benchmarks/*.local.json", "benchmarks/runs/"],
             ".gitignore",
+        ),
+        contains_all(
+            "stage2_quality_regression",
+            "quality gate run outputs do not pollute tracked fixtures or latest",
+            run_quality_gate + "\n" + quality_test,
+            ["should_generate_fixtures", "--regenerate-fixtures", "--no-update-latest", "write_latest_release_index", "Release test runs should not update latest"],
+            "scripts/run_quality_gate.py; scripts/test_quality_gate.py",
         ),
         tracked_private_manifest_check,
     ]
@@ -252,6 +268,8 @@ def stage3_checks() -> list[Check]:
 def stage4_checks() -> list[Check]:
     contract = read_text("docs/TOOL_CONTRACT.md")
     mcp = read_text("ebook_converter_mcp.py")
+    latest_viewer = read_text("scripts/show_latest_quality_gate.py")
+    latest_test = read_text("scripts/test_show_latest_quality_gate.py")
     recipes = {item.name for item in (PROJECT_DIR / "examples" / "agent-recipes").glob("*.md")}
     required_recipes = {
         "single-file-recognition.md",
@@ -288,6 +306,13 @@ def stage4_checks() -> list[Check]:
             contract,
             ["next_actions", "tool", "arguments", "powershell_command", "overwrite=false"],
             "docs/TOOL_CONTRACT.md",
+        ),
+        contains_all(
+            "stage4_agent_productization",
+            "latest quality gate stale detection",
+            mcp + "\n" + latest_viewer + "\n" + latest_test + "\n" + contract,
+            ["artifact_status", "missing_artifacts", "stale", "missing_quality_gate_artifacts", "Expected stale artifact detection"],
+            "ebook_converter_mcp.py; scripts/show_latest_quality_gate.py; scripts/test_show_latest_quality_gate.py; docs/TOOL_CONTRACT.md",
         ),
     ]
 
