@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sys
 import tempfile
@@ -9,7 +11,16 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR))
 
 from ebook_converter_mcp import infer_artifact_type, read_artifact
-from test_agent_smoke_suite import build_summary, render_markdown, tail_text, validate_agent_smoke_contract, write_reports
+from test_agent_smoke_suite import (
+    FAST_TESTS,
+    FULL_TESTS,
+    build_summary,
+    print_test_list,
+    render_markdown,
+    tail_text,
+    validate_agent_smoke_contract,
+    write_reports,
+)
 
 
 REQUIRED_SUMMARY_FIELDS = {
@@ -34,6 +45,7 @@ def main() -> int:
     assert_passed_summary_contract()
     assert_fail_fast_summary_contract()
     assert_report_artifact_contract()
+    assert_list_contract()
     assert_tail_contract()
     print("Agent smoke summary contract test passed.")
     return 0
@@ -166,6 +178,27 @@ def assert_report_artifact_contract() -> None:
         validation = validate_agent_smoke_contract(broken)
         if validation.get("ok") is not False or not validation.get("errors"):
             raise AssertionError(f"Expected broken smoke summary contract to fail: {validation}")
+
+
+def assert_list_contract() -> None:
+    fast = capture_test_list(FAST_TESTS, full=False)
+    if fast.get("schema_version") != "agent-smoke-suite-list-v1" or fast.get("mode") != "fast":
+        raise AssertionError(f"Expected fast list schema/mode: {fast}")
+    if fast.get("count") != len(FAST_TESTS) or fast.get("tests") != FAST_TESTS:
+        raise AssertionError(f"Expected fast list to match FAST_TESTS: {fast}")
+
+    full = capture_test_list(FULL_TESTS, full=True)
+    if full.get("schema_version") != "agent-smoke-suite-list-v1" or full.get("mode") != "full":
+        raise AssertionError(f"Expected full list schema/mode: {full}")
+    if full.get("count") != len(FULL_TESTS) or full.get("tests") != FULL_TESTS:
+        raise AssertionError(f"Expected full list to match FULL_TESTS: {full}")
+
+
+def capture_test_list(tests: list[str], *, full: bool) -> dict:
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        print_test_list(tests, full=full)
+    return json.loads(buffer.getvalue())
 
 
 def assert_tail_contract() -> None:

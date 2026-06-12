@@ -47,10 +47,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run the agent-facing smoke test suite.")
     parser.add_argument("--full", action="store_true", help="Also run the slower full agent contract test.")
     parser.add_argument("--fail-fast", action="store_true", help="Stop after the first failing smoke test.")
+    parser.add_argument("--list", action="store_true", help="List planned smoke tests as JSON without running them.")
     parser.add_argument("--output", type=Path, help="Optional directory for agent-smoke-summary.json/md.")
     args = parser.parse_args()
 
     tests = FULL_TESTS if args.full else FAST_TESTS
+    if args.list:
+        print_test_list(tests, full=bool(args.full))
+        return 0
     results = []
     started = time.monotonic()
     for test in tests:
@@ -70,6 +74,16 @@ def main() -> int:
     if args.output:
         write_reports(args.output, payload)
     return 1 if failures else 0
+
+
+def print_test_list(tests: list[str], *, full: bool) -> None:
+    payload = {
+        "schema_version": "agent-smoke-suite-list-v1",
+        "mode": "full" if full else "fast",
+        "count": len(tests),
+        "tests": tests,
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def run_test(relative: str) -> dict:
