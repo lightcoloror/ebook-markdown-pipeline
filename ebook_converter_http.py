@@ -238,6 +238,7 @@ def http_contract_payload(config: HttpConfig | None = None, *, bind_host: str | 
         "process_material_contract": process_material_contract_payload(),
         "specialist_tools": [
             "health_check",
+            "show_latest_quality_gate",
             "inspect_document",
             "scan_books",
             "inspect_agent_batch_results",

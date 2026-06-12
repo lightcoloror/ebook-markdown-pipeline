@@ -710,6 +710,7 @@ def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
         "process_material_contract": process_material_contract_payload(),
         "specialist_tools": [
             "health_check",
+            "show_latest_quality_gate",
             "inspect_document",
             "scan_books",
             "inspect_agent_batch_results",

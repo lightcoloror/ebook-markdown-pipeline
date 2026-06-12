@@ -76,6 +76,8 @@ def main() -> int:
                 raise RuntimeError(f"MCP agent contract failed: {contract}")
             if contract.get("entrypoints")[:3] != ["process_material", "get_job_status", "read_artifact"]:
                 raise RuntimeError(f"MCP agent contract entrypoints failed: {contract}")
+            if "show_latest_quality_gate" not in contract.get("specialist_tools", []):
+                raise RuntimeError(f"MCP contract should list show_latest_quality_gate as a specialist tool: {contract}")
             pm_contract = contract.get("process_material_contract") or {}
             if pm_contract.get("schema_version") != "process-material-v2" or "recommended_followup" not in pm_contract.get("required_fields", []):
                 raise RuntimeError(f"MCP contract missing process_material v2 schema: {contract}")
