@@ -198,6 +198,8 @@ def main() -> int:
             elif script == "test_docs_contract.py":
                 pass
             elif script == "check_public_release.py":
+                if "--run-smoke" not in command:
+                    raise AssertionError(f"Release public check should run minimal smoke: {command}")
                 output_dir = Path(command[command.index("--output") + 1])
                 output_dir.mkdir(parents=True, exist_ok=True)
                 (output_dir / "public-release-check.md").write_text("# Public\n", encoding="utf-8")

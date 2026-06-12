@@ -140,6 +140,7 @@ def run_release_profile(args: argparse.Namespace, fixtures_dir: Path, output: Pa
             str(PROJECT_DIR / "scripts" / "check_public_release.py"),
             "--output",
             str(public_output),
+            "--run-smoke",
         ],
         check=False,
     )
