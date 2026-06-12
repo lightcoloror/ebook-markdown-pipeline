@@ -58,6 +58,7 @@ def render_markdown(result: dict[str, Any]) -> str:
         f"- Status: {summary.get('status', 'unknown')}",
         f"- Output: `{payload.get('output', '')}`",
         f"- Failed steps: {', '.join(summary.get('failed_steps') or []) or 'none'}",
+        f"- Regression tags: {', '.join(payload.get('regression_tags') or []) or 'none'}",
         "",
         "| Step | Status | Exit | Report |",
         "| --- | --- | ---: | --- |",

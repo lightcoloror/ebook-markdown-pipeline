@@ -143,13 +143,24 @@ def run_release_profile(args: argparse.Namespace, fixtures_dir: Path, output: Pa
         ],
         check=False,
     )
+    backend_comparison_summary = load_quality_comparison_summary(backend_output / "backend-comparison" / "benchmark-quality-comparison.json")
+    regression_tags = sorted(set(backend_comparison_summary.get("regression_tags") or []))
     payload = {
         "schema_version": "quality-gate-release-v1",
         "profile": "release",
         "output": str(output),
+        "regression_tags": regression_tags,
+        "quality_comparison": {
+            "backend_compare": backend_comparison_summary,
+        },
         "steps": [
             release_step("minimal", minimal.returncode, minimal_output / "quality-regression-summary.md"),
-            release_step("backend_compare", backend, backend_output / "backend-comparison" / "benchmark-quality-comparison.md"),
+            release_step(
+                "backend_compare",
+                backend,
+                backend_output / "backend-comparison" / "benchmark-quality-comparison.md",
+                extra={"regression_tags": regression_tags},
+            ),
             release_step("ocr_provider_comparison", ocr.returncode, ocr_output / "ocr-provider-comparison.md"),
             release_step("docs_contract", docs.returncode, docs_output / "docs-contract.txt"),
             release_step("public_release", public.returncode, public_output / "public-release-check.md"),
@@ -165,13 +176,33 @@ def run_release_profile(args: argparse.Namespace, fixtures_dir: Path, output: Pa
     return first_nonzero([int(step["exit_code"]) for step in payload["steps"]])
 
 
-def release_step(name: str, exit_code: int, report: Path) -> dict[str, object]:
+def load_quality_comparison_summary(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {"status": "missing", "regression_tags": []}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "unreadable", "regression_tags": [], "message": str(exc)}
+    summary = payload.get("summary") if isinstance(payload, dict) else {}
+    if not isinstance(summary, dict):
+        return {"status": "invalid", "regression_tags": []}
     return {
+        "status": summary.get("status", "unknown"),
+        "regression_tags": list(summary.get("regression_tags") or []),
+        "deltas": summary.get("deltas") or {},
+    }
+
+
+def release_step(name: str, exit_code: int, report: Path, *, extra: dict[str, object] | None = None) -> dict[str, object]:
+    payload = {
         "name": name,
         "exit_code": exit_code,
         "status": "passed" if exit_code == 0 else "failed",
         "report": str(report),
     }
+    if extra:
+        payload.update(extra)
+    return payload
 
 
 def write_release_reports(output: Path, payload: dict) -> None:
@@ -181,6 +212,7 @@ def write_release_reports(output: Path, payload: dict) -> None:
         "",
         f"- Status: {payload['summary']['status']}",
         f"- Output: `{payload['output']}`",
+        f"- Regression tags: {', '.join(payload.get('regression_tags') or []) or 'none'}",
         "",
         "| Step | Status | Exit | Report |",
         "| --- | --- | ---: | --- |",
@@ -200,6 +232,7 @@ def write_latest_release_index(payload: dict) -> None:
         f"- Status: {payload['summary']['status']}",
         f"- Output: `{payload['output']}`",
         f"- Failed steps: {', '.join(payload['summary'].get('failed_steps') or []) or 'none'}",
+        f"- Regression tags: {', '.join(payload.get('regression_tags') or []) or 'none'}",
     ]
     (latest / "release-index.md").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 

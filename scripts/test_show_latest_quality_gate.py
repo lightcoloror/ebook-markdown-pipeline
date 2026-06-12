@@ -32,6 +32,7 @@ def main() -> int:
         payload = {
             "schema_version": "quality-gate-release-v1",
             "output": str(root / "run"),
+            "regression_tags": ["duration_regression"],
             "summary": {"status": "passed", "failed_steps": []},
             "steps": [{"name": "minimal", "status": "passed", "exit_code": 0, "report": str(root / "run" / "minimal.md")}],
         }
@@ -40,7 +41,7 @@ def main() -> int:
         if not latest.get("found") or latest.get("payload", {}).get("summary", {}).get("status") != "passed":
             raise AssertionError(f"Expected latest release payload: {latest}")
         markdown = module.render_markdown(latest)
-        if "Latest Quality Gate" not in markdown or "minimal" not in markdown:
+        if "Latest Quality Gate" not in markdown or "minimal" not in markdown or "duration_regression" not in markdown:
             raise AssertionError(f"Expected readable latest quality gate markdown: {markdown}")
     print("Latest quality gate viewer smoke test passed.")
     return 0

@@ -186,6 +186,10 @@ def main() -> int:
             elif script == "compare_benchmark_quality.py":
                 output_dir = Path(command[command.index("--output") + 1])
                 output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "benchmark-quality-comparison.json").write_text(
+                    json.dumps({"summary": {"status": "failed", "regression_tags": ["duration_regression"], "deltas": {}}}),
+                    encoding="utf-8",
+                )
                 (output_dir / "benchmark-quality-comparison.md").write_text("# Compare\n", encoding="utf-8")
             elif script == "compare_ocr_providers.py":
                 output_dir = Path(command[command.index("--output") + 1])
@@ -228,6 +232,12 @@ def main() -> int:
                 raise AssertionError(f"Release profile did not call {expected}: {release_calls}")
         if not (release_output / "release-summary.json").exists() or not (release_output / "release-summary.md").exists():
             raise AssertionError("Release profile should write release-summary.json/md")
+        release_payload = json.loads((release_output / "release-summary.json").read_text(encoding="utf-8"))
+        if release_payload.get("regression_tags") != ["duration_regression"]:
+            raise AssertionError(f"Release profile should surface regression tags: {release_payload}")
+        release_markdown = (release_output / "release-summary.md").read_text(encoding="utf-8")
+        if "Regression tags: duration_regression" not in release_markdown:
+            raise AssertionError(f"Release Markdown should surface regression tags: {release_markdown}")
     print("Quality gate smoke test passed.")
     return 0
 
