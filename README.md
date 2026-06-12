@@ -185,9 +185,10 @@ Before a public release, run the aggregate release gate:
 ```powershell
 python scripts\run_quality_gate.py --profile release
 python scripts\check_public_release.py
+python scripts\show_latest_quality_gate.py
 ```
 
-The release profile runs the minimal quality gate, MarkItDown backend comparison, OCR provider comparison, docs contract, and public release checks. It writes `release-summary.json/md` and updates the ignored `benchmarks/runs/latest/release-index.json/md` handoff index.
+The release profile runs the minimal quality gate, MarkItDown backend comparison, OCR provider comparison, docs contract, and public release checks. It writes `release-summary.json/md` and updates the ignored `benchmarks/runs/latest/release-index.json/md` handoff index. `show_latest_quality_gate.py` prints that latest handoff summary for humans and agents.
 
 ## CLI Examples
 
