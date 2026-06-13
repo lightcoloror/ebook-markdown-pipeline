@@ -68,6 +68,7 @@ def main() -> int:
         check_public_commands_are_relative(),
         check_homepage_paths_are_portable(),
         check_example_paths_are_portable(files),
+        check_agent_docs_paths_are_portable(),
         check_private_patterns(files),
         check_secret_patterns(files),
         check_model_cache_markers(files),
@@ -178,6 +179,22 @@ def check_example_paths_are_portable(files: list[Path]) -> Check:
         not hits,
         "tracked examples/",
         f"hits={hits[:20]}" if hits else "no drive-letter paths in tracked examples",
+    )
+
+
+def check_agent_docs_paths_are_portable() -> Check:
+    path = PROJECT_DIR / "docs" / "AGENT_INTEGRATION.md"
+    drive_path_pattern = re.compile(r"\b[A-Za-z]:[\\/][^\s`'\"\]\)<>]+")
+    hits = []
+    text = read_text(path) or ""
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if drive_path_pattern.search(line):
+            hits.append({"path": relative(path), "line": line_no, "text": line.strip()[:160]})
+    return Check(
+        "agent docs paths are portable",
+        not hits,
+        "docs/AGENT_INTEGRATION.md",
+        f"hits={hits[:20]}" if hits else "no drive-letter paths in agent integration docs",
     )
 
 

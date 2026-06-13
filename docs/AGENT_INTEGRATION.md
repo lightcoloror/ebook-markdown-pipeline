@@ -45,7 +45,7 @@ Example MCP server config:
 {
   "mcpServers": {
     "ebook-markdown-pipeline": {
-      "command": "C:\\path\\to\\ebook_markdown_pipeline\\start_mcp.cmd",
+      "command": "<project-path>\\start_mcp.cmd",
       "args": []
     }
   }
@@ -53,7 +53,7 @@ Example MCP server config:
 ```
 
 The same config is available at `examples/mcp_config.json`.
-Replace `C:\path\to\ebook_markdown_pipeline` with the real project path.
+Replace `<project-path>` with the real project path.
 
 Before connecting an agent, run the stdio smoke test:
 
@@ -171,7 +171,7 @@ Container-side tool call:
 ```bash
 curl -H "Authorization: Bearer replace-with-a-local-token" \
   -H "Content-Type: application/json" \
-  -d '{"name":"scan_books","arguments":{"input":"D:\\books","output":"D:\\books-md","recursive":true}}' \
+  -d '{"name":"scan_books","arguments":{"input":".\\sample-materials\\books","output":".\\agent-output\\books-md","recursive":true}}' \
   "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/call"
 ```
 
@@ -239,8 +239,8 @@ Agents can also call `export_environment_report` through MCP/HTTP when they need
 {
   "name": "export_environment_report",
   "arguments": {
-    "input": "D:\\materials",
-    "output": "D:\\materials\\.reports\\environment",
+    "input": ".\\sample-materials",
+    "output": ".\\agent-output\\.reports\\environment",
     "recursive": true
   }
 }
@@ -249,7 +249,7 @@ Agents can also call `export_environment_report` through MCP/HTTP when they need
 For persistent environment handoff, run:
 
 ```powershell
-python scripts\export_environment_report.py --input D:\materials --output D:\materials\.reports\environment
+python scripts\export_environment_report.py --input .\sample-materials --output .\agent-output\.reports\environment
 ```
 
 This writes `environment-report.md/json` with runtime metadata, raw checks, and the same capability matrix returned by `health_check`.
@@ -260,8 +260,8 @@ To compare a future run against a saved environment lock, call `compare_environm
 {
   "name": "compare_environment_lock",
   "arguments": {
-    "lock": "D:\\materials\\.reports\\environment\\environment-lock.json",
-    "output": "D:\\materials\\.reports\\environment-compare"
+    "lock": ".\\agent-output\\.reports\\environment\\environment-lock.json",
+    "output": ".\\agent-output\\.reports\\environment-compare"
   }
 }
 ```
@@ -412,8 +412,8 @@ If MCP is unavailable, use the CLI directly:
 
 ```powershell
 python batch_convert_books.py `
-  C:\books `
-  C:\books-md `
+  .\sample-materials\books `
+  .\agent-output\books-md `
   --recursive `
   --resume `
   --output-format markdown
