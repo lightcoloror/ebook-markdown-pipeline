@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "ebook-markdown-pipeline": {
-      "command": "C:\\path\\to\\ebook_markdown_pipeline\\start_mcp.cmd",
+      "command": "<project-path>\\start_mcp.cmd",
       "args": []
     }
   }

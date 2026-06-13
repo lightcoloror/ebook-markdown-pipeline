@@ -26,7 +26,7 @@ Validate the manifest before long-running work:
 ```powershell
 python examples\agent-batch\agent_batch_http.py `
   --manifest examples\agent-batch\batch_manifest.example.json `
-  --output C:\agent-batch-output\run-001 `
+  --output .\agent-batch-output\run-001 `
   --dry-run
 ```
 
@@ -41,7 +41,7 @@ Run the real batch after the plan is valid:
 python examples\agent-batch\agent_batch_http.py `
   --token local-token `
   --manifest examples\agent-batch\batch_manifest.example.json `
-  --output C:\agent-batch-output\run-001 `
+  --output .\agent-batch-output\run-001 `
   --timeout 900
 ```
 
@@ -58,8 +58,8 @@ Compare this run against a previous batch quality baseline:
 python examples\agent-batch\agent_batch_http.py `
   --token local-token `
   --manifest examples\agent-batch\batch_manifest.example.json `
-  --output C:\agent-batch-output\run-002 `
-  --baseline-results C:\agent-batch-output\run-001\agent-batch-results.json `
+  --output .\agent-batch-output\run-002 `
+  --baseline-results .\agent-batch-output\run-001\agent-batch-results.json `
   --fail-on-regression
 ```
 
@@ -71,10 +71,10 @@ Rerun only failed or review items from a previous run:
 python examples\agent-batch\agent_batch_http.py `
   --token local-token `
   --manifest examples\agent-batch\batch_manifest.example.json `
-  --previous-results C:\agent-batch-output\run-001\agent-batch-results.json `
+  --previous-results .\agent-batch-output\run-001\agent-batch-results.json `
   --select failed-or-review `
   --rerun-mode recommended `
-  --output C:\agent-batch-output\run-002
+  --output .\agent-batch-output\run-002
 ```
 
 `--select` supports `all`, `failed`, `review`, and `failed-or-review`. Dry-run plans write the exact selected job IDs to `agent-batch-plan.md`.
@@ -102,8 +102,8 @@ If no supported hint is found, the runner falls back to the manifest arguments i
 ```json
 {
   "id": "web-archive-visual-check",
-  "input": "D:\\web-archives\\example-archive",
-  "output": "D:\\agent-batch-output\\web-archives",
+  "input": ".\\sample-materials\\web-archives\\example-archive",
+  "output": ".\\agent-batch-output\\web-archives",
   "intent": "auto"
 }
 ```

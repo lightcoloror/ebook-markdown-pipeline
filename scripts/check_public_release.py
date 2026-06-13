@@ -67,6 +67,7 @@ def main() -> int:
         check_quickstart_commands(),
         check_public_commands_are_relative(),
         check_homepage_paths_are_portable(),
+        check_example_paths_are_portable(files),
         check_private_patterns(files),
         check_secret_patterns(files),
         check_model_cache_markers(files),
@@ -158,6 +159,25 @@ def check_homepage_paths_are_portable() -> Check:
         not hits,
         ", ".join(relative(path) for path in paths),
         f"hits={hits[:20]}" if hits else "no drive-letter paths in homepage docs",
+    )
+
+
+def check_example_paths_are_portable(files: list[Path]) -> Check:
+    drive_path_pattern = re.compile(r"\b[A-Za-z]:[\\/][^\s`'\"\]\)<>]+")
+    hits = []
+    example_files = [path for path in files if relative(path).replace("\\", "/").startswith("examples/")]
+    for path in example_files:
+        text = read_text(path)
+        if text is None:
+            continue
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if drive_path_pattern.search(line):
+                hits.append({"path": relative(path), "line": line_no, "text": line.strip()[:160]})
+    return Check(
+        "example paths are portable",
+        not hits,
+        "tracked examples/",
+        f"hits={hits[:20]}" if hits else "no drive-letter paths in tracked examples",
     )
 
 

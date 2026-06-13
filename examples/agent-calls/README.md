@@ -25,16 +25,16 @@ Run:
 ```powershell
 python examples\agent-calls\http_process_material.py `
   --token local-token `
-  --input C:\books\sample.epub `
-  --output C:\books-output
+  --input .\sample-materials\books\sample.epub `
+  --output .\agent-output\books
 ```
 
 ## MCP Stdio
 
 ```powershell
 python examples\agent-calls\mcp_stdio_process_material.py `
-  --input C:\books\sample.epub `
-  --output C:\books-output
+  --input .\sample-materials\books\sample.epub `
+  --output .\agent-output\books
 ```
 
 ## CLI-Style Local Call
@@ -43,8 +43,8 @@ This imports the same tool layer directly without starting a server:
 
 ```powershell
 python examples\agent-calls\cli_process_material.py `
-  --input C:\books\sample.epub `
-  --output C:\books-output
+  --input .\sample-materials\books\sample.epub `
+  --output .\agent-output\books
 ```
 
 ## Agent Batch Handoff
@@ -53,7 +53,7 @@ When taking over an existing batch without starting MCP or HTTP, use the local C
 
 ```powershell
 python examples\agent-calls\cli_agent_batch_handoff.py list `
-  C:\agent-batch-output `
+  .\agent-batch-output `
   --max-depth 3
 ```
 
@@ -61,15 +61,15 @@ Inspect a known `agent-batch-results.json`:
 
 ```powershell
 python examples\agent-calls\cli_agent_batch_handoff.py inspect `
-  C:\agent-batch-output\run-002\agent-batch-results.json
+  .\agent-batch-output\run-002\agent-batch-results.json
 ```
 
 Build a compact handoff bundle through the same local helper:
 
 ```powershell
 python examples\agent-calls\cli_agent_batch_handoff.py bundle `
-  --batch-results C:\agent-batch-output\run-002\agent-batch-results.json `
-  --output C:\agent-batch-output\run-002\handoff
+  --batch-results .\agent-batch-output\run-002\agent-batch-results.json `
+  --output .\agent-batch-output\run-002\handoff
 ```
 
 Docker-hosted agents can use the same handoff tools through the HTTP bridge:
@@ -77,7 +77,7 @@ Docker-hosted agents can use the same handoff tools through the HTTP bridge:
 ```powershell
 python examples\agent-calls\http_agent_batch_handoff.py `
   --url http://host.docker.internal:9241 `
-  list C:\agent-batch-output
+  list .\agent-batch-output
 ```
 
 When another agent needs a compact handoff package instead of the full batch JSON, call the MCP/HTTP tool `build_agent_handoff_bundle` or the local wrapper:
@@ -86,8 +86,8 @@ When another agent needs a compact handoff package instead of the full batch JSO
 python examples\agent-calls\http_agent_batch_handoff.py `
   --url http://host.docker.internal:9241 `
   bundle `
-  --batch-results C:\agent-batch-output\run-002\agent-batch-results.json `
-  --output C:\agent-batch-output\run-002\handoff
+  --batch-results .\agent-batch-output\run-002\agent-batch-results.json `
+  --output .\agent-batch-output\run-002\handoff
 ```
 
 ## Query Mode
@@ -96,8 +96,8 @@ If you only need to locate a keyword in PDFs/images:
 
 ```powershell
 python examples\agent-calls\http_process_material.py `
-  --input C:\documents `
-  --output C:\documents-index `
+  --input .\sample-materials\documents `
+  --output .\agent-output\documents-index `
   --query "合同金额"
 ```
 

@@ -1,6 +1,6 @@
 {
   "defaults": {
-    "output": "D:\\agent-batch-output",
+    "output": ".\\agent-batch-output",
     "recursive": true,
     "include_hidden": false,
     "output_format": "markdown",
@@ -13,28 +13,28 @@
   "jobs": [
     {
       "id": "ebooks-folder",
-      "input": "D:\\books",
+      "input": ".\\sample-materials\\books",
       "intent": "convert"
     },
     {
       "id": "find-keyword-in-pdfs",
-      "input": "D:\\documents",
-      "output": "D:\\agent-batch-output\\location-index",
+      "input": ".\\sample-materials\\documents",
+      "output": ".\\agent-batch-output\\location-index",
       "intent": "locate",
       "query": "合同金额",
       "ocr": "auto"
     },
     {
       "id": "screenshots-to-markdown",
-      "input": "D:\\screenshots",
-      "output": "D:\\agent-batch-output\\screenshots",
+      "input": ".\\sample-materials\\screenshots",
+      "output": ".\\agent-batch-output\\screenshots",
       "intent": "rebuild",
       "ocr": "auto"
     },
     {
       "id": "web-archive-visual-check",
-      "input": "D:\\web-archives\\example-archive",
-      "output": "D:\\agent-batch-output\\web-archives",
+      "input": ".\\sample-materials\\web-archives\\example-archive",
+      "output": ".\\agent-batch-output\\web-archives",
       "intent": "auto"
     }
   ]

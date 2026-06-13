@@ -110,6 +110,13 @@ def stage1_checks() -> list[Check]:
             ["check_homepage_paths_are_portable", "homepage paths are portable", "README.md", "docs", "QUICKSTART.md"],
             "scripts/check_public_release.py",
         ),
+        contains_all(
+            "stage1_open_source_usability",
+            "portable examples guard",
+            public_release,
+            ["check_example_paths_are_portable", "example paths are portable", "tracked examples/"],
+            "scripts/check_public_release.py",
+        ),
     ]
 
 
