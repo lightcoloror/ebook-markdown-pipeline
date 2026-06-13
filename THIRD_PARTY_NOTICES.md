@@ -24,10 +24,20 @@ This is an engineering compliance note, not legal advice.
 | Marker | PDF parsing option | GPL-3.0-or-later project; installed separately; model terms checked separately |
 | Docling | Optional Office/document/PDF structure backend | MIT-licensed codebase; installed separately; check model dependencies |
 | Microsoft MarkItDown | Optional fast multi-format Markdown baseline | MIT-licensed upstream project; installed separately |
+| Apache Tika | Optional MIME/metadata/text-sample inspection | Apache-2.0 upstream project; used through separately configured Tika Server or command wrapper |
+| GROBID | Optional academic PDF/TEI inspection | Apache-2.0 upstream project; used through separately configured GROBID Server |
 | OCRmyPDF | Optional scanned PDF preprocessing to searchable PDF | MPL-2.0 upstream project; installed separately with Tesseract |
+| pdf-craft | Optional scanned-book PDF-to-Markdown reconstruction | MIT-licensed upstream project; installed separately; Poppler, DeepSeek OCR model/runtime, and transitive licenses checked separately |
 | pdfplumber | Optional PDF layout, coordinate, and table diagnostics | MIT-licensed upstream project; installed separately |
 | Camelot | Optional text-based PDF table extraction candidate | MIT-licensed upstream project; installed separately |
+| Tabula / tabula-py | Optional text-based PDF table extraction fallback | MIT-licensed upstream projects; installed separately; requires Java |
 | Umi-OCR / PaddleOCR-json | OCR fallback workflow | Umi-OCR audited as MIT; PaddleOCR-json audited as Apache-2.0; bundled OCR model licenses checked separately |
+| Pix2Text | Optional Chinese screenshot/formula/image-page Markdown enhancement | MIT-licensed upstream project; installed separately; model dependencies checked separately |
+| Surya | Optional OCR/layout/reading-order/table enhancement | Apache-2.0 upstream project; installed separately; code and model weights are licensed separately; review model/commercial-use terms before redistribution |
+| CnOCR | Optional Chinese/English OCR comparison provider | Apache-2.0 upstream project; installed separately; model/runtime dependencies checked separately |
+| olmOCR | Optional VLM OCR PDF/image-to-Markdown benchmark backend | Apache-2.0 upstream project; installed separately; model/runtime/API provider terms checked separately |
+| GOT-OCR 2.0 | Optional CUDA image OCR experiment wrapper | Upstream demo code/model/runtime terms checked separately; installed and configured outside this repository |
+| DeepSeek-OCR | Optional CUDA/Transformers VLM OCR experiment wrapper | Upstream code/model/runtime terms checked separately; installed and configured outside this repository |
 | PaddleOCR-VL | Optional infographic/layout-heavy image enhancement | PaddleOCR source audited as Apache-2.0; model/license terms checked separately |
 | Qwen-VL | Optional heavier VLM image enhancement | Qwen-VL code audited as Apache-2.0; model and runtime terms checked separately |
 | tkinterdnd2 | Optional drag-and-drop UI support | MIT-licensed Python package dependency; installed separately |

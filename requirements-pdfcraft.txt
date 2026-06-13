@@ -1,0 +1,3 @@
+# Optional pdf-craft scanned-book PDF-to-Markdown backend.
+# This backend is heavy: it requires Poppler and DeepSeek OCR model/GPU setup for real conversion.
+pdf-craft

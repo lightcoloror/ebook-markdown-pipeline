@@ -18,10 +18,20 @@ These tools are invoked as local commands, Python packages, or wrappers when ava
 | Marker | Layout-aware PDF parsing option | Called as an optional PDF backend. |
 | Docling | Optional Office/document/PDF structure backend | Called as an optional backend when installed. |
 | Microsoft MarkItDown | Optional fast multi-format Markdown baseline for EPUB/DOCX/PPTX/XLSX/HTML/PDF comparison | Called through its Python API when explicitly selected. |
+| Apache Tika | Optional MIME/metadata/text-sample inspection for unusual formats | Called only through a configured Tika Server or command wrapper; not a main conversion route. |
+| GROBID | Optional academic PDF/TEI inspection for papers and references | Called only through a configured GROBID Server; not a main PDF-to-Markdown route. |
 | OCRmyPDF | Optional scanned PDF preprocessing into searchable PDFs | Called as an external command when explicitly selected or recommended for rerun. |
+| pdf-craft | Optional scanned-book PDF-to-Markdown reconstruction with TOC assumptions | Called through a project worker wrapper when explicitly selected. |
 | pdfplumber | Optional PDF layout, coordinate, and table diagnostics | Used through Python API for report evidence; not a main conversion route. |
 | Camelot | Optional text-based PDF table extraction candidate | Kept as a specialized table backend candidate; not required for normal conversion. |
+| Tabula / tabula-py | Optional text-based PDF table extraction fallback | Kept as an alternate table-only backend; requires Java and is not required for normal conversion. |
 | Umi-OCR / PaddleOCR-json | Local OCR fallback for images and scanned pages | Called through local executable/module paths configured by the user. |
+| CnOCR | Optional Chinese/English OCR comparison provider | Called through the OCR provider abstraction for benchmark/fallback experiments; not a default route. |
+| Pix2Text wrapper | Optional Chinese screenshot/formula/image-page Markdown enhancement | Called through a project wrapper script when configured or installed. |
+| Surya wrapper | Optional OCR/layout/reading-order/table enhancement | Called through a project wrapper script when configured or installed. |
+| GOT-OCR wrapper | Optional CUDA image OCR experiment | Called through a project wrapper script only when explicitly configured; not part of default enhancement order. |
+| DeepSeek-OCR wrapper | Optional CUDA/Transformers VLM OCR experiment | Called through a project wrapper script only when explicitly configured; not part of default enhancement order. |
+| olmOCR | Optional VLM PDF/image-to-Markdown benchmark backend | Called through a project worker wrapper only when explicitly selected; not part of auto routing. |
 | PaddleOCR-VL wrapper | Optional infographic/layout-heavy image enhancement | Called through project wrapper scripts when configured. |
 | Qwen-VL wrapper | Optional heavier VLM enhancement for difficult images | Called through project wrapper scripts when configured. |
 

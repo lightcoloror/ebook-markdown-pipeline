@@ -1,0 +1,3 @@
+# Optional Chinese/English OCR provider for OCR comparison and fallback experiments.
+# Keep this separate from requirements.txt so minimal installs remain light.
+cnocr

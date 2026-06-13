@@ -22,14 +22,17 @@ from ebook_markdown_pipeline.document_locator import IMAGE_EXTENSIONS  # noqa: E
 from ebook_markdown_pipeline.image_book_rebuilder import umi_ocr_image_with_blocks  # noqa: E402
 from ebook_markdown_pipeline.ocr_providers import (  # noqa: E402
     OCR_BLOCK_SCHEMA_VERSION,
+    cnocr_available,
     create_rapidocr_engine,
+    create_cnocr_engine,
     rapidocr_available,
     rapidocr_package_name,
+    recognize_image_with_cnocr,
     recognize_image_with_rapidocr,
 )
 
 
-PROVIDERS = ("rapidocr", "umi")
+PROVIDERS = ("rapidocr", "cnocr", "umi")
 REPORT_SCHEMA_VERSION = "ocr-provider-comparison-v1"
 
 
@@ -80,6 +83,7 @@ def compare_ocr_providers(
     umi_paddle_exe: str | None = None,
     umi_paddle_module: str | None = None,
     rapidocr_engine_factory: Callable[[], Any] | None = None,
+    cnocr_engine_factory: Callable[[], Any] | None = None,
     umi_engine_factory: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -92,6 +96,7 @@ def compare_ocr_providers(
                 umi_paddle_exe=umi_paddle_exe,
                 umi_paddle_module=umi_paddle_module,
                 rapidocr_engine_factory=rapidocr_engine_factory,
+                cnocr_engine_factory=cnocr_engine_factory,
                 umi_engine_factory=umi_engine_factory,
             )
         )
@@ -125,6 +130,7 @@ def run_provider(
     umi_paddle_exe: str | None,
     umi_paddle_module: str | None,
     rapidocr_engine_factory: Callable[[], Any] | None = None,
+    cnocr_engine_factory: Callable[[], Any] | None = None,
     umi_engine_factory: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
     started = time.monotonic()
@@ -140,6 +146,13 @@ def run_provider(
             message = f"package={rapidocr_package_name() or 'test/fake'}"
             for image in images:
                 items.append(run_rapidocr_item(image, engine))
+        elif provider == "cnocr":
+            if cnocr_engine_factory is None and not cnocr_available():
+                raise FileNotFoundError("CnOCR is not installed.")
+            engine = cnocr_engine_factory() if cnocr_engine_factory else create_cnocr_engine()
+            message = "package=cnocr" if cnocr_engine_factory is None else "package=test/fake"
+            for image in images:
+                items.append(run_cnocr_item(image, engine))
         elif provider == "umi":
             engine = umi_engine_factory() if umi_engine_factory else create_default_umi_engine(umi_paddle_exe, umi_paddle_module)
             for image in images:
@@ -185,6 +198,15 @@ def run_rapidocr_item(image: Path, engine: Any) -> dict[str, Any]:
     try:
         result = recognize_image_with_rapidocr(image, engine)
         return item_result(image, result.get("text") or "", result.get("blocks") or [], started=started, provider="rapidocr")
+    except Exception as exc:  # noqa: BLE001
+        return item_result(image, "", [], started=started, status="failed", message=str(exc))
+
+
+def run_cnocr_item(image: Path, engine: Any) -> dict[str, Any]:
+    started = time.monotonic()
+    try:
+        result = recognize_image_with_cnocr(image, engine)
+        return item_result(image, result.get("text") or "", result.get("blocks") or [], started=started, provider="cnocr")
     except Exception as exc:  # noqa: BLE001
         return item_result(image, "", [], started=started, status="failed", message=str(exc))
 

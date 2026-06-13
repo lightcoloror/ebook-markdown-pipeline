@@ -47,7 +47,7 @@ def main() -> int:
     parser.add_argument("--fail-on-quality-gate", action="store_true", help="Exit non-zero when any configured quality gate fails.")
     parser.add_argument(
         "--pdf-mode-for-benchmark",
-        choices=["auto", "fast", "pymupdf4llm", "mineru", "marker", "umi", "docling", "markitdown", "ocrmypdf"],
+        choices=["auto", "fast", "pymupdf4llm", "mineru", "marker", "umi", "docling", "markitdown", "ocrmypdf", "pdfcraft"],
         default="auto",
         help="PDF pipeline for benchmark runs. 'fast' aliases to pymupdf4llm so large sample runs do not default to slow model/OCR pipelines.",
     )

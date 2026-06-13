@@ -72,8 +72,12 @@ This project follows a tool-first integration principle: use mature tools direct
 | MinerU | Optional structured PDF parsing for complex/scanned documents. |
 | Marker | Optional layout-aware PDF parsing. |
 | Docling | Optional Office/document/PDF structure backend. |
-| Umi-OCR / PaddleOCR-json / RapidOCR | Local OCR blocks for images and scanned pages. |
-| PaddleOCR-VL / Qwen-VL / MinerU VLM | Optional layout-heavy image or infographic enhancement. |
+| Apache Tika | Optional broad MIME/metadata/text-sample inspection for unusual formats. |
+| GROBID | Optional academic PDF/TEI inspection for papers and references. |
+| pdfplumber / Camelot / Tabula | Optional PDF layout and text-based table diagnostics. |
+| Umi-OCR / PaddleOCR-json / RapidOCR / CnOCR | Local OCR blocks for images and scanned pages. |
+| pdf-craft | Optional scanned-book PDF-to-Markdown reconstruction with TOC assumptions. |
+| Pix2Text / Surya / GOT-OCR / DeepSeek-OCR / PaddleOCR-VL / Qwen-VL / MinerU VLM / olmOCR | Optional layout-heavy image, formula, table, reading-order, VLM OCR, or infographic enhancement. |
 
 Several design ideas are also documented as architectural references: Marker-style pluggable LLM services, MinerU-style local/remote VLM backend split, PaddleOCR MCP-style stable tool contracts, and Docling-style artifact boundaries. These are reference patterns, not copied upstream source code. See [docs/REFERENCES_AND_REUSE.md](docs/REFERENCES_AND_REUSE.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the detailed boundary and license notes.
 
@@ -84,8 +88,8 @@ This project is already useful as a local personal workflow tool, but the public
 ## Install At A Glance
 
 - **Minimal**: Python dependencies plus Pandoc for common ebooks and text-layer PDFs.
-- **PDF enhanced**: add MinerU, Marker, Umi-OCR, or Docling only when your PDFs need structure/OCR/layout recovery.
-- **Local OCR/VLM/image layout**: add RapidOCR for lightweight Python OCR fallback, and PaddleOCR-VL or Qwen-VL wrappers only for infographics and layout-heavy screenshots.
+- **PDF enhanced**: add MinerU, Marker, Umi-OCR, Docling, OCRmyPDF, or pdf-craft only when your PDFs need structure/OCR/layout recovery.
+- **Local OCR/VLM/image layout**: add RapidOCR for lightweight Python OCR fallback, CnOCR for Chinese OCR comparison, Pix2Text for Chinese screenshots/formulas, Surya for OCR/layout/reading-order experiments, GOT-OCR or DeepSeek-OCR for explicit CUDA image OCR experiments, olmOCR for explicit VLM OCR benchmarks, and heavier PaddleOCR-VL or Qwen-VL wrappers only for infographics and layout-heavy screenshots.
 - **Agent/API**: use MCP or HTTP after the local CLI/UI path works.
 
 See [docs/INSTALLATION.md](docs/INSTALLATION.md) for commands, optional environment variables, and troubleshooting.
@@ -136,8 +140,12 @@ You do not need to install every backend on day one.
 | Ebook | Minimal + Calibre | AZW, AZW3, MOBI, RTF | Best first setup for ebook collections. |
 | Document | Minimal + `requirements-docling.txt` | DOCX, PPTX, XLSX, HTML, CSV | Docling is optional and can be installed later. |
 | Baseline comparison | Minimal + `requirements-markitdown.txt` | EPUB, DOCX, PPTX, XLSX, HTML, PDF | MarkItDown is optional; use it as a fast comparison backend, not the default router. |
+| Format inspection | Tika Server or `EBOOK_CONVERTER_TIKA_COMMAND` | unknown extensions, MIME/metadata checks | Explicit inspect only; use `inspect_document` with `use_tika=true`. |
+| Academic PDF inspection | GROBID Server URL | papers, references, DOI/TEI evidence | Explicit inspect only; use `inspect_document` with `use_grobid=true`. |
+| Scanned book experiment | PDF enhanced + `requirements-pdfcraft.txt` | scanned books, TOC-heavy scanned PDFs | pdf-craft is explicit only; real runs need Poppler and DeepSeek OCR model/GPU setup. |
+| Table diagnostics | PDF enhanced + `requirements-tabula.txt` | text-layer PDF tables | Tabula is optional and needs Java; use it as a fallback beside pdfplumber/Camelot, not as a main converter. |
 | OCR/Layout | OCRmyPDF, Umi-OCR, MinerU, Marker | scanned PDF, long PDF, complex layout | Larger downloads; may need more disk and RAM. |
-| Vision-heavy | PaddleOCR-VL / Qwen-VL wrappers | screenshots, infographics, image books | Optional heavy backends; use only when needed. |
+| Vision-heavy | Pix2Text / Surya / GOT-OCR / DeepSeek-OCR / PaddleOCR-VL / Qwen-VL / olmOCR wrappers | screenshots, formulas, infographics, image books, VLM OCR benchmarks | Optional backends; Pix2Text and Surya are tried before heavier VLM wrappers when installed; GOT-OCR, DeepSeek-OCR, and olmOCR are explicit-only. |
 
 ## What To Use When
 
@@ -174,7 +182,7 @@ To compare lightweight image OCR providers on public or local image samples:
 python scripts\compare_ocr_providers.py `
   .\benchmarks\fixtures\generated\images `
   --recursive `
-  --providers rapidocr umi `
+  --providers rapidocr cnocr umi `
   --output .\benchmarks\runs\ocr-provider-compare
 ```
 
@@ -511,7 +519,7 @@ python image_book_rebuilder.py build `
 
 输出包括 `book.md`、`enhanced.md`、`order.md`、`structure.md/json`、`layout.md`、`enhancement.md/json`、`review.md`、`pages.jsonl`、`clusters.json`。排序会综合图片内页码、文件名数字、文件时间、文本前后重叠和重复截图分组；`order.md` 会写明排序置信度和排序依据，`structure.md` 会汇总标题候选和推断层级，重复截图会作为排序和复查依据保留在 `review.md`，不会静默丢弃。
 
-图片管道默认先用 Umi-OCR/PaddleOCR-json 做快速文字识别，并把 OCR 坐标块写入 `pages.jsonl`。如果检测到疑似信息图、宽图、多栏短标签密集页或复杂版面，会在 `layout.md` 标记为 `layout-heavy`，再按 `paddleocr-vl,mineru-vlm,qwen-vl` 顺序自动尝试补强。稳定的 Umi-OCR 主结果仍写入 `book.md`；重后端成功时，补强版写入 `enhanced.md`，每次尝试的成功、缺失、超时或失败原因写入 `enhancement.md/json`。
+图片管道默认先用 Umi-OCR/PaddleOCR-json 做快速文字识别，并把 OCR 坐标块写入 `pages.jsonl`。如果检测到疑似信息图、宽图、多栏短标签密集页或复杂版面，会在 `layout.md` 标记为 `layout-heavy`，再按 `pix2text,surya,paddleocr-vl,mineru-vlm,qwen-vl` 顺序自动尝试补强。稳定的 Umi-OCR 主结果仍写入 `book.md`；增强后端成功时，补强版写入 `enhanced.md`，每次尝试的成功、缺失、超时或失败原因写入 `enhancement.md/json`。
 
 可用参数：
 
@@ -520,8 +528,10 @@ python image_book_rebuilder.py build `
   .\screenshots `
   .\screenshots-md `
   --enhance-layout-heavy auto `
-  --layout-enhancer-order paddleocr-vl,mineru-vlm,qwen-vl `
+  --layout-enhancer-order pix2text,surya,paddleocr-vl,mineru-vlm,qwen-vl `
   --layout-enhancer-timeout 180 `
+  --pix2text-command "python scripts\pix2text_image_to_md.py --input {input} --output {output}" `
+  --surya-command "python scripts\surya_image_to_md.py --input {input} --output {output}" `
   --paddleocr-vl-command "python scripts\paddleocr_vl_image_to_md.py --input {input} --output {output}" `
   --qwen-vl-command "python scripts\qwen_vl_image_to_md.py --input {input} --output {output}"
 ```
@@ -530,6 +540,9 @@ python image_book_rebuilder.py build `
 
 本机默认 wrapper：
 
+- Pix2Text：`scripts/pix2text_image_to_md.py`，适合中文截图、公式、图片页到 Markdown 的可选补强。
+- Surya：`scripts/surya_image_to_md.py`，调用 `surya_ocr/layout/table`，适合作为 OCR、版面、阅读顺序和表格识别实验补强。
+- DeepSeek-OCR：`scripts/deepseek_ocr_image_to_md.py`，适合作为显式 CUDA/Transformers VLM OCR 实验，不进入默认路径。
 - PaddleOCR-VL：`scripts/paddleocr_vl_image_to_md.py`，调用本机可用的 `paddleocr doc_parser`，适合作为信息图/复杂图片的可选补强。
 - Qwen-VL：`scripts/qwen_vl_image_to_md.py`，默认模型为 `Qwen/Qwen2.5-VL-3B-Instruct`，适合作为更重的视觉语言模型 fallback。
 

@@ -28,17 +28,25 @@ try:
     from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
     from ebook_markdown_pipeline.markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ebook_markdown_pipeline.ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
-    from ebook_markdown_pipeline.ocr_providers import rapidocr_available, rapidocr_package_name
-    from ebook_markdown_pipeline.pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, camelot_available, pdfplumber_available
+    from ebook_markdown_pipeline.ocr_providers import cnocr_available, pix2text_available, rapidocr_available, rapidocr_package_name
+    from ebook_markdown_pipeline.grobid_backend import grobid_health
+    from ebook_markdown_pipeline.olmocr_backend import olmocr_available, olmocr_health
+    from ebook_markdown_pipeline.pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, camelot_available, pdfplumber_available, tabula_available
+    from ebook_markdown_pipeline.pdfcraft_backend import pdfcraft_available
     from ebook_markdown_pipeline.structure_repair import HeadingCandidate, repair_markdown_structure
+    from ebook_markdown_pipeline.tika_backend import tika_health
 except ModuleNotFoundError:  # Allows running this file directly by absolute path.
     from local_env import load_project_env
     from docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
     from markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
-    from ocr_providers import rapidocr_available, rapidocr_package_name
-    from pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, camelot_available, pdfplumber_available
+    from ocr_providers import cnocr_available, pix2text_available, rapidocr_available, rapidocr_package_name
+    from grobid_backend import grobid_health
+    from olmocr_backend import olmocr_available, olmocr_health
+    from pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, camelot_available, pdfplumber_available, tabula_available
+    from pdfcraft_backend import pdfcraft_available
     from structure_repair import HeadingCandidate, repair_markdown_structure
+    from tika_backend import tika_health
 
 load_project_env()
 
@@ -60,7 +68,7 @@ OUTPUT_FORMATS = {
     "text": {"suffix": ".txt", "pandoc_target": "plain"},
 }
 
-PDF_PIPELINE_MODES = ("auto", "marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown", "ocrmypdf")
+PDF_PIPELINE_MODES = ("auto", "marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown", "ocrmypdf", "pdfcraft", "olmocr")
 
 COMMON_WINDOWS_COMMAND_PATHS = {
     "pandoc": [
@@ -385,6 +393,88 @@ def parse_args() -> argparse.Namespace:
         help="OCRmyPDF/Tesseract language list. Default: chi_sim+eng.",
     )
     parser.add_argument(
+        "--pdfcraft-ocr-size",
+        default=os.environ.get("PDFCRAFT_OCR_SIZE", "base"),
+        help="pdf-craft DeepSeek OCR size: tiny, small, base, large, gundam. Default: base.",
+    )
+    parser.add_argument(
+        "--pdfcraft-models-cache",
+        type=Path,
+        default=None,
+        help="Optional pdf-craft model cache directory. Default: <tool-cache>/pdf-craft-models.",
+    )
+    parser.add_argument(
+        "--pdfcraft-allow-download",
+        action="store_true",
+        help="Allow pdf-craft to download models. Default is local-only to avoid surprise network/model downloads.",
+    )
+    parser.add_argument(
+        "--pdfcraft-dpi",
+        type=int,
+        default=300,
+        help="pdf-craft PDF render DPI. Default: 300.",
+    )
+    parser.add_argument(
+        "--pdfcraft-include-cover",
+        action="store_true",
+        help="Ask pdf-craft to include the PDF cover image in Markdown assets.",
+    )
+    parser.add_argument(
+        "--pdfcraft-ignore-errors",
+        action="store_true",
+        help="Ask pdf-craft to continue on individual PDF/OCR page errors.",
+    )
+    parser.add_argument(
+        "--olmocr-command",
+        default=os.environ.get("EBOOK_CONVERTER_OLMOCR_COMMAND", "olmocr"),
+        help="olmOCR command/path for explicit VLM OCR experiments. Default: olmocr.",
+    )
+    parser.add_argument(
+        "--olmocr-workspace",
+        type=Path,
+        default=None,
+        help="Optional olmOCR workspace directory. Default: <output>/.olmocr/<stem>.",
+    )
+    parser.add_argument(
+        "--olmocr-server",
+        default=os.environ.get("EBOOK_CONVERTER_OLMOCR_SERVER", ""),
+        help="Optional OpenAI-compatible/vLLM server URL for olmOCR remote inference.",
+    )
+    parser.add_argument(
+        "--olmocr-model",
+        default=os.environ.get("EBOOK_CONVERTER_OLMOCR_MODEL", ""),
+        help="Optional olmOCR model name, usually required with --olmocr-server.",
+    )
+    parser.add_argument(
+        "--olmocr-api-key-env",
+        default=os.environ.get("EBOOK_CONVERTER_OLMOCR_API_KEY_ENV", ""),
+        help="Optional environment variable name containing the olmOCR remote API key. The key is not written to reports.",
+    )
+    parser.add_argument(
+        "--olmocr-workers",
+        type=int,
+        default=int(os.environ.get("EBOOK_CONVERTER_OLMOCR_WORKERS", "1") or 1),
+        help="olmOCR workers. Default: 1.",
+    )
+    parser.add_argument(
+        "--olmocr-max-concurrent-requests",
+        type=int,
+        default=int(os.environ.get("EBOOK_CONVERTER_OLMOCR_MAX_CONCURRENT_REQUESTS", "0") or 0),
+        help="olmOCR remote max concurrent requests. Default: 0 means omit.",
+    )
+    parser.add_argument(
+        "--olmocr-pages-per-group",
+        type=int,
+        default=int(os.environ.get("EBOOK_CONVERTER_OLMOCR_PAGES_PER_GROUP", "0") or 0),
+        help="olmOCR pages per group. Default: 0 means omit.",
+    )
+    parser.add_argument(
+        "--olmocr-timeout",
+        type=float,
+        default=float(os.environ.get("EBOOK_CONVERTER_OLMOCR_TIMEOUT", "0") or 0),
+        help="Abort the olmOCR worker after this many seconds; 0 relies on shared PDF idle/finalize timeouts.",
+    )
+    parser.add_argument(
         "--no-docling-fallback",
         action="store_true",
         help="Disable automatic fallback to Pandoc/lightweight text output when Docling fails or times out.",
@@ -430,6 +520,21 @@ def default_options(**overrides) -> SimpleNamespace:
         "ocrmypdf_command": "ocrmypdf",
         "ocrmypdf_timeout": 600.0,
         "ocrmypdf_language": "chi_sim+eng",
+        "pdfcraft_ocr_size": os.environ.get("PDFCRAFT_OCR_SIZE", "base"),
+        "pdfcraft_models_cache": None,
+        "pdfcraft_allow_download": False,
+        "pdfcraft_dpi": 300,
+        "pdfcraft_include_cover": False,
+        "pdfcraft_ignore_errors": False,
+        "olmocr_command": os.environ.get("EBOOK_CONVERTER_OLMOCR_COMMAND", "olmocr"),
+        "olmocr_workspace": None,
+        "olmocr_server": os.environ.get("EBOOK_CONVERTER_OLMOCR_SERVER", ""),
+        "olmocr_model": os.environ.get("EBOOK_CONVERTER_OLMOCR_MODEL", ""),
+        "olmocr_api_key_env": os.environ.get("EBOOK_CONVERTER_OLMOCR_API_KEY_ENV", ""),
+        "olmocr_workers": int(os.environ.get("EBOOK_CONVERTER_OLMOCR_WORKERS", "1") or 1),
+        "olmocr_max_concurrent_requests": int(os.environ.get("EBOOK_CONVERTER_OLMOCR_MAX_CONCURRENT_REQUESTS", "0") or 0),
+        "olmocr_pages_per_group": int(os.environ.get("EBOOK_CONVERTER_OLMOCR_PAGES_PER_GROUP", "0") or 0),
+        "olmocr_timeout": float(os.environ.get("EBOOK_CONVERTER_OLMOCR_TIMEOUT", "0") or 0),
         "docling_fallback_to_pandoc": True,
         "pdf_pipeline_mode": "auto",
         "document_pipeline_mode": "auto",
@@ -791,6 +896,14 @@ def find_missing_dependencies(sources: Iterable[Path], args: argparse.Namespace)
             if not ocrmypdf_available(getattr(args, "ocrmypdf_command", "ocrmypdf")):
                 missing.append("Missing optional command: ocrmypdf. Install OCRmyPDF/Tesseract or pass --ocrmypdf-command.")
             continue
+        if command == "pdfcraft":
+            if not pdfcraft_available():
+                missing.append("Missing optional Python dependency: pdf-craft. Install with: pip install pdf-craft")
+            continue
+        if command == "olmocr":
+            if not olmocr_available(getattr(args, "olmocr_command", "olmocr")):
+                missing.append("Missing optional VLM OCR backend: olmOCR. Install olmocr or pass --olmocr-command.")
+            continue
         if resolve_command_path(command):
             continue
         missing.append(
@@ -825,6 +938,10 @@ def required_dependencies(sources: Iterable[Path], args: argparse.Namespace) -> 
                 required.add("markitdown")
             elif selected == "ocrmypdf" and not ocrmypdf_available(getattr(args, "ocrmypdf_command", "ocrmypdf")):
                 required.add("ocrmypdf")
+            elif selected == "pdfcraft" and not pdfcraft_available():
+                required.add("pdfcraft")
+            elif selected == "olmocr" and not olmocr_available(getattr(args, "olmocr_command", "olmocr")):
+                required.add("olmocr")
             if args.output_format != "markdown":
                 required.add(args.pandoc_command)
         elif kind == "docling":
@@ -893,6 +1010,24 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
             "detail": "importable" if markitdown_available() else "optional baseline backend not installed",
         }
     )
+    tika_status = tika_health()
+    checks.append(
+        {
+            "name": "Apache Tika",
+            "kind": "server/command",
+            "status": tika_status["status"],
+            "detail": tika_status["detail"],
+        }
+    )
+    grobid_status = grobid_health()
+    checks.append(
+        {
+            "name": "GROBID",
+            "kind": "server",
+            "status": grobid_status["status"],
+            "detail": grobid_status["detail"],
+        }
+    )
     checks.append(
         {
             "name": "OCRmyPDF",
@@ -903,6 +1038,15 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
             else "optional scanned PDF preprocessing command not found",
         }
     )
+    checks.append(
+        {
+            "name": "pdf-craft",
+            "kind": "python",
+            "status": "ok" if pdfcraft_available() else "missing",
+            "detail": "scanned-book PDF-to-Markdown backend available" if pdfcraft_available() else "optional scanned-book backend not installed",
+        }
+    )
+    checks.append(olmocr_health(getattr(args, "olmocr_command", "olmocr")))
     checks.append(
         {
             "name": "pdfplumber",
@@ -917,6 +1061,14 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
             "kind": "python",
             "status": "ok" if camelot_available() else "missing",
             "detail": "text-based PDF table extraction available" if camelot_available() else "optional table extraction backend not installed",
+        }
+    )
+    checks.append(
+        {
+            "name": "Tabula",
+            "kind": "python/java",
+            "status": "ok" if tabula_available() else "missing",
+            "detail": "tabula-py text-based PDF table extraction available" if tabula_available() else "optional tabula-py/Java table extraction backend not installed",
         }
     )
     checks.append(
@@ -942,6 +1094,14 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
             "kind": "python",
             "status": "ok" if rapidocr_available() else "missing",
             "detail": f"importable via {rapidocr_package}" if rapidocr_package else "optional Python OCR provider not installed",
+        }
+    )
+    checks.append(
+        {
+            "name": "CnOCR",
+            "kind": "python",
+            "status": "ok" if cnocr_available() else "missing",
+            "detail": "importable Chinese/English OCR provider" if cnocr_available() else "optional Chinese OCR provider not installed",
         }
     )
     checks.extend(vlm_image_backend_health())
@@ -970,9 +1130,45 @@ def vlm_image_backend_health() -> list[dict[str, str]]:
     vlm_python = env_path("EBOOK_CONVERTER_VLM_PYTHON") or Path(sys.executable)
     paddleocr_command = os.environ.get("EBOOK_CONVERTER_PADDLEOCR_COMMAND", "paddleocr")
     paddleocr_resolved = resolve_command_path(paddleocr_command)
+    surya_command = os.environ.get("SURYA_OCR_COMMAND", "surya_ocr")
+    surya_resolved = resolve_command_path(surya_command)
     paddle_wrapper = root / "scripts" / "paddleocr_vl_image_to_md.py"
+    pix2text_wrapper = root / "scripts" / "pix2text_image_to_md.py"
+    surya_wrapper = root / "scripts" / "surya_image_to_md.py"
+    got_ocr_wrapper = root / "scripts" / "got_ocr_image_to_md.py"
+    deepseek_ocr_wrapper = root / "scripts" / "deepseek_ocr_image_to_md.py"
     qwen_wrapper = root / "scripts" / "qwen_vl_image_to_md.py"
+    got_ocr_python = os.environ.get("GOT_OCR_PYTHON", sys.executable)
+    got_ocr_script = os.environ.get("GOT_OCR_SCRIPT", "")
+    got_ocr_model = os.environ.get("GOT_OCR_MODEL", "")
+    deepseek_ocr_python = os.environ.get("DEEPSEEK_OCR_PYTHON", "")
+    deepseek_ocr_model = os.environ.get("DEEPSEEK_OCR_MODEL", "")
+    deepseek_runtime_hint = bool(deepseek_ocr_python) or bool(importlib.util.find_spec("transformers"))
     checks = [
+        {
+            "name": "Pix2Text wrapper",
+            "kind": "image",
+            "status": "ok" if vlm_python.exists() and pix2text_wrapper.exists() and pix2text_available() else "missing",
+            "detail": f"python={vlm_python}; wrapper={pix2text_wrapper}; package={'importable' if pix2text_available() else 'not installed'}",
+        },
+        {
+            "name": "Surya wrapper",
+            "kind": "vlm",
+            "status": "ok" if vlm_python.exists() and surya_wrapper.exists() and surya_resolved else "missing",
+            "detail": f"python={vlm_python}; surya_ocr={surya_resolved or surya_command}; wrapper={surya_wrapper}",
+        },
+        {
+            "name": "GOT-OCR wrapper",
+            "kind": "vlm",
+            "status": "ok" if got_ocr_wrapper.exists() and bool(got_ocr_script) and Path(got_ocr_script).exists() and bool(got_ocr_model) else "missing",
+            "detail": f"python={got_ocr_python}; script={got_ocr_script or 'not configured'}; model={'configured' if got_ocr_model else 'not configured'}; wrapper={got_ocr_wrapper}",
+        },
+        {
+            "name": "DeepSeek-OCR wrapper",
+            "kind": "vlm",
+            "status": "ok" if deepseek_ocr_wrapper.exists() and deepseek_runtime_hint and bool(deepseek_ocr_model) else "missing",
+            "detail": f"python={deepseek_ocr_python or 'current/default'}; runtime={'configured/importable' if deepseek_runtime_hint else 'not configured'}; model={'configured' if deepseek_ocr_model else 'not configured'}; wrapper={deepseek_ocr_wrapper}",
+        },
         {
             "name": "PaddleOCR-VL wrapper",
             "kind": "vlm",
@@ -1027,11 +1223,21 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
     pymupdf4llm_ok = check_ok("pymupdf4llm")
     docling_ok = check_ok("docling")
     markitdown_ok = check_ok("markitdown")
+    tika_ok = check_ok("Apache Tika")
+    grobid_ok = check_ok("GROBID")
     ocrmypdf_ok = check_ok("OCRmyPDF")
+    pdfcraft_ok = check_ok("pdf-craft")
+    olmocr_ok = check_ok("olmOCR")
     pdfplumber_ok = check_ok("pdfplumber")
     camelot_ok = check_ok("Camelot")
+    tabula_ok = check_ok("Tabula")
     umi_ok = check_ok("Umi PaddleOCR module")
     rapidocr_ok = check_ok("RapidOCR")
+    cnocr_ok = check_ok("CnOCR")
+    pix2text_ok = check_ok("Pix2Text wrapper")
+    surya_ok = check_ok("Surya wrapper")
+    got_ocr_ok = check_ok("GOT-OCR wrapper")
+    deepseek_ocr_ok = check_ok("DeepSeek-OCR wrapper")
     paddle_vl_ok = check_ok("PaddleOCR-VL wrapper")
     qwen_vl_ok = check_ok("Qwen-VL wrapper")
     mineru_cache = check_status("MinerU model cache")
@@ -1083,17 +1289,21 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
     capabilities.append(
         capability_item(
             "local_ocr",
-            "ok" if umi_ok or rapidocr_ok else "missing",
+            "ok" if umi_ok or rapidocr_ok or cnocr_ok else "missing",
             "Umi-OCR Paddle module is available."
             if umi_ok
             else "RapidOCR is available as a lightweight Python OCR fallback."
             if rapidocr_ok
+            else "CnOCR is available as a Chinese/English OCR comparison provider."
+            if cnocr_ok
             else "No local OCR provider is configured.",
             "Use Umi-OCR for long scanned documents or image batches."
             if umi_ok
             else "Use --ocr-provider rapidocr for script/agent-friendly image OCR fallback."
             if rapidocr_ok
-            else "Configure Umi-OCR or install RapidOCR for scanned PDFs/images.",
+            else "Use scripts/compare_ocr_providers.py --providers cnocr for Chinese OCR comparison."
+            if cnocr_ok
+            else "Configure Umi-OCR or install RapidOCR/CnOCR for scanned PDFs/images.",
         )
     )
 
@@ -1108,17 +1318,60 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
         )
     )
 
-    image_layout_status = "ok" if paddle_vl_ok else "degraded" if qwen_vl_ok or mineru_ok else "missing"
+    capabilities.append(
+        capability_item(
+            "cnocr_chinese_ocr",
+            "ok" if cnocr_ok else "missing",
+            "CnOCR Python provider is importable for Chinese/English OCR comparison."
+            if cnocr_ok
+            else "CnOCR optional provider is not installed.",
+            "Use OCR provider comparison on Chinese image samples before promoting CnOCR to a default path."
+            if cnocr_ok
+            else "Install requirements-cnocr.txt only if you need Chinese OCR benchmark/fallback experiments.",
+        )
+    )
+
+    image_layout_status = "ok" if pix2text_ok or surya_ok or paddle_vl_ok else "degraded" if qwen_vl_ok or mineru_ok else "missing"
     capabilities.append(
         capability_item(
             "image_layout_enhancement",
             image_layout_status,
-            "PaddleOCR-VL wrapper is configured; Qwen-VL wrapper is available as a heavier fallback."
+            "Pix2Text wrapper is configured for Chinese/formula/image layout enhancement."
+            if pix2text_ok
+            else "Surya wrapper is configured for OCR/layout/reading-order enhancement."
+            if surya_ok
+            else "PaddleOCR-VL wrapper is configured; Qwen-VL wrapper is available as a heavier fallback."
             if paddle_vl_ok
             else "No preferred image-layout VLM wrapper is fully configured.",
             "Use screenshot/image book mode; layout-heavy pages auto-generate enhanced.md."
             if image_layout_status == "ok"
-            else "Configure PaddleOCR-VL/Qwen-VL wrappers or keep using Umi-OCR layout review.",
+            else "Configure Pix2Text/Surya/PaddleOCR-VL/Qwen-VL wrappers or keep using Umi-OCR layout review.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
+            "got_ocr_experiment",
+            "ok" if got_ocr_ok else "missing",
+            "GOT-OCR wrapper is configured for explicit image OCR experiments."
+            if got_ocr_ok
+            else "GOT-OCR wrapper is present but demo script/model are not configured.",
+            "Use scripts/got_ocr_image_to_md.py only for explicit CUDA/GOT model experiments."
+            if got_ocr_ok
+            else "Set GOT_OCR_SCRIPT and GOT_OCR_MODEL only if you need GOT-OCR experiments.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
+            "deepseek_ocr_experiment",
+            "ok" if deepseek_ocr_ok else "missing",
+            "DeepSeek-OCR wrapper is configured for explicit VLM OCR experiments."
+            if deepseek_ocr_ok
+            else "DeepSeek-OCR wrapper is present but Python/model configuration is incomplete.",
+            "Use scripts/deepseek_ocr_image_to_md.py only for explicit CUDA/Transformers DeepSeek-OCR experiments."
+            if deepseek_ocr_ok
+            else "Set DEEPSEEK_OCR_PYTHON and DEEPSEEK_OCR_MODEL only if you need DeepSeek-OCR experiments.",
         )
     )
 
@@ -1144,12 +1397,64 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
 
     capabilities.append(
         capability_item(
+            "format_metadata_inspection",
+            "ok" if tika_ok else "missing",
+            "Apache Tika inspect backend is configured."
+            if tika_ok
+            else "Apache Tika inspect backend is not configured.",
+            "Use inspect_document with use_tika=true for MIME, metadata, and text-sample evidence."
+            if tika_ok
+            else "Set EBOOK_CONVERTER_TIKA_SERVER_URL or EBOOK_CONVERTER_TIKA_COMMAND only if broad format inspection is needed.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
+            "academic_pdf_analysis",
+            "ok" if grobid_ok else "missing",
+            "GROBID academic PDF/TEI backend is configured."
+            if grobid_ok
+            else "GROBID academic PDF/TEI backend is not configured.",
+            "Use inspect_document with use_grobid=true for title, authors, abstract, DOI, and reference-count evidence."
+            if grobid_ok
+            else "Set EBOOK_CONVERTER_GROBID_SERVER_URL only if you need paper/reference/TEI inspection.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
             "scanned_pdf_preprocess",
             "ok" if ocrmypdf_ok else "missing",
             "OCRmyPDF preprocessing is available." if ocrmypdf_ok else "OCRmyPDF is not installed or not configured.",
             "Use OCRmyPDF to create searchable PDFs before fast text-layer conversion."
             if ocrmypdf_ok
             else "Install OCRmyPDF/Tesseract only if you need scanned PDF preprocessing.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
+            "scanned_book_reconstruction",
+            "ok" if pdfcraft_ok else "missing",
+            "pdf-craft is available for scanned-book PDF-to-Markdown with TOC assumptions."
+            if pdfcraft_ok
+            else "pdf-craft is not installed; scanned-book reconstruction remains on MinerU/Marker/Umi routes.",
+            "Use --pdf-pipeline-mode pdfcraft for explicit scanned-book experiments."
+            if pdfcraft_ok
+            else "Install pdf-craft only if you need DeepSeek OCR based scanned-book reconstruction.",
+        )
+    )
+
+    capabilities.append(
+        capability_item(
+            "pdf_vlm_ocr_benchmark",
+            "ok" if olmocr_ok else "missing",
+            "olmOCR is available for explicit VLM PDF/image-to-Markdown experiments."
+            if olmocr_ok
+            else "olmOCR optional VLM OCR backend is not installed or configured.",
+            "Use --pdf-pipeline-mode olmocr only for explicit GPU/remote-VLM comparisons."
+            if olmocr_ok
+            else "Install olmocr or configure --olmocr-command only if you need VLM OCR benchmarks.",
         )
     )
 
@@ -1167,11 +1472,15 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
     capabilities.append(
         capability_item(
             "pdf_table_extraction",
-            "ok" if camelot_ok else "missing",
-            "Camelot table extraction is available." if camelot_ok else "Camelot is not installed.",
-            "Use Camelot only for text-based PDF table extraction."
+            "ok" if camelot_ok or tabula_ok else "missing",
+            "Camelot table extraction is available."
             if camelot_ok
-            else "Install Camelot only if you need dedicated text-based PDF table extraction.",
+            else "Tabula table extraction is available."
+            if tabula_ok
+            else "Camelot/Tabula are not installed.",
+            "Use Camelot/Tabula only for text-based PDF table extraction."
+            if camelot_ok or tabula_ok
+            else "Install Camelot or tabula-py only if you need dedicated text-based PDF table extraction.",
         )
     )
 
@@ -1247,6 +1556,8 @@ def convert_one(
     args._docling_diagnostics = []
     args._markitdown_diagnostics = []
     args._ocrmypdf_diagnostics = []
+    args._pdfcraft_diagnostics = []
+    args._olmocr_diagnostics = []
     args._calibre_fallback_diagnostics = []
     args._last_pdf_pipeline = None
     args._last_docling_pipeline = None
@@ -1738,6 +2049,227 @@ def ocrmypdf_text_layer_summary(before: PdfPreflight, after: PdfPreflight) -> di
     }
 
 
+def run_pdfcraft_pdf_convert(
+    source: Path,
+    output_path: Path,
+    args: argparse.Namespace,
+    progress_callback=None,
+    progress_index: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    emit_stage(progress_callback, source, progress_index, progress_total, "pdfcraft", "pdf-craft 扫描书结构化解析")
+    if args.dry_run:
+        return
+
+    report_root = output_path.parent / ".reports" / "pdfcraft"
+    result_json = report_root / f"{safe_report_name(output_path.stem)}.result.json"
+    analysing_dir = output_path.parent / ".pdfcraft" / output_path.stem
+    models_cache = getattr(args, "pdfcraft_models_cache", None)
+    if models_cache is None:
+        models_cache = default_tool_cache_dir() / "pdf-craft-models"
+    assets_name = f"{output_path.stem}.assets"
+
+    with tempfile.TemporaryDirectory(prefix="pdfcraft-output-") as tmpdir:
+        temp_md = Path(tmpdir) / f"{output_path.stem}.md"
+        worker_output = output_path if args.output_format == "markdown" else temp_md
+        backend_script = Path(__file__).resolve().parent / "pdfcraft_backend.py"
+        cmd = [
+            sys.executable,
+            str(backend_script),
+            str(source),
+            "--output",
+            str(worker_output),
+            "--output-json",
+            str(result_json),
+            "--assets-name",
+            assets_name,
+            "--analysing-dir",
+            str(analysing_dir),
+            "--models-cache-dir",
+            str(models_cache),
+            "--ocr-size",
+            str(getattr(args, "pdfcraft_ocr_size", "base") or "base"),
+            "--dpi",
+            str(int(getattr(args, "pdfcraft_dpi", 300) or 300)),
+        ]
+        if getattr(args, "pdfcraft_allow_download", False):
+            cmd.append("--allow-download")
+        if getattr(args, "pdfcraft_include_cover", False):
+            cmd.append("--include-cover")
+        if getattr(args, "pdfcraft_ignore_errors", False):
+            cmd.extend(["--ignore-pdf-errors", "--ignore-ocr-errors"])
+
+        try:
+            run_pdf_tool_command(
+                cmd,
+                args,
+                source,
+                output_path,
+                progress_callback,
+                progress_index,
+                progress_total,
+                stage="pdfcraft",
+                label="pdf-craft",
+                env=pdfcraft_environment(args),
+            )
+        finally:
+            payload = load_pdfcraft_worker_result(result_json)
+            if payload:
+                getattr(args, "_pdfcraft_diagnostics", []).append(payload)
+
+        payload = load_pdfcraft_worker_result(result_json)
+        if not payload.get("ok"):
+            raise RuntimeError(str(payload.get("error") or "pdf-craft worker failed"))
+        if args.output_format == "markdown":
+            postprocess_text_output(
+                output_path,
+                args,
+                source_kind="pdf",
+                progress_callback=progress_callback,
+                progress_source=source,
+                progress_index=progress_index,
+                progress_total=progress_total,
+            )
+            return
+        convert_markdown_file(temp_md, output_path, args, progress_callback, source, progress_index, progress_total)
+
+
+def load_pdfcraft_worker_result(result_json: Path) -> dict:
+    if not result_json.exists():
+        return {"ok": False, "error": "pdf-craft worker produced no result JSON."}
+    try:
+        payload = json.loads(result_json.read_text(encoding="utf-8-sig"))
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"Could not read pdf-craft worker result: {exc}"}
+    return payload if isinstance(payload, dict) else {"ok": False, "error": "Invalid pdf-craft worker result JSON."}
+
+
+def pdfcraft_environment(args: argparse.Namespace) -> dict[str, str]:
+    env = os.environ.copy()
+    tool_cache = default_tool_cache_dir()
+    env.setdefault("HF_HOME", str(tool_cache / "huggingface"))
+    env.setdefault("TRANSFORMERS_CACHE", str(tool_cache / "huggingface" / "transformers"))
+    env.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+    env.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
+    env.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    for key in ("HF_HOME", "TRANSFORMERS_CACHE"):
+        Path(env[key]).mkdir(parents=True, exist_ok=True)
+    return env
+
+
+def run_olmocr_pdf_convert(
+    source: Path,
+    output_path: Path,
+    args: argparse.Namespace,
+    progress_callback=None,
+    progress_index: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    emit_stage(progress_callback, source, progress_index, progress_total, "olmocr", "olmOCR VLM PDF 解析")
+    if args.dry_run:
+        return
+
+    report_root = output_path.parent / ".reports" / "olmocr"
+    result_json = report_root / f"{safe_report_name(output_path.stem)}.result.json"
+    workspace = getattr(args, "olmocr_workspace", None) or output_path.parent / ".olmocr" / output_path.stem
+
+    with tempfile.TemporaryDirectory(prefix="olmocr-output-") as tmpdir:
+        temp_md = Path(tmpdir) / f"{output_path.stem}.md"
+        worker_output = output_path if args.output_format == "markdown" else temp_md
+        backend_script = Path(__file__).resolve().parent / "olmocr_backend.py"
+        cmd = [
+            sys.executable,
+            str(backend_script),
+            str(source),
+            "--output",
+            str(worker_output),
+            "--output-json",
+            str(result_json),
+            "--workspace",
+            str(workspace),
+            "--command",
+            str(getattr(args, "olmocr_command", "olmocr") or "olmocr"),
+        ]
+        server = str(getattr(args, "olmocr_server", "") or "").strip()
+        model = str(getattr(args, "olmocr_model", "") or "").strip()
+        api_key_env = str(getattr(args, "olmocr_api_key_env", "") or "").strip()
+        if server:
+            cmd.extend(["--server", server])
+        if model:
+            cmd.extend(["--model", model])
+        if api_key_env:
+            cmd.extend(["--api-key-env", api_key_env])
+        workers = int(getattr(args, "olmocr_workers", 1) or 0)
+        if workers > 0:
+            cmd.extend(["--workers", str(workers)])
+        max_concurrent = int(getattr(args, "olmocr_max_concurrent_requests", 0) or 0)
+        if max_concurrent > 0:
+            cmd.extend(["--max-concurrent-requests", str(max_concurrent)])
+        pages_per_group = int(getattr(args, "olmocr_pages_per_group", 0) or 0)
+        if pages_per_group > 0:
+            cmd.extend(["--pages-per-group", str(pages_per_group)])
+        timeout = float(getattr(args, "olmocr_timeout", 0.0) or 0.0)
+        if timeout > 0:
+            cmd.extend(["--timeout", str(timeout)])
+
+        try:
+            run_pdf_tool_command(
+                cmd,
+                args,
+                source,
+                output_path,
+                progress_callback,
+                progress_index,
+                progress_total,
+                stage="olmocr",
+                label="olmOCR",
+                env=olmocr_environment(args),
+            )
+        finally:
+            payload = load_olmocr_worker_result(result_json)
+            if payload:
+                getattr(args, "_olmocr_diagnostics", []).append(payload)
+
+        payload = load_olmocr_worker_result(result_json)
+        if not payload.get("ok"):
+            raise RuntimeError(str(payload.get("error") or "olmOCR worker failed"))
+        if args.output_format == "markdown":
+            postprocess_text_output(
+                output_path,
+                args,
+                source_kind="pdf",
+                progress_callback=progress_callback,
+                progress_source=source,
+                progress_index=progress_index,
+                progress_total=progress_total,
+            )
+            return
+        convert_markdown_file(temp_md, output_path, args, progress_callback, source, progress_index, progress_total)
+
+
+def load_olmocr_worker_result(result_json: Path) -> dict:
+    if not result_json.exists():
+        return {"ok": False, "error": "olmOCR worker produced no result JSON."}
+    try:
+        payload = json.loads(result_json.read_text(encoding="utf-8-sig"))
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"Could not read olmOCR worker result: {exc}"}
+    return payload if isinstance(payload, dict) else {"ok": False, "error": "Invalid olmOCR worker result JSON."}
+
+
+def olmocr_environment(args: argparse.Namespace) -> dict[str, str]:
+    env = os.environ.copy()
+    tool_cache = default_tool_cache_dir()
+    env.setdefault("HF_HOME", str(tool_cache / "huggingface"))
+    env.setdefault("TRANSFORMERS_CACHE", str(tool_cache / "huggingface" / "transformers"))
+    env.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+    env.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
+    env.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    for key in ("HF_HOME", "TRANSFORMERS_CACHE"):
+        Path(env[key]).mkdir(parents=True, exist_ok=True)
+    return env
+
+
 def run_markitdown_backend(source: Path, output_path: Path, args: argparse.Namespace) -> dict:
     timeout = float(getattr(args, "markitdown_timeout", 45.0) or 0.0)
     diagnostic: dict[str, object] = {
@@ -2031,6 +2563,10 @@ def run_pdf_convert(
             run_markitdown_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         elif selected == "ocrmypdf":
             run_ocrmypdf_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        elif selected == "pdfcraft":
+            run_pdfcraft_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        elif selected == "olmocr":
+            run_olmocr_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         else:
             run_marker_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         return
@@ -3671,6 +4207,12 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
     ocrmypdf_diagnostics = getattr(args, "_ocrmypdf_diagnostics", [])
     if ocrmypdf_diagnostics:
         payload["ocrmypdf_diagnostics"] = ocrmypdf_diagnostics
+    pdfcraft_diagnostics = getattr(args, "_pdfcraft_diagnostics", [])
+    if pdfcraft_diagnostics:
+        payload["pdfcraft_diagnostics"] = pdfcraft_diagnostics
+    olmocr_diagnostics = getattr(args, "_olmocr_diagnostics", [])
+    if olmocr_diagnostics:
+        payload["olmocr_diagnostics"] = olmocr_diagnostics
     calibre_fallback_diagnostics = getattr(args, "_calibre_fallback_diagnostics", [])
     if calibre_fallback_diagnostics:
         payload["calibre_fallback_diagnostics"] = calibre_fallback_diagnostics
@@ -3831,6 +4373,9 @@ def pdf_layout_review_summary(layout: dict) -> dict:
         "camelot_available": summary.get("camelot_available"),
         "camelot_status": summary.get("camelot_status"),
         "camelot_table_artifact_count": summary.get("camelot_table_artifact_count", 0),
+        "tabula_available": summary.get("tabula_available"),
+        "tabula_status": summary.get("tabula_status"),
+        "tabula_table_artifact_count": summary.get("tabula_table_artifact_count", 0),
     }
 
 
@@ -3861,6 +4406,10 @@ def pdf_layout_review_reasons(layout: dict) -> list[str]:
         reasons.append(f"Camelot 已导出表格 artifact: {summary.get('camelot_table_artifact_count')}")
     elif summary.get("camelot_status") == "failed":
         reasons.append("Camelot 表格专项抽取失败，需查看 table-diagnostics.json")
+    if int(summary.get("tabula_table_artifact_count") or 0) > 0:
+        reasons.append(f"Tabula 已导出表格 artifact: {summary.get('tabula_table_artifact_count')}")
+    elif summary.get("tabula_status") == "failed":
+        reasons.append("Tabula 表格专项抽取失败，需查看 table-diagnostics.json")
     return reasons
 
 
@@ -4140,6 +4689,8 @@ def suggest_review_next_actions(item: dict) -> list[dict[str, str]]:
             actions.append({"action": "inspect_table_diagnostics", "why": "review table-diagnostics.json and exported table candidates before accepting table-heavy PDF output"})
             if layout_summary.get("camelot_available"):
                 actions.append({"action": "extract_pdf_tables", "pipeline": "camelot", "why": "run dedicated text-based table extraction for suspected table pages"})
+            if layout_summary.get("tabula_available"):
+                actions.append({"action": "extract_pdf_tables", "pipeline": "tabula", "why": "run Tabula as an alternate text-based table extractor for suspected table pages"})
         if layout_summary.get("two_column_pages"):
             actions.append({"action": "compare_pdf_pipelines", "pipelines": "mineru,docling,pymupdf4llm", "why": "compare reading order for suspected two-column pages"})
         if layout_summary.get("repeated_header_footer_candidates"):
@@ -5352,6 +5903,10 @@ def estimate_conversion_seconds(source: Path, args: argparse.Namespace) -> float
         return page_count * 0.8
     if selected == "ocrmypdf":
         return page_count * 2.5
+    if selected == "pdfcraft":
+        return page_count * 8.0
+    if selected == "olmocr":
+        return page_count * 8.0
     return None
 
 
@@ -5376,6 +5931,10 @@ def selected_pdf_pipeline_label(source: Path, args: argparse.Namespace) -> str:
         return "markitdown"
     if selected == "ocrmypdf":
         return "ocrmypdf+pymupdf4llm"
+    if selected == "pdfcraft":
+        return "pdf-craft(scanned-book)"
+    if selected == "olmocr":
+        return "olmOCR(vlm)"
     return selected
 
 
@@ -5413,6 +5972,10 @@ def plan_note(source: Path, args: argparse.Namespace) -> str:
         return f"{page_count} pages; {metrics}; using MarkItDown baseline converter"
     if selected == "ocrmypdf":
         return f"{page_count} pages; {metrics}; OCRmyPDF searchable PDF preprocessing, then fast PDF conversion"
+    if selected == "pdfcraft":
+        return f"{page_count} pages; {metrics}; using pdf-craft scanned-book reconstruction; may require GPU/models"
+    if selected == "olmocr":
+        return f"{page_count} pages; {metrics}; using olmOCR VLM OCR benchmark; requires GPU or remote inference"
     if mode == "auto":
         return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s; auto-use Marker ({reason})"
     return f"{page_count} pages; {metrics}; Marker est. {marker_seconds:.0f}s"
@@ -5506,7 +6069,7 @@ def should_fallback_from_pdf_tool(exc: Exception, selected: str, args: argparse.
             "marker completed but no markdown file was produced",
         )
         return any(token in details for token in retryable_markers)
-    return selected in {"marker", "mineru", "docling"}
+    return selected in {"marker", "mineru", "docling", "pdfcraft", "olmocr"}
 
 
 if __name__ == "__main__":

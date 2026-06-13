@@ -11,12 +11,15 @@ from ebook_markdown_pipeline.image_book_rebuilder import (  # noqa: E402
     build_layout_profile,
     build_structure_outline,
     default_paddleocr_vl_command,
+    default_pix2text_command,
     default_qwen_vl_command,
+    default_surya_command,
     detect_title_candidate_details,
     expand_long_image_sources,
     extract_page_number,
     infer_page_order,
     mark_duplicates,
+    parse_enhancer_order,
     rebuild_image_book_from_order,
     render_book_markdown,
     render_layout_markdown,
@@ -133,20 +136,28 @@ def main() -> int:
         raise RuntimeError(f"Expected layout report signals: {layout_report}")
     if "paddleocr_vl_image_to_md.py" not in default_paddleocr_vl_command() or "{input}" not in default_paddleocr_vl_command():
         raise RuntimeError(f"Expected default PaddleOCR-VL wrapper command: {default_paddleocr_vl_command()}")
+    if "pix2text_image_to_md.py" not in default_pix2text_command() or "{output}" not in default_pix2text_command():
+        raise RuntimeError(f"Expected default Pix2Text wrapper command: {default_pix2text_command()}")
+    if "surya_image_to_md.py" not in default_surya_command() or "{output}" not in default_surya_command():
+        raise RuntimeError(f"Expected default Surya wrapper command: {default_surya_command()}")
     if "qwen_vl_image_to_md.py" not in default_qwen_vl_command() or "{output}" not in default_qwen_vl_command():
         raise RuntimeError(f"Expected default Qwen-VL wrapper command: {default_qwen_vl_command()}")
+    if parse_enhancer_order("pix2text,surya,paddle,qwen") != ["pix2text", "surya", "paddleocr-vl", "qwen-vl"]:
+        raise RuntimeError("Expected Pix2Text/Surya enhancer aliases to be recognized.")
     with tempfile.TemporaryDirectory(prefix="image-book-enhancement-") as tmp:
         enhancement_output = Path(tmp)
         missing = run_layout_heavy_enhancements(
             [infographic_page],
             enhancement_output,
             mode="auto",
-            order="mineru-vlm,paddleocr-vl,qwen-vl",
+            order="pix2text,mineru-vlm,paddleocr-vl,qwen-vl",
             timeout_seconds=1,
             mineru_command="definitely-missing-mineru",
             mineru_method="auto",
             mineru_backend="vlm-transformers",
             mineru_lang="ch",
+            pix2text_command="",
+            surya_command="",
             paddleocr_vl_command="",
             qwen_vl_command="",
             progress_callback=None,
@@ -173,6 +184,8 @@ def main() -> int:
                 mineru_method="auto",
                 mineru_backend="vlm-transformers",
                 mineru_lang="ch",
+                pix2text_command="",
+                surya_command="",
                 paddleocr_vl_command="",
                 qwen_vl_command="",
                 progress_callback=None,

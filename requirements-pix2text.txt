@@ -1,0 +1,3 @@
+# Optional Pix2Text image/formula/layout enhancement backend.
+# Install only if you need Chinese screenshots, formulas, or image-page Markdown enhancement.
+pix2text

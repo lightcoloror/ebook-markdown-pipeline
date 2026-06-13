@@ -18,6 +18,18 @@ class FakeRapidOCREngine:
         return [([[0, 0], [100, 0], [100, 20], [0, 20]], f"Rapid {name}", 0.93)], 0.01
 
 
+class FakeCnOCREngine:
+    def ocr(self, image_path: str):
+        name = Path(image_path).stem
+        return [
+            {
+                "text": f"CnOCR {name}",
+                "score": 0.91,
+                "position": [[0, 25], [100, 25], [100, 45], [0, 45]],
+            }
+        ]
+
+
 class FakeUmiEngine:
     def run(self, image_path: str):
         name = Path(image_path).stem
@@ -47,8 +59,9 @@ def main() -> int:
         payload = compare_ocr_providers(
             [first, second],
             output_dir=output,
-            providers=["rapidocr", "umi"],
+            providers=["rapidocr", "cnocr", "umi"],
             rapidocr_engine_factory=lambda: FakeRapidOCREngine(),
+            cnocr_engine_factory=lambda: FakeCnOCREngine(),
             umi_engine_factory=lambda: FakeUmiEngine(),
         )
         if payload.get("status") != "ok":
@@ -59,16 +72,18 @@ def main() -> int:
         if not blocks_path.exists():
             raise AssertionError(f"Expected OCR blocks JSONL artifact: {payload}")
         block_rows = [json.loads(line) for line in blocks_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-        if len(block_rows) != 4:
+        if len(block_rows) != 6:
             raise AssertionError(f"Expected provider/image OCR block rows: {block_rows}")
         providers = {row.get("provider") for row in block_rows}
-        if providers != {"rapidocr", "umi"}:
-            raise AssertionError(f"Expected RapidOCR and Umi block rows: {block_rows}")
+        if providers != {"rapidocr", "cnocr", "umi"}:
+            raise AssertionError(f"Expected RapidOCR, CnOCR, and Umi block rows: {block_rows}")
         if not all(row.get("schema_version") == "ocr-blocks-v1" and row.get("blocks") for row in block_rows):
             raise AssertionError(f"Expected unified OCR block schema rows: {block_rows}")
         by_provider = {item["provider"]: item for item in payload["providers"]}
         if by_provider["rapidocr"]["metrics"]["total_char_count"] <= 0:
             raise AssertionError(f"Expected RapidOCR char metrics: {payload}")
+        if by_provider["cnocr"]["metrics"]["total_bbox_count"] != 2:
+            raise AssertionError(f"Expected CnOCR bbox metrics: {payload}")
         if by_provider["umi"]["metrics"]["total_bbox_count"] != 2:
             raise AssertionError(f"Expected Umi bbox metrics: {payload}")
         rapid_categories = by_provider["rapidocr"].get("category_metrics") or {}
@@ -89,6 +104,16 @@ def main() -> int:
             raise AssertionError(f"Expected missing Umi dependency to be recorded: {missing}")
         if missing["status"] != "skipped":
             raise AssertionError(f"Expected all-missing optional providers to skip instead of fail: {missing}")
+
+        missing_cnocr = compare_ocr_providers(
+            [first],
+            output_dir=root / "missing-cnocr",
+            providers=["cnocr"],
+        )
+        if missing_cnocr["providers"][0]["status"] != "missing":
+            raise AssertionError(f"Expected missing CnOCR dependency to be recorded: {missing_cnocr}")
+        if missing_cnocr["status"] != "skipped":
+            raise AssertionError(f"Expected missing CnOCR-only comparison to skip instead of fail: {missing_cnocr}")
 
     print("OCR provider comparison test passed.")
     return 0

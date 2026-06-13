@@ -1,0 +1,4 @@
+# Optional VLM OCR backend for explicit PDF/image-to-Markdown benchmark experiments.
+# Use a clean environment as recommended by upstream; GPU extras are intentionally
+# not installed by this lightweight requirements file.
+olmocr

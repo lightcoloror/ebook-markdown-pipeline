@@ -1,0 +1,5 @@
+# Optional Surya OCR/layout/reading-order/table enhancement backend.
+# This backend is heavy: it requires torch/transformers and may start a VLM inference server.
+# Surya code and model weights are licensed separately; review upstream model
+# and commercial-use terms before redistribution or commercial packaging.
+surya-ocr

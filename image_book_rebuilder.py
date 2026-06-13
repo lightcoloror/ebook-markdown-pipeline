@@ -80,6 +80,20 @@ def default_paddleocr_vl_command() -> str:
     return f'"{default_vlm_python()}" "{script}" --input {{input}} --output {{output}}'
 
 
+def default_pix2text_command() -> str:
+    script = Path(__file__).resolve().parent / "scripts" / "pix2text_image_to_md.py"
+    if not script.exists():
+        return ""
+    return f'"{default_vlm_python()}" "{script}" --input {{input}} --output {{output}}'
+
+
+def default_surya_command() -> str:
+    script = Path(__file__).resolve().parent / "scripts" / "surya_image_to_md.py"
+    if not script.exists():
+        return ""
+    return f'"{default_vlm_python()}" "{script}" --input {{input}} --output {{output}}'
+
+
 def default_qwen_vl_command() -> str:
     script = Path(__file__).resolve().parent / "scripts" / "qwen_vl_image_to_md.py"
     if not script.exists():
@@ -111,12 +125,14 @@ def main() -> int:
     build_parser.add_argument("--long-image-chunk-height", type=int, default=2200)
     build_parser.add_argument("--long-image-overlap", type=int, default=180)
     build_parser.add_argument("--enhance-layout-heavy", choices=["auto", "never"], default="auto")
-    build_parser.add_argument("--layout-enhancer-order", default="paddleocr-vl,mineru-vlm,qwen-vl")
+    build_parser.add_argument("--layout-enhancer-order", default="pix2text,surya,paddleocr-vl,mineru-vlm,qwen-vl")
     build_parser.add_argument("--layout-enhancer-timeout", type=float, default=180.0)
     build_parser.add_argument("--mineru-command", default="mineru")
     build_parser.add_argument("--mineru-method", default="auto")
     build_parser.add_argument("--mineru-backend", default="vlm-transformers")
     build_parser.add_argument("--mineru-lang", default="ch")
+    build_parser.add_argument("--pix2text-command", default=os.environ.get("PIX2TEXT_COMMAND", default_pix2text_command()))
+    build_parser.add_argument("--surya-command", default=os.environ.get("SURYA_COMMAND", default_surya_command()))
     build_parser.add_argument("--paddleocr-vl-command", default=os.environ.get("PADDLEOCR_VL_COMMAND", default_paddleocr_vl_command()))
     build_parser.add_argument("--qwen-vl-command", default=os.environ.get("QWEN_VL_COMMAND", default_qwen_vl_command()))
 
@@ -149,6 +165,8 @@ def main() -> int:
             mineru_method=args.mineru_method,
             mineru_backend=args.mineru_backend,
             mineru_lang=args.mineru_lang,
+            pix2text_command=args.pix2text_command,
+            surya_command=args.surya_command,
             paddleocr_vl_command=args.paddleocr_vl_command,
             qwen_vl_command=args.qwen_vl_command,
         )
@@ -177,12 +195,14 @@ def rebuild_image_book(
     long_image_chunk_height: int = 2200,
     long_image_overlap: int = 180,
     enhance_layout_heavy: str = "auto",
-    layout_enhancer_order: str = "paddleocr-vl,mineru-vlm,qwen-vl",
+    layout_enhancer_order: str = "pix2text,surya,paddleocr-vl,mineru-vlm,qwen-vl",
     layout_enhancer_timeout: float = 180.0,
     mineru_command: str = "mineru",
     mineru_method: str = "auto",
     mineru_backend: str = "vlm-transformers",
     mineru_lang: str = "ch",
+    pix2text_command: str = "",
+    surya_command: str = "",
     paddleocr_vl_command: str = "",
     qwen_vl_command: str = "",
     progress_callback: ProgressCallback | None = None,
@@ -210,6 +230,8 @@ def rebuild_image_book(
         mineru_method=mineru_method,
         mineru_backend=mineru_backend,
         mineru_lang=mineru_lang,
+        pix2text_command=pix2text_command,
+        surya_command=surya_command,
         paddleocr_vl_command=paddleocr_vl_command,
         qwen_vl_command=qwen_vl_command,
         progress_callback=progress_callback,
@@ -232,12 +254,14 @@ def rebuild_image_book_from_sources(
     long_image_chunk_height: int = 2200,
     long_image_overlap: int = 180,
     enhance_layout_heavy: str = "auto",
-    layout_enhancer_order: str = "paddleocr-vl,mineru-vlm,qwen-vl",
+    layout_enhancer_order: str = "pix2text,surya,paddleocr-vl,mineru-vlm,qwen-vl",
     layout_enhancer_timeout: float = 180.0,
     mineru_command: str = "mineru",
     mineru_method: str = "auto",
     mineru_backend: str = "vlm-transformers",
     mineru_lang: str = "ch",
+    pix2text_command: str = "",
+    surya_command: str = "",
     paddleocr_vl_command: str = "",
     qwen_vl_command: str = "",
     progress_callback: ProgressCallback | None = None,
@@ -284,6 +308,8 @@ def rebuild_image_book_from_sources(
         mineru_method=mineru_method,
         mineru_backend=mineru_backend,
         mineru_lang=mineru_lang,
+        pix2text_command=pix2text_command or default_pix2text_command(),
+        surya_command=surya_command or default_surya_command(),
         paddleocr_vl_command=paddleocr_vl_command or default_paddleocr_vl_command(),
         qwen_vl_command=qwen_vl_command or default_qwen_vl_command(),
         progress_callback=progress_callback,
@@ -794,6 +820,8 @@ def run_layout_heavy_enhancements(
     mineru_method: str,
     mineru_backend: str,
     mineru_lang: str,
+    pix2text_command: str,
+    surya_command: str,
     paddleocr_vl_command: str,
     qwen_vl_command: str,
     progress_callback: ProgressCallback | None,
@@ -841,6 +869,8 @@ def run_layout_heavy_enhancements(
                 mineru_method=mineru_method,
                 mineru_backend=mineru_backend,
                 mineru_lang=mineru_lang,
+                pix2text_command=pix2text_command,
+                surya_command=surya_command,
                 paddleocr_vl_command=paddleocr_vl_command,
                 qwen_vl_command=qwen_vl_command,
             )
@@ -870,6 +900,10 @@ def parse_enhancer_order(order: str) -> list[str]:
         "paddle": "paddleocr-vl",
         "paddleocr": "paddleocr-vl",
         "paddleocr-vl": "paddleocr-vl",
+        "p2t": "pix2text",
+        "pix2text": "pix2text",
+        "surya": "surya",
+        "surya-ocr": "surya",
         "qwen": "qwen-vl",
         "qwen-vl": "qwen-vl",
     }
@@ -881,7 +915,7 @@ def parse_enhancer_order(order: str) -> list[str]:
         backend = aliases.get(key)
         if backend and backend not in parsed:
             parsed.append(backend)
-    return parsed or ["paddleocr-vl", "mineru-vlm", "qwen-vl"]
+    return parsed or ["pix2text", "surya", "paddleocr-vl", "mineru-vlm", "qwen-vl"]
 
 
 def run_layout_enhancer_backend(
@@ -894,6 +928,8 @@ def run_layout_enhancer_backend(
     mineru_method: str,
     mineru_backend: str,
     mineru_lang: str,
+    pix2text_command: str,
+    surya_command: str,
     paddleocr_vl_command: str,
     qwen_vl_command: str,
 ) -> dict:
@@ -911,6 +947,10 @@ def run_layout_enhancer_backend(
         )
     if backend == "paddleocr-vl":
         return run_template_image_enhancer("paddleocr-vl", paddleocr_vl_command, page, backend_dir, timeout_seconds)
+    if backend == "pix2text":
+        return run_template_image_enhancer("pix2text", pix2text_command, page, backend_dir, timeout_seconds)
+    if backend == "surya":
+        return run_template_image_enhancer("surya", surya_command, page, backend_dir, timeout_seconds)
     if backend == "qwen-vl":
         return run_template_image_enhancer("qwen-vl", qwen_vl_command, page, backend_dir, timeout_seconds)
     return {"backend": backend, "status": "skipped", "reason": "unknown backend"}

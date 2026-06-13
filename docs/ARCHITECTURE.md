@@ -20,8 +20,8 @@ flowchart LR
     inspect --> router["Pipeline router\nrecommendation + risk flags"]
 
     router --> ebook["Ebook/document backends\nPandoc / Calibre / Docling"]
-    router --> pdf["PDF backends\nPyMuPDF4LLM / MinerU / Marker / Umi-OCR"]
-    router --> image["Image backends\nUmi-OCR / PaddleOCR-VL / Qwen-VL / MinerU VLM"]
+    router --> pdf["PDF backends\nPyMuPDF4LLM / MinerU / Marker / Umi-OCR / pdf-craft / olmOCR"]
+    router --> image["Image backends\nUmi-OCR / CnOCR / Pix2Text / Surya / GOT-OCR / DeepSeek-OCR / PaddleOCR-VL / Qwen-VL / MinerU VLM"]
     router --> web["Web archive adapter\nprocess_web_archive.py"]
     router --> locator["Location index\nSQLite FTS + page/image hits"]
     router --> online["Optional online providers\nonline_providers.py"]
@@ -85,13 +85,17 @@ flowchart TD
     decision -->|"short layout-heavy PDF\nwhen available"| marker["Marker\nlayout-aware PDF parsing"]
     decision -->|"scanned PDF\nor image OCR fallback"| umi["Umi-OCR / PaddleOCR-json\nlocal OCR blocks"]
     decision -->|"screenshot set\nunordered / duplicate / overlapping"| imagebook["Image book rebuilder\nOCR -> dedupe -> order -> Markdown"]
-    decision -->|"infographic\nlayout-heavy image"| vlm["Optional VLM enhancement\nPaddleOCR-VL / Qwen-VL / MinerU VLM"]
+    decision -->|"Chinese screenshot / formula\nor image-page Markdown"| pix2text["Optional Pix2Text enhancement\npage / formula / text_formula"]
+    decision -->|"OCR / layout / reading order\nor table experiment"| surya["Optional Surya enhancement\nocr / layout / table"]
+    decision -->|"infographic\nlayout-heavy image"| vlm["Optional VLM enhancement\nGOT-OCR / DeepSeek-OCR / PaddleOCR-VL / Qwen-VL / MinerU VLM"]
 
     pymupdf --> post["Postprocess\npage markers / heading repair / noise cleanup"]
     mineru --> post
     marker --> post
     umi --> post
     imagebook --> post
+    pix2text --> post
+    surya --> post
     vlm --> post
 
     post --> score["Quality scoring\nheadings / page-noise / text volume / table hints"]
@@ -140,8 +144,13 @@ This keeps the default path local and rule-first while leaving a clear future ho
 | Agent HTTP bridge | `ebook_converter_http.py` |
 | HTTP config | `http_config.py`, `config/http.env` |
 | Document inspection | `document_inspector.py` |
+| Optional Tika inspection | `tika_backend.py` |
+| Optional GROBID academic inspection | `grobid_backend.py` |
 | Location index | `document_locator.py` |
+| PDF layout/table diagnostics | `pdf_layout_diagnostics.py` |
 | Screenshot/image book rebuilding | `image_book_rebuilder.py` |
+| Scanned-book pdf-craft backend | `pdfcraft_backend.py` |
+| VLM OCR olmOCR backend | `olmocr_backend.py` |
 | Online model provider abstraction | `online_providers.py`, `config/online_providers.example.json`, legacy `config/online_models.example.json` |
 | Web archive visual check | `process_web_archive.py`, `process-web-archive.cmd` |
 | Structure repair | `structure_repair.py` |
@@ -150,4 +159,4 @@ This keeps the default path local and rule-first while leaving a clear future ho
 
 ## Third-Party Boundary
 
-This repository mainly contains glue code and workflow code. It references or invokes third-party tools such as Pandoc, Calibre, PyMuPDF4LLM, MinerU, Marker, Docling, Umi-OCR, PaddleOCR-VL, and Qwen-VL wrappers, but it does not vendor their binaries, model weights, or datasets. See [../THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) for the third-party notice and license boundary.
+This repository mainly contains glue code and workflow code. It references or invokes third-party tools such as Pandoc, Calibre, PyMuPDF4LLM, MinerU, Marker, Docling, Apache Tika, GROBID, pdf-craft, olmOCR, pdfplumber, Camelot, Tabula, Umi-OCR, CnOCR, Pix2Text, Surya, GOT-OCR, DeepSeek-OCR, PaddleOCR-VL, and Qwen-VL wrappers, but it does not vendor their binaries, model weights, or datasets. See [../THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) for the third-party notice and license boundary.

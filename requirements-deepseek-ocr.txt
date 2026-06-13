@@ -1,0 +1,12 @@
+# Optional DeepSeek-OCR experiment backend.
+# This file is documentation-oriented and intentionally not included by requirements.txt.
+# Real local inference needs a separate CUDA-capable environment with compatible torch,
+# transformers, safetensors, accelerate, and usually flash-attn.
+# Upstream reference: https://github.com/deepseek-ai/DeepSeek-OCR
+#
+# Recommended pattern:
+#   1. Follow upstream DeepSeek-OCR setup in a dedicated environment.
+#   2. Set DEEPSEEK_OCR_PYTHON to that environment's python executable.
+#   3. Set DEEPSEEK_OCR_MODEL to a local model path or model id.
+#
+# Do not install this optional backend unless you explicitly need VLM OCR experiments.

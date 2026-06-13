@@ -4,11 +4,11 @@
 
 English:
 
-> Local-first graphic/text material converter for ebooks, PDFs, Office files, images, screenshots, and web archives. It orchestrates Pandoc, Calibre, PyMuPDF4LLM, MinerU, Marker, Docling, Umi-OCR, and optional VLM/OCR providers into Markdown, reports, and agent-friendly artifacts.
+> Local-first graphic/text material converter for ebooks, PDFs, Office files, images, screenshots, and web archives. It orchestrates Pandoc, Calibre, PyMuPDF4LLM, MinerU, Marker, Docling, Umi-OCR, CnOCR, Pix2Text, DeepSeek-OCR, olmOCR, and optional VLM/OCR providers into Markdown, reports, and agent-friendly artifacts.
 
 中文：
 
-> 本地优先的图文材料转换器，面向电子书、PDF、Office、图片、截图集和网页归档，复用 Pandoc、Calibre、PyMuPDF4LLM、MinerU、Marker、Docling、Umi-OCR 与可选 VLM/OCR 后端，输出 Markdown、质量报告和 Agent 可调用工件。
+> 本地优先的图文材料转换器，面向电子书、PDF、Office、图片、截图集和网页归档，复用 Pandoc、Calibre、PyMuPDF4LLM、MinerU、Marker、Docling、Umi-OCR、CnOCR、Pix2Text、DeepSeek-OCR、olmOCR 与可选 VLM/OCR 后端，输出 Markdown、质量报告和 Agent 可调用工件。
 
 Suggested topics:
 
@@ -44,8 +44,8 @@ flowchart TD
     inspect --> plan["Plan\nrecommended action / pipeline / risk / fallback"]
 
     plan --> ebook["Ebook/document route\nPandoc / Calibre / Docling"]
-    plan --> pdf["PDF route\nPyMuPDF4LLM / MinerU / Marker / Umi-OCR"]
-    plan --> image["Image route\nUmi-OCR / PaddleOCR-VL / Qwen-VL / MinerU VLM"]
+    plan --> pdf["PDF route\nPyMuPDF4LLM / MinerU / Marker / Umi-OCR / pdf-craft / olmOCR"]
+    plan --> image["Image route\nUmi-OCR / CnOCR / Pix2Text / Surya / GOT-OCR / DeepSeek-OCR / PaddleOCR-VL / Qwen-VL / MinerU VLM"]
     plan --> online["Optional online providers\nOCR layout / VLM layout / text structure / table repair / embeddings"]
     plan --> locator["Optional location index\nSQLite FTS page/image hits"]
 
@@ -83,7 +83,16 @@ There are two different relationships:
 | MinerU | Optional structured PDF parsing for complex/scanned PDFs | Optional external backend |
 | Marker | Optional layout-aware PDF parsing | Optional external backend |
 | Docling | Optional Office/document/PDF structure backend | Optional Python package/backend |
-| Umi-OCR / PaddleOCR-json / RapidOCR | Local OCR blocks for images and scanned pages | External local/Python OCR engine |
+| Apache Tika | Optional MIME/metadata/text-sample inspection for unusual formats | Optional Tika Server/command wrapper |
+| GROBID | Optional academic PDF/TEI inspection for papers and references | Optional GROBID Server |
+| pdf-craft | Optional scanned-book PDF-to-Markdown reconstruction with TOC assumptions | Optional Python package/backend |
+| olmOCR | Optional VLM PDF/image-to-Markdown benchmark backend | Optional explicit worker/backend |
+| pdfplumber / Camelot / Tabula | Optional PDF layout and text-based table diagnostics | Optional Python package/Java-backed table tools |
+| Umi-OCR / PaddleOCR-json / RapidOCR / CnOCR | Local OCR blocks for images and scanned pages | External local/Python OCR engine |
+| Pix2Text | Optional Chinese screenshot, formula, and image-page Markdown enhancement | Optional wrapper/Python package |
+| Surya | Optional OCR, layout, reading-order, and table enhancement | Optional wrapper/Python package |
+| GOT-OCR 2.0 | Optional CUDA image OCR experiment wrapper | Optional explicit wrapper |
+| DeepSeek-OCR | Optional CUDA/Transformers VLM OCR experiment wrapper | Optional explicit wrapper |
 | PaddleOCR-VL | Optional layout-heavy image/infographic enhancement | Optional wrapper/backend |
 | Qwen-VL | Optional heavier VLM fallback for difficult images | Optional wrapper/backend |
 

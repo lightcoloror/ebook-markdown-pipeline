@@ -1,0 +1,3 @@
+# Optional text-based PDF table extraction fallback.
+# Requires a working Java runtime because tabula-py wraps Tabula Java.
+tabula-py

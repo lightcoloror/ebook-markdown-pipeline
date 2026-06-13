@@ -8,6 +8,8 @@ from typing import Any
 
 OCR_BLOCK_SCHEMA_VERSION = "ocr-blocks-v1"
 RAPIDOCR_PACKAGES = ("rapidocr_onnxruntime", "rapidocr")
+PIX2TEXT_PACKAGE = "pix2text"
+CNOCR_PACKAGE = "cnocr"
 PROJECT_DIR = Path(__file__).resolve().parent
 
 
@@ -20,6 +22,14 @@ def rapidocr_package_name() -> str:
         if importlib.util.find_spec(name) is not None:
             return name
     return ""
+
+
+def pix2text_available() -> bool:
+    return importlib.util.find_spec(PIX2TEXT_PACKAGE) is not None
+
+
+def cnocr_available() -> bool:
+    return importlib.util.find_spec(CNOCR_PACKAGE) is not None
 
 
 def create_rapidocr_engine():
@@ -40,6 +50,36 @@ def create_rapidocr_engine():
         except TypeError:
             return RapidOCR()
     raise FileNotFoundError("RapidOCR is not installed. Install rapidocr_onnxruntime or rapidocr to enable this provider.")
+
+
+def create_cnocr_engine():
+    if not cnocr_available():
+        raise FileNotFoundError("CnOCR is not installed. Install cnocr to enable this provider.")
+    from cnocr import CnOcr  # type: ignore
+
+    kwargs = cnocr_default_params()
+    if not kwargs:
+        return CnOcr()
+    try:
+        return CnOcr(**kwargs)
+    except TypeError:
+        # CnOCR's constructor changed across releases. Env-driven tuning is
+        # best-effort; a default engine is safer than failing health/comparison.
+        return CnOcr()
+
+
+def cnocr_default_params() -> dict[str, Any]:
+    params: dict[str, Any] = {}
+    rec_model_name = os.environ.get("EBOOK_CONVERTER_CNOCR_REC_MODEL_NAME", "").strip()
+    det_model_name = os.environ.get("EBOOK_CONVERTER_CNOCR_DET_MODEL_NAME", "").strip()
+    context = os.environ.get("EBOOK_CONVERTER_CNOCR_CONTEXT", "").strip()
+    if rec_model_name:
+        params["rec_model_name"] = rec_model_name
+    if det_model_name:
+        params["det_model_name"] = det_model_name
+    if context:
+        params["context"] = context
+    return params
 
 
 def rapidocr_model_root_dir() -> Path:
@@ -67,6 +107,27 @@ def recognize_image_with_rapidocr(image_path: Path, engine=None) -> dict[str, An
     }
 
 
+def recognize_image_with_cnocr(image_path: Path, engine=None) -> dict[str, Any]:
+    ocr_engine = engine or create_cnocr_engine()
+    raw = run_cnocr_engine(ocr_engine, image_path)
+    blocks = normalize_cnocr_blocks(raw)
+    return {
+        "schema_version": OCR_BLOCK_SCHEMA_VERSION,
+        "provider": "cnocr",
+        "source": str(image_path),
+        "text": "\n".join(block["text"] for block in blocks if block.get("text")).strip(),
+        "blocks": blocks,
+        "raw_shape": describe_raw_shape(raw),
+    }
+
+
+def run_cnocr_engine(engine: Any, image_path: Path) -> Any:
+    try:
+        return engine.ocr(str(image_path))
+    except TypeError:
+        return engine.ocr(img_fp=str(image_path))
+
+
 def normalize_rapidocr_blocks(raw: Any) -> list[dict[str, Any]]:
     items = extract_rapidocr_items(raw)
     blocks = []
@@ -75,6 +136,70 @@ def normalize_rapidocr_blocks(raw: Any) -> list[dict[str, Any]]:
         if block:
             blocks.append(block)
     return blocks
+
+
+def normalize_cnocr_blocks(raw: Any) -> list[dict[str, Any]]:
+    items = extract_cnocr_items(raw)
+    blocks = []
+    for index, item in enumerate(items, start=1):
+        block = normalize_cnocr_item(item, index=index)
+        if block:
+            blocks.append(block)
+    return blocks
+
+
+def extract_cnocr_items(raw: Any) -> list[Any]:
+    if raw is None:
+        return []
+    if isinstance(raw, tuple):
+        return extract_cnocr_items(raw[0])
+    if isinstance(raw, dict):
+        for key in ("results", "result", "data", "blocks", "lines"):
+            value = raw.get(key)
+            if isinstance(value, list):
+                return value
+        if {"text", "score"}.issubset(raw) or {"text", "position"}.issubset(raw):
+            return [raw]
+    if hasattr(raw, "to_dict"):
+        try:
+            return extract_cnocr_items(raw.to_dict())
+        except Exception:
+            pass
+    if isinstance(raw, list):
+        return raw
+    return []
+
+
+def normalize_cnocr_item(item: Any, *, index: int) -> dict[str, Any] | None:
+    text = ""
+    score = None
+    bbox = None
+    if isinstance(item, dict):
+        text = str(item.get("text") or item.get("txt") or item.get("content") or "").strip()
+        score = item.get("score") or item.get("confidence") or item.get("prob")
+        bbox = normalize_ocr_box(item.get("position") or item.get("bbox") or item.get("box") or item.get("points"))
+    elif isinstance(item, (list, tuple)):
+        if len(item) >= 1:
+            text = str(item[0] or "").strip()
+        if len(item) >= 2:
+            score = item[1]
+        if len(item) >= 3:
+            bbox = normalize_ocr_box(item[2])
+    else:
+        text = str(item or "").strip()
+    if not text:
+        return None
+    block: dict[str, Any] = {
+        "index": index,
+        "text": text,
+        "provider": "cnocr",
+    }
+    normalized_score = normalize_score(score)
+    if normalized_score is not None:
+        block["score"] = normalized_score
+    if bbox:
+        block["bbox"] = bbox
+    return block
 
 
 def extract_rapidocr_items(raw: Any) -> list[Any]:

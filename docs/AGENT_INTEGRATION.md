@@ -129,7 +129,7 @@ For legacy batch results that predate top-level handoff actions, `inspect_agent_
 
 For broad real-sample benchmarks outside agent batches, use `scripts/run_benchmarks.py` with quality gates and `scripts/compare_benchmark_quality.py` to compare a baseline `benchmark-results.json` or `quality-regression-summary.json` against a candidate run. The comparison preserves success/good/review/poor rates, heading counts, TOC/bookmark match ratio, page-heading noise, OCR character volume, table retention ratio, structure repair decision/promoted-heading counts, duration, fallback count, timeout rate, and failed rate. This is the preferred evidence path before changing defaults such as PDF pipeline selection, Docling enablement, structure repair, table extraction, or OCR cleanup rules.
 
-For image OCR backend comparison, use `scripts/compare_ocr_providers.py`. It compares RapidOCR and Umi-OCR on selected image samples and writes `ocr-provider-comparison.json/md` with status, duration, OCR character count, OCR block count, bbox count, empty OCR rate, and missing-provider reasons. Use it before changing image OCR defaults.
+For image OCR backend comparison, use `scripts/compare_ocr_providers.py`. It compares RapidOCR, CnOCR, and Umi-OCR on selected image samples and writes `ocr-provider-comparison.json/md` with status, duration, OCR character count, OCR block count, bbox count, empty OCR rate, and missing-provider reasons. Use it before changing image OCR defaults.
 
 ## Docker Agent Integration
 
@@ -402,6 +402,7 @@ Use this for large screenshot folders or OCR-enabled image-book rebuilding. Poll
 - Use `rebuild_image_book` when the user has unordered screenshots and wants a single Markdown draft with review artifacts.
 - Use `start_image_book_rebuild` instead of `rebuild_image_book` for long screenshot folders.
 - For PDFs, keep `pdf_pipeline_mode=auto` unless the user explicitly chooses another mode.
+- Use `pdf_pipeline_mode=olmocr` only for explicit GPU/remote VLM OCR benchmark runs; it is not an auto route and may require `olmocr_server`, `olmocr_model`, and a local API-key environment variable name.
 - For long-running conversions, call `start_conversion`, then poll `get_job_status`.
 - If output quality is questionable, inspect `summary.md`, `review-checklist.md`, per-book report JSON, and PDF tool logs.
 - Do not ask an agent to parse ebook/PDF internals directly unless this tool failed and the report/log shows why.

@@ -72,7 +72,7 @@
 - 对长文档继续保留超时、分段、fallback 和复查报告。
 - VLM/hybrid 模式作为高质量增强，不作为默认轻量模式。
 
-### Umi-OCR / PaddleOCR / RapidOCR
+### Umi-OCR / PaddleOCR / RapidOCR / CnOCR
 
 定位：本地 OCR fallback。
 
@@ -85,7 +85,7 @@
 
 项目策略：
 
-- 继续作为图片定位索引和截图成书的 OCR 后端；RapidOCR 作为更易被脚本和 Agent 调用的 Python-native fallback/benchmark 后端。
+- 继续作为图片定位索引和截图成书的 OCR 后端；RapidOCR 作为更易被脚本和 Agent 调用的 Python-native fallback/benchmark 后端，CnOCR 先作为中文 OCR provider comparison/health 项，不直接进入默认识别路径。
 - OCR 结果必须写入 `pages.jsonl` 或类似中间文件，便于复查和重跑。
 
 ### Marker
@@ -187,7 +187,7 @@
 最小可用组合：
 
 - `ocr_layout`：OCR + layout API，返回文字、坐标、页码、阅读顺序和置信度。用于替代或补强 Umi-OCR、Tesseract、部分 MinerU OCR 能力。
-- `vlm_layout`：视觉语言模型 API，用于信息图、复杂截图、扫描页、图文混排页、卡片式版面和低质量 OCR 页补强。用于替代或补强 MinerU VLM、PaddleOCR-VL、Qwen-VL。
+- `vlm_layout`：视觉语言模型 API，用于信息图、复杂截图、扫描页、图文混排页、卡片式版面和低质量 OCR 页补强。用于替代或补强 MinerU VLM、PaddleOCR-VL、Qwen-VL、DeepSeek-OCR。
 - `text_structure_llm`：文本 LLM API，用于 Markdown 标题层级修复、目录对齐、页眉页脚/脚注噪声判断、结构化清洗说明。规则层仍应保留，LLM 只处理疑难段落或复查项。
 
 增强组合：
@@ -204,7 +204,7 @@
 | --- | --- | --- |
 | Umi-OCR / Tesseract | `ocr_layout` | 可替换，但保留本地 fallback。 |
 | MinerU pipeline | `ocr_layout` + `vlm_layout` + `table_parser` + `formula_parser` | 只在复杂 PDF 或扫描件启用在线替代，避免整本无差别调用。 |
-| MinerU VLM / PaddleOCR-VL / Qwen-VL | `vlm_layout` | 作为疑难页、信息图、截图书补强层。 |
+| MinerU VLM / PaddleOCR-VL / Qwen-VL / DeepSeek-OCR | `vlm_layout` | 作为疑难页、信息图、截图书补强层。 |
 | Marker | `ocr_layout` / `vlm_layout` / 文档解析 API | 可作为在线文档解析 provider 的一种实现。 |
 | PyMuPDF / PyMuPDF4LLM | 不建议替换 | 继续本地运行，便宜、快、稳定。 |
 | `structure_repair` | `text_structure_llm` 补强 | 规则优先，LLM 只处理低置信度结构。 |

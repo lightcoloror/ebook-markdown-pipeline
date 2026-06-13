@@ -12,8 +12,8 @@ flowchart TD
     route["Routing and recovery\nrecommended pipeline / fallback / timeout / versioned rerun"]
 
     ebook["Ebook and document tools\nPandoc / Calibre / Docling"]
-    pdf["PDF tools\nPyMuPDF4LLM / MinerU / Marker / Umi-OCR"]
-    image["Image and screenshot tools\nUmi-OCR / PaddleOCR-VL / Qwen-VL / MinerU VLM"]
+    pdf["PDF tools\nPyMuPDF4LLM / MinerU / Marker / Umi-OCR / pdf-craft / olmOCR"]
+    image["Image and screenshot tools\nUmi-OCR / CnOCR / Pix2Text / Surya / GOT-OCR / DeepSeek-OCR / PaddleOCR-VL / Qwen-VL / MinerU VLM"]
     online["Optional online providers\nOCR layout / VLM layout / text structure / table repair / embeddings"]
 
     normalize["Post-processing\nMarkdown cleanup / TOC alignment / structure repair"]
@@ -45,7 +45,16 @@ flowchart TD
 | MinerU | Optional structured PDF parsing for complex or scanned documents. | Optional external backend. |
 | Marker | Optional layout-aware PDF parsing. | Optional external backend. |
 | Docling | Optional Office/document/PDF structure backend. | Optional Python package/backend. |
-| Umi-OCR / PaddleOCR-json / RapidOCR | Local OCR blocks for images and scanned pages. | External local/Python OCR engine. |
+| Apache Tika | Optional MIME/metadata/text-sample inspection for unusual formats. | Optional Tika Server/command wrapper. |
+| GROBID | Optional academic PDF/TEI inspection for papers and references. | Optional GROBID Server. |
+| pdf-craft | Optional scanned-book PDF-to-Markdown reconstruction with TOC assumptions. | Optional Python package/backend. |
+| olmOCR | Optional VLM PDF/image-to-Markdown benchmark backend. | Optional explicit worker/backend. |
+| pdfplumber / Camelot / Tabula | Optional PDF layout and text-based table diagnostics. | Optional Python package/Java-backed table tools. |
+| Umi-OCR / PaddleOCR-json / RapidOCR / CnOCR | Local OCR blocks for images and scanned pages. | External local/Python OCR engine. |
+| Pix2Text | Optional Chinese screenshot, formula, and image-page Markdown enhancement. | Optional wrapper/Python package. |
+| Surya | Optional OCR, layout, reading-order, and table enhancement. | Optional wrapper/Python package. |
+| GOT-OCR 2.0 | Optional CUDA image OCR experiment wrapper. | Optional explicit wrapper. |
+| DeepSeek-OCR | Optional CUDA/Transformers VLM OCR experiment wrapper. | Optional explicit wrapper. |
 | PaddleOCR-VL / Qwen-VL / MinerU VLM | Optional layout-heavy image, infographic, or difficult-page enhancement. | Optional wrappers/backends. |
 
 ## Reference Patterns

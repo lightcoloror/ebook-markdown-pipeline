@@ -17,6 +17,10 @@ def camelot_available() -> bool:
     return importlib.util.find_spec("camelot") is not None
 
 
+def tabula_available() -> bool:
+    return importlib.util.find_spec("tabula") is not None
+
+
 def analyze_pdf_layout_with_pdfplumber(
     source: Path,
     *,
@@ -30,6 +34,7 @@ def analyze_pdf_layout_with_pdfplumber(
             "tool": "pdfplumber",
             "message": "pdfplumber is not installed.",
             "camelot_available": camelot_available(),
+            "tabula_available": tabula_available(),
         }
 
     import pdfplumber
@@ -88,6 +93,7 @@ def analyze_pdf_layout_with_pdfplumber(
             "source": str(source),
             "message": str(exc),
             "camelot_available": camelot_available(),
+            "tabula_available": tabula_available(),
         }
         if output_dir:
             (output_dir / "table-diagnostics.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -95,6 +101,12 @@ def analyze_pdf_layout_with_pdfplumber(
 
     table_pages = [item["page"] for item in pages if item.get("table_count")]
     camelot_diagnostics = extract_tables_with_camelot(
+        source,
+        output_dir=output_dir,
+        candidate_pages=table_pages,
+        max_tables=max_tables,
+    )
+    tabula_diagnostics = extract_tables_with_tabula(
         source,
         output_dir=output_dir,
         candidate_pages=table_pages,
@@ -122,9 +134,13 @@ def analyze_pdf_layout_with_pdfplumber(
             "camelot_table_artifact_count": len(camelot_diagnostics.get("table_artifacts") or []),
             "camelot_available": camelot_available(),
             "camelot_status": camelot_diagnostics.get("status"),
+            "tabula_table_artifact_count": len(tabula_diagnostics.get("table_artifacts") or []),
+            "tabula_available": tabula_available(),
+            "tabula_status": tabula_diagnostics.get("status"),
         },
         "table_artifacts": table_artifacts,
         "camelot_diagnostics": camelot_diagnostics,
+        "tabula_diagnostics": tabula_diagnostics,
     }
     if output_dir:
         (output_dir / "table-diagnostics.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -199,6 +215,85 @@ def extract_tables_with_camelot(
     return {
         "status": "ok",
         "tool": "camelot",
+        "source": str(source),
+        "candidate_pages": candidate_pages,
+        "pages": pages_spec,
+        "table_artifacts": artifacts,
+    }
+
+
+def extract_tables_with_tabula(
+    source: Path,
+    *,
+    output_dir: Path | None,
+    candidate_pages: list[int],
+    max_tables: int,
+) -> dict[str, Any]:
+    if not candidate_pages:
+        return {
+            "status": "skipped_no_table_pages",
+            "tool": "tabula",
+            "source": str(source),
+            "candidate_pages": [],
+            "table_artifacts": [],
+        }
+    if not tabula_available():
+        return {
+            "status": "missing_dependency",
+            "tool": "tabula",
+            "source": str(source),
+            "candidate_pages": candidate_pages,
+            "message": "tabula-py is not installed.",
+            "table_artifacts": [],
+        }
+    if output_dir is None:
+        return {
+            "status": "skipped_no_output_dir",
+            "tool": "tabula",
+            "source": str(source),
+            "candidate_pages": candidate_pages,
+            "table_artifacts": [],
+        }
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    import tabula
+
+    pages_spec = ",".join(str(page) for page in candidate_pages)
+    artifacts: list[dict[str, Any]] = []
+    try:
+        tables = tabula.read_pdf(
+            str(source),
+            pages=pages_spec,
+            multiple_tables=True,
+            stream=True,
+            lattice=False,
+        )
+        for index, table in enumerate(tables or [], start=1):
+            if len(artifacts) >= max_tables:
+                break
+            rows = dataframe_to_rows(table)
+            artifact = write_table_artifacts(output_dir, 0, index, rows, prefix="tabula")
+            artifact.update(
+                {
+                    "page": 0,
+                    "table_number": index,
+                    "rows": len(rows),
+                }
+            )
+            artifacts.append(artifact)
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "status": "failed",
+            "tool": "tabula",
+            "source": str(source),
+            "candidate_pages": candidate_pages,
+            "pages": pages_spec,
+            "message": str(exc),
+            "table_artifacts": artifacts,
+        }
+    return {
+        "status": "ok",
+        "tool": "tabula",
         "source": str(source),
         "candidate_pages": candidate_pages,
         "pages": pages_spec,

@@ -40,7 +40,7 @@ Optional:
 - `include_hidden`: default `false`.
 - `output_format`: `markdown`, `html`, or `text`.
 - `document_pipeline_mode`: `auto`, `docling`, or `markitdown`. Use `markitdown` only for explicit baseline comparison on supported non-PDF documents.
-- `pdf_pipeline_mode`: `auto`, `marker`, `mineru`, `umi`, `pymupdf4llm`, `docling`, `markitdown`, or `ocrmypdf`. Use `markitdown` only for explicit PDF baseline comparison; use `ocrmypdf` only when the caller wants searchable-PDF preprocessing before fast conversion.
+- `pdf_pipeline_mode`: `auto`, `marker`, `mineru`, `umi`, `pymupdf4llm`, `docling`, `markitdown`, `ocrmypdf`, `pdfcraft`, or `olmocr`. Use `markitdown` only for explicit PDF baseline comparison; use `ocrmypdf` only when the caller wants searchable-PDF preprocessing before fast conversion; use `pdfcraft` only for explicit scanned-book reconstruction experiments; use `olmocr` only for explicit GPU/remote VLM OCR benchmark experiments.
 - `image_book_threshold`: retained for compatibility; auto routing now recognizes image folders by default.
 - `ocr`: `auto`, `always`, or `never`.
 - `model_mode`: `local`, `online`, `hybrid`, or `auto`. Current implementation uses this for recommendation/risk reporting only; default conversion remains local-first.
@@ -50,6 +50,20 @@ Online-model option:
 - `inspect_document` returns `online_enhancement` with `recommended`, `enabled_by_model_mode`, `remote_call_enabled`, `recommended_routes`, `estimated_pages`, `estimated_items`, `estimated_cost_risk`, `privacy_risk`, `reason`, and `next_step`.
 - `remote_call_enabled` is currently always `false` in inspection. The field exists so future provider-backed pipelines can become explicit and auditable.
 - Agents should not call vendor APIs directly even when `online_enhancement.recommended=true`; use `run_online_enhancement` only after the user or caller explicitly chooses online/hybrid enhancement.
+
+Tika inspect option:
+
+- `inspect_document` accepts `use_tika=true` as an explicit metadata/MIME/text-sample enhancement.
+- Tika is also attempted for unsupported extensions when a Tika Server URL or command wrapper is configured.
+- The returned `tika` object is inspect evidence only: `detected_mime`, sanitized `metadata`, `text_chars`, and `text_sample`.
+- Tika does not become a main Markdown conversion route. Agents should use it to decide whether a dedicated converter or manual review is worth adding.
+
+GROBID academic PDF option:
+
+- `inspect_document` accepts `use_grobid=true` as an explicit academic PDF/TEI enhancement.
+- GROBID is only called when `EBOOK_CONVERTER_GROBID_SERVER_URL` is configured and the caller explicitly asks for it.
+- The returned `grobid` object is inspect evidence only: `title`, `authors`, `doi`, `year`, `abstract_sample`, `reference_count`, `section_headings`, and `tei_chars`.
+- GROBID does not become a main PDF-to-Markdown route. Agents should use it for paper/reference/TEI review, not for ordinary books or scanned PDFs.
 
 Routing rules:
 
@@ -71,7 +85,38 @@ OCRmyPDF preprocessing:
 - OCRmyPDF is exposed as `pdf_pipeline_mode=ocrmypdf`.
 - It writes a searchable PDF artifact under `.reports/ocrmypdf/`, then runs the fast PDF conversion path on that generated PDF.
 - Reports include `ocrmypdf_diagnostics` with before/after PDF preflight snapshots and machine-readable text-layer deltas such as `before_text_page_ratio`, `after_text_page_ratio`, `sampled_ocr_characters_added`, duration, timeout, and failure fields.
+
+### pdf-craft Scanned-Book Backend
+
+- pdf-craft is exposed as `pdf_pipeline_mode=pdfcraft`.
+- It is never selected by default. Agents must request it explicitly when they want to compare scanned-book reconstruction quality.
+- Reports include `pdfcraft_diagnostics`, while the shared PDF tool diagnostics record stdout progress, idle/finalize timeout state, exit code, and log path.
+- The wrapper defaults to local-only model use. Agents must pass explicit CLI/API options for model downloads or heavier OCR sizes.
 - The original source PDF is not overwritten.
+
+### olmOCR VLM OCR Backend
+
+- olmOCR is exposed as `pdf_pipeline_mode=olmocr`.
+- It is never selected by default. Agents must request it explicitly when they want a GPU or remote VLM OCR benchmark.
+- Reports include `olmocr_diagnostics`, while the shared PDF tool diagnostics record stdout, idle/finalize timeout state, exit code, and log path.
+- `--olmocr-server`, `--olmocr-model`, and `--olmocr-api-key-env` can be used for self-hosted or remote OpenAI-compatible inference. The API key value is not written to reports.
+- The original source PDF is not overwritten.
+
+### GOT-OCR explicit image OCR wrapper
+
+- GOT-OCR is exposed only through `scripts/got_ocr_image_to_md.py` for manual CUDA image OCR experiments.
+- It is never selected by default, not part of PDF auto routing, and not part of the automatic image-book enhancement order.
+- Agents should use it only when health/capability reports show `got_ocr_experiment` is configured or when the caller explicitly provides `GOT_OCR_SCRIPT` and `GOT_OCR_MODEL`.
+- The wrapper supports dry-run command inspection, single-image OCR/format mode, crop/multi-page mode, cache environment setup, and stdout cleanup into Markdown.
+- The GOT-OCR model path, demo script path, and runtime environment stay outside this repository; reports and docs must not contain API keys or model cache contents.
+
+### DeepSeek-OCR explicit VLM OCR wrapper
+
+- DeepSeek-OCR is exposed only through `scripts/deepseek_ocr_image_to_md.py` for manual CUDA/Transformers image OCR experiments.
+- It is never selected by default, not part of PDF auto routing, and not part of the automatic image-book enhancement order.
+- Agents should use it only when health/capability reports show `deepseek_ocr_experiment` is configured or when the caller explicitly provides `DEEPSEEK_OCR_PYTHON` and `DEEPSEEK_OCR_MODEL`.
+- The wrapper supports dry-run command inspection, prompt presets, crop toggles, cache environment setup, and stdout/output-file cleanup into Markdown.
+- The DeepSeek-OCR model path and runtime environment stay outside this repository; reports and docs must not contain API keys or model cache contents.
 
 PDF layout/table diagnostics:
 
@@ -79,7 +124,8 @@ PDF layout/table diagnostics:
 - The diagnostics are explanatory artifacts for table pages, image-heavy pages, two-column pages, and repeated header/footer candidates.
 - Candidate table artifacts are written under `.reports/tables/<source>/` as `table-diagnostics.json`, CSV, and Markdown when extractable.
 - When Camelot is installed and pdfplumber finds suspected table pages, diagnostics may include `camelot_diagnostics`, `camelot_status`, and `camelot_table_artifact_count`; these are table-only extraction hints, not a main conversion route.
-- pdfplumber and Camelot are not main PDF-to-Markdown routes; agents should use them to decide whether a table-focused rerun or manual review is needed.
+- When Tabula/tabula-py is installed and pdfplumber finds suspected table pages, diagnostics may include `tabula_diagnostics`, `tabula_status`, and `tabula_table_artifact_count`; this is an alternate text-based table fallback and requires Java.
+- pdfplumber, Camelot, and Tabula are not main PDF-to-Markdown routes; agents should use them to decide whether a table-focused rerun or manual review is needed.
 
 Return shape:
 
@@ -618,7 +664,8 @@ Image OCR provider options for `rebuild_image_book`, `start_image_book_rebuild`,
 - `ocr_provider=auto`: prefer Umi-OCR and fall back to RapidOCR only when Umi startup fails and RapidOCR is installed.
 - `ocr_provider=umi`: use the configured Umi-OCR/PaddleOCR-json backend.
 - `ocr_provider=rapidocr`: use the optional Python-native RapidOCR backend. The output still uses the same `pages_jsonl` and OCR block schema.
-- OCR provider comparison writes `ocr-provider-comparison.json/md` plus `ocr-blocks.jsonl`; agents should read the JSONL artifact when they need per-image OCR text blocks, bbox coverage, or RapidOCR-vs-Umi block-level differences.
+- `CnOCR` is exposed through `scripts/compare_ocr_providers.py` for Chinese/English OCR comparison and health/capability reporting. It is not a default image-book route.
+- OCR provider comparison writes `ocr-provider-comparison.json/md` plus `ocr-blocks.jsonl`; agents should read the JSONL artifact when they need per-image OCR text blocks, bbox coverage, or RapidOCR-vs-CnOCR-vs-Umi block-level differences.
 
 ## Failure Handling
 

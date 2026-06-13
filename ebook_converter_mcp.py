@@ -250,7 +250,7 @@ def tool_schemas() -> list[dict[str, Any]]:
                     },
                     "pdf_pipeline_mode": {
                         "type": "string",
-                        "enum": ["auto", "marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown", "ocrmypdf"],
+                        "enum": ["auto", "marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown", "ocrmypdf", "pdfcraft", "olmocr"],
                         "default": "auto",
                     },
                 },
@@ -319,6 +319,8 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "include_hidden": {"type": "boolean", "default": False},
                     "sample_pages": {"type": "integer", "default": 8},
                     "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto"], "default": "local"},
+                    "use_tika": {"type": "boolean", "default": False},
+                    "use_grobid": {"type": "boolean", "default": False},
                 },
                 "required": ["input"],
             },
@@ -337,8 +339,15 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "include_hidden": {"type": "boolean", "default": False},
                     "output_format": {"type": "string", "enum": ["markdown", "html", "text"], "default": "markdown"},
                     "document_pipeline_mode": {"type": "string", "enum": ["auto", "docling", "markitdown"], "default": "auto"},
-                    "pdf_pipeline_mode": {"type": "string", "enum": ["auto", "marker", "mineru", "pymupdf4llm", "umi", "docling", "markitdown", "ocrmypdf"], "default": "auto"},
+                    "pdf_pipeline_mode": {"type": "string", "enum": ["auto", "marker", "mineru", "pymupdf4llm", "umi", "docling", "markitdown", "ocrmypdf", "pdfcraft", "olmocr"], "default": "auto"},
+                    "olmocr_server": {"type": "string"},
+                    "olmocr_model": {"type": "string"},
+                    "olmocr_api_key_env": {"type": "string"},
+                    "olmocr_workers": {"type": "integer"},
+                    "olmocr_max_concurrent_requests": {"type": "integer"},
+                    "olmocr_pages_per_group": {"type": "integer"},
                     "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto"], "default": "local"},
+                    "use_grobid": {"type": "boolean", "default": False},
                     "image_book_threshold": {"type": "integer", "default": 8},
                     "sample_pages": {"type": "integer", "default": 8},
                     "ocr": {"type": "string", "enum": ["auto", "always", "never"], "default": "auto"},
@@ -421,6 +430,12 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "include_hidden": {"type": "boolean", "default": False},
                     "output_format": {"type": "string", "enum": ["markdown", "html", "text"], "default": "markdown"},
                     "pdf_pipeline_mode": {"type": "string", "default": "auto"},
+                    "olmocr_server": {"type": "string"},
+                    "olmocr_model": {"type": "string"},
+                    "olmocr_api_key_env": {"type": "string"},
+                    "olmocr_workers": {"type": "integer"},
+                    "olmocr_max_concurrent_requests": {"type": "integer"},
+                    "olmocr_pages_per_group": {"type": "integer"},
                     "overwrite": {"type": "boolean", "default": False},
                     "resume": {"type": "boolean", "default": True},
                     "manifest": {"type": "string"},
@@ -790,7 +805,7 @@ def agent_operating_context() -> dict[str, Any]:
         "long_task_guidance": {
             "prefer_async_tools": True,
             "poll_tool": "get_job_status",
-            "heavy_routes": ["mineru", "marker", "umi", "docling", "paddleocr-vl", "qwen-vl"],
+            "heavy_routes": ["mineru", "marker", "umi", "docling", "pdfcraft", "olmocr", "pix2text", "surya", "got-ocr", "deepseek-ocr", "paddleocr-vl", "qwen-vl"],
             "baseline_routes": ["markitdown"],
             "safe_pdf_default": "auto preflight, fallback diagnostics, versioned outputs",
             "large_pdf_advice": "Use page ranges or pipeline comparison before forcing whole-document heavy OCR/VLM.",
@@ -836,7 +851,7 @@ def agent_risk_status(capabilities: dict[str, Any]) -> str:
 
 
 def options_from_arguments(arguments: dict[str, Any]) -> argparse.Namespace:
-    path_fields = {"manifest", "report_dir", "input", "output"}
+    path_fields = {"manifest", "report_dir", "input", "output", "olmocr_workspace"}
     converted = {
         key: Path(value) if key in path_fields and value not in {None, ""} else value
         for key, value in arguments.items()
@@ -1088,6 +1103,8 @@ def inspect_document_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         include_hidden=bool(arguments.get("include_hidden", False)),
         sample_pages=int(arguments.get("sample_pages") or 8),
         model_mode=str(arguments.get("model_mode") or "local"),
+        use_tika=bool(arguments.get("use_tika", False)),
+        use_grobid=bool(arguments.get("use_grobid", False)),
     )
 
 
@@ -1105,6 +1122,7 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
         include_hidden=include_hidden,
         sample_pages=int(arguments.get("sample_pages") or 8),
         model_mode=str(arguments.get("model_mode") or "local"),
+        use_grobid=bool(arguments.get("use_grobid", False)),
     )
 
     route = choose_material_route(inspection, intent=intent, query=query, image_book_threshold=image_book_threshold)
@@ -1113,6 +1131,7 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
     delegated_arguments.pop("query", None)
     delegated_arguments.pop("image_book_threshold", None)
     delegated_arguments.pop("model_mode", None)
+    delegated_arguments.pop("use_grobid", None)
 
     if route == "start_location_index":
         delegated_arguments["ocr"] = str(arguments.get("ocr") or "auto")
@@ -1664,7 +1683,7 @@ def choose_pdf_pipeline_mode(inspection: dict[str, Any], requested: str) -> str:
     if preflight.get("scanned_likely"):
         return "mineru"
     recommended = str(preflight.get("recommended_pipeline") or "auto")
-    return recommended if recommended in {"marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown", "ocrmypdf"} else "auto"
+    return recommended if recommended in {"marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown", "ocrmypdf", "pdfcraft", "olmocr"} else "auto"
 
 
 def start_conversion(arguments: dict[str, Any]) -> dict[str, Any]:

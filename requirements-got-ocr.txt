@@ -1,0 +1,8 @@
+# Optional GOT-OCR 2.0 experiment wrapper.
+# Upstream is usually installed from a cloned repository with:
+#   git clone https://github.com/Ucas-HaoranWei/GOT-OCR2.0.git
+#   cd GOT-OCR2.0/GOT-OCR-2.0-master
+#   pip install -e .
+#
+# CUDA, torch, flash-attn, model weights, and demo script paths are intentionally
+# not installed here. Configure GOT_OCR_SCRIPT and GOT_OCR_MODEL instead.

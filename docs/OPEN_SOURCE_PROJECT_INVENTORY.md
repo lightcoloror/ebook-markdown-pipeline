@@ -29,6 +29,9 @@
 | Umi-OCR / PaddleOCR-json | 图片、扫描页、本地 OCR 兜底 | 外部本地程序/模块路径 | 源码审计：Umi-OCR `83173ef` 为 MIT；PaddleOCR-json `1beac1c` 为 Apache-2.0；具体 OCR 模型/发布包另查 | 保持外部工具接入，程序和模型分别记录 |
 | PaddleOCR-VL | 信息图、复杂版面、layout-heavy 图片补强 | 可选 wrapper/命令 | 源码审计版本 `c166448`：PaddleOCR 代码 Apache-2.0；PaddleOCR-VL/模型权重条款另查 | 作为可选增强后端，模型条款单独复核 |
 | Qwen-VL | 重型 VLM 图文理解补强 | 可选 wrapper/API | 源码审计版本 `9658872`：代码 Apache-2.0；Qwen2/Qwen2.5/Qwen3-VL 模型卡和权重条款逐模型复核 | 作为可选增强后端，模型条款单独复核 |
+| Pix2Text | 中文截图、公式、图片页到 Markdown 补强 | 可选 wrapper/Python 包 | 源码审计版本 `f881e9d`：MIT；CnOCR/EasyOCR/模型依赖另查 | 已接入可选 wrapper，不进入最小安装；继续用真实中文图片和公式样本验证质量 |
+| pdf-craft | 扫描书 PDF 到 Markdown/EPUB、TOC 假设恢复 | 可选 wrapper/Python 包 | 源码审计版本 `f463a4e`：MIT；DeepSeek OCR、Poppler、GPU/runtime 和传递依赖另查 | 已接入显式 `pdfcraft` PDF 管道；不进入默认路径；继续用扫描书样本验证质量和成本 |
+| Surya | OCR、layout、reading order、table 识别 | 可选 wrapper/外部命令 | 源码审计版本 `17452f3`：Apache-2.0；模型运行与权重条款另查，商业/分发前必须复核 | 已接入显式 wrapper，不进入默认路径；继续用信息图/表格/复杂截图样本验证质量和成本 |
 | tkinterdnd2 | UI 拖放文件 | Python 包 | 源码审计版本 `28bcf1c`：MIT；封装 tkDnD/TkinterDnD2 | 保留第三方声明 |
 
 ## 建议优先调研的成熟开源项目
@@ -42,22 +45,22 @@
 | P0 | Unstructured | 企业级 ingest、partition、chunking 工作流 | RAG/Agent 文档摄取成熟样板，格式覆盖广 | Apache-2.0 | 重点研究其 partition/chunking/report 设计 |
 | P0 | OCRmyPDF | 扫描 PDF 预处理为 searchable PDF | 可先给扫描件加文本层，再走 fast path | 源码审计 `32013f4`：MPL-2.0 | 已接入可选预处理入口；继续补 fixture、fallback 和质量对比 |
 | P0 | PaddleOCR / PP-Structure | 中文 OCR、表格、版面结构 | 中文场景强，生态成熟 | 源码审计 `c166448`：Apache-2.0，模型另查 | 重点实测中文扫描件和表格 |
-| P1 | Apache Tika | 格式嗅探、元数据、兜底抽文本 | 格式识别/抽文本覆盖极广 | Apache-2.0 | 可作为 inspect/fallback 参考 |
+| P1 | Apache Tika | 格式嗅探、元数据、兜底抽文本 | 格式识别/抽文本覆盖极广 | Apache-2.0 | 已接入显式 inspect 增强；不进入默认转换路径 |
 | P1 | pdfplumber | 文本层 PDF 表格/坐标调试 | 适合 text-based PDF 的表格和坐标分析 | MIT | 用于表格/坐标诊断，不做主转换 |
 | P1 | Camelot | text-based PDF 表格抽取 | 专项表格 fallback | 源码审计 `a136fc0`：MIT | 作为表格 repair 候选 |
-| P1 | Tabula / tabula-py | PDF 表格抽取和 GUI 参考 | 老牌表格提取，小白 UI 思路可借鉴 | 源码审计：Tabula Java `2cdf3b4` MIT，tabula-py `d7a233b` MIT | 可参考交互式表格选择；优先级低于 Camelot/pdfplumber |
-| P1 | GROBID | 学术论文结构、参考文献、TEI | 论文专项解析成熟 | 源码审计 `8ca2585`：Apache-2.0 | 作为论文专项 heavy path |
+| P1 | Tabula / tabula-py | PDF 表格抽取和 GUI 参考 | 老牌表格提取，小白 UI 思路可借鉴 | 源码审计：Tabula Java `2cdf3b4` MIT，tabula-py `d7a233b` MIT | 已接入可选表格诊断 fallback；继续验证 text-layer PDF 表格质量 |
+| P1 | GROBID | 学术论文结构、参考文献、TEI | 论文专项解析成熟 | 源码审计 `8ca2585`：Apache-2.0 | 已接入显式 academic PDF inspect；不进入默认 PDF 转换路径 |
 | P1 | RapidOCR | 轻量本地 OCR 部署 | 比完整 PaddleOCR 更易部署 | 源码审计 `7b2d368`：Apache-2.0，模型另查 | 低配 CPU OCR 候选 |
 | P1 | Tesseract | 经典离线 OCR | 兜底稳定、部署资料多 | 源码审计 `f4afb2c`：Apache-2.0 | 可作为 OCRmyPDF 依赖或兜底 |
-| P1 | Surya | OCR/layout/reading order/table | Marker 生态底层能力之一，适合视觉版面 | 源码审计 `17452f3`：Apache-2.0，模型另查 | 复杂版面研究候选 |
+| P1 | Surya | OCR/layout/reading order/table | Marker 生态底层能力之一，适合视觉版面 | 源码审计 `17452f3`：Apache-2.0，模型条款/商业使用另查 | 已接入可选 wrapper；复杂版面继续实测 |
 | P1 | Crawl4AI | 网页资料转 Markdown | Agent/RAG 网页摄取成熟 | Apache-2.0 + 额外 attribution 要求 | 只作参考；网页抓取统一复用 `web-content-fetcher` |
 | P1 | Trafilatura | 网页正文/metadata 抽取 | 轻量网页正文抽取 | Apache-2.0 | 只作参考；网页抓取统一复用 `web-content-fetcher` |
 | P2 | MegaParse | LLM ingest 多格式 parser | 对标“no information loss”解析思路 | 源码审计 `ba9a24a`：Apache-2.0，云模型依赖另查 | 参考输出 schema 和质量报告 |
 | P2 | OmniParse | 本地多模态 ingest + UI | 多模态、本地、Gradio UI 形态可参考 | 源码审计 `9d1ae83`：Apache-style，adapted code/模型另查 | 产品/服务形态参考，不建议直接混入 |
-| P2 | pdf-craft | 扫描书籍到 Markdown/EPUB | 和“截图书/扫描书”场景高度相关 | 源码审计 `f463a4e`：MIT，DeepSeek OCR/LLM 配置另查 | 实测扫描书目录/脚注/公式 |
-| P2 | olmOCR | 扫描文档 OCR/VLM | 扫描文档质量候选 | 源码审计 `f7cfe4c`：Apache-2.0，模型许可另查 | 作为 VLM OCR 对比项 |
-| P2 | GOT-OCR 2.0 | 轻量视觉 OCR | 单机 GPU/较小模型路线 | 源码审计 `179ed08`：demo/模型授权需分别复核 | 作为低成本 VLM 实验候选 |
-| P2 | Pix2Text | 中文社区 OCR/公式/版面 | 中文图文、公式、表格场景可测 | 源码审计 `f881e9d`：MIT，模型依赖另查 | 中文专项候选 |
+| P2 | pdf-craft | 扫描书籍到 Markdown/EPUB | 和“截图书/扫描书”场景高度相关 | 源码审计 `f463a4e`：MIT，DeepSeek OCR/LLM 配置另查 | 已接入显式 wrapper；继续实测扫描书目录/脚注/公式 |
+| P2 | olmOCR | 扫描文档 OCR/VLM | 扫描文档质量候选 | 源码审计 `f7cfe4c`：Apache-2.0，模型许可另查 | 已接入显式 `olmocr` PDF 管道；只作 GPU/远程 VLM OCR benchmark，不进入默认路径 |
+| P2 | GOT-OCR 2.0 | 轻量视觉 OCR | 单机 GPU/较小模型路线 | 源码审计 `179ed08`：demo/模型授权需分别复核 | 已接入显式 demo-script wrapper；只作手动 CUDA 图片 OCR 实验，不进入默认路径 |
+| P2 | Pix2Text | 中文社区 OCR/公式/版面 | 中文图文、公式、表格场景可测 | 源码审计 `f881e9d`：MIT，模型依赖另查 | 已接入可选 wrapper；后续转为质量验证和安装成本评估 |
 | P2 | paperless-ngx | 文档归档/OCR/检索产品形态 | 虽不主打 Markdown，但适合学习资料管理闭环 | 源码审计 `82aefe5`：GPL-3.0-only | 产品化参考，不建议直接混入 |
 
 ## Agent / MCP 生态参考项目
@@ -142,13 +145,13 @@
 
 源码审计后，下一步不再是“看项目主页”，而是用公开 fixture 和真实低风险样本跑质量对比：
 
-1. Pix2Text：验证中文图片、公式、截图页到 Markdown 的质量和安装成本。
-2. pdf-craft：验证扫描书/截图书的目录、脚注、公式和 TOC 假设恢复能力。
-3. Surya：验证 layout-heavy 图片、表格、reading order，重点看本机或远程 GPU 成本。
+1. Pix2Text：已接入可选 wrapper；下一步验证中文图片、公式、截图页到 Markdown 的质量和安装成本。
+2. pdf-craft：已接入显式 wrapper；下一步验证扫描书/截图书的目录、脚注、公式和 TOC 假设恢复能力。
+3. Surya：已接入可选 wrapper；下一步验证 layout-heavy 图片、表格、reading order，重点看本机或远程 GPU 成本。
 4. PaddleOCR / PaddleOCR-VL：验证中文扫描件、截图、表格块坐标和信息图补强质量。
 5. Tabula / Camelot / pdfplumber：验证 text-based PDF 表格抽取差异，决定是否还需要 Tabula。
-6. Apache Tika：验证格式嗅探和非主流格式抽文本。
-7. GROBID：只在论文/参考文献场景明确时验证专项路径。
+6. Apache Tika：已接入显式 inspect 增强；下一步验证非主流格式 MIME/metadata/text sample 的实际价值。
+7. GROBID：已接入显式 academic PDF inspect；下一步验证真实论文 PDF 的 title/author/abstract/reference/TEI 质量。
 
 ## 本地源码审计结果（首批）
 
@@ -195,12 +198,13 @@
 | Tabula Java | `2cdf3b4` | Maven main class `technology.tabula.CommandLineApp`；`BasicExtractionAlgorithm`、`SpreadsheetExtractionAlgorithm`、CSV/JSON/TSV writers | MIT | text-based PDF 表格抽取 | 可作为表格专项 fallback，但 Camelot/pdfplumber 已覆盖大部分当前需求，优先级低。 |
 | tabula-py | `d7a233b` | Python wrapper；`read_pdf`、`convert_into`、`convert_into_by_batch`，可走 Java subprocess 或 jpype | MIT | Python 表格抽取 wrapper | 如果接 Tabula，优先通过 tabula-py 或外部 jar，不直接改 Java 源码。 |
 | Tesseract | `f4afb2c` | C/C++ `TessBaseAPI`、C API、CLI；可输出 UTF8、HOCR、TSV、ALTO、PAGE 等 | Apache-2.0 | OCRmyPDF 依赖、经典 OCR 兜底 | 作为依赖健康检查和兜底 OCR 参考；当前机器上配置坏时不应阻塞主流程。 |
-| Surya | `17452f3` | CLI `surya_ocr`、`surya_layout`、`surya_table`、`surya_gui`；VLM backend 可用 vLLM/llama.cpp 或 `SURYA_INFERENCE_URL` | Apache-2.0；模型运行与权重另查 | OCR/layout/reading-order/table、Marker 生态底层能力 | 值得作为信息图/复杂版面实验项，但模型服务较重，不进入默认路径。 |
+| Surya | `17452f3` | CLI `surya_ocr`、`surya_layout`、`surya_table`、`surya_gui`；VLM backend 可用 vLLM/llama.cpp 或 `SURYA_INFERENCE_URL` | Apache-2.0；模型运行、权重和商业使用条款另查 | OCR/layout/reading-order/table、Marker 生态底层能力 | 已接入可选 wrapper；作为信息图/复杂版面实验项，模型服务较重，不进入默认路径。 |
 | MegaParse | `ba9a24a` | Python `MegaParse`、`MegaParseVision`；依赖 Unstructured、LlamaParse、LangChain/OpenAI/Anthropic、Playwright 等 | Apache-2.0 | 多格式 LLM ingest schema 参考 | 依赖云模型和重 ingest 生态，不适合直接整合；可参考“无信息损失”评估口径。 |
 | OmniParse | `9d1ae83` | FastAPI/Gradio server；`/parse_document`、`/parse_image`、`/parse_media`、`/parse_website`；依赖 Marker、Surya、Crawl4AI 等 | Apache-style；部分 adapted code/模型另查 | 多模态服务和 UI 产品形态参考 | 不直接整合，因为它已经是另一层 orchestration，会和本项目调度层重复。 |
-| pdf-craft | `f463a4e` | Python API `transform_markdown`、`transform_epub`；面向扫描书，支持 `ocr_size`、`toc_llm`、`toc_assumed` | MIT；DeepSeek OCR/LLM/API/model 另查 | 扫描书、截图书、目录/TOC 重建 | 很值得实测，但不进默认路径；优先吸收 TOC/章节假设和分段恢复思路。 |
-| olmOCR | `f7cfe4c` | CLI `olmocr` / `python -m olmocr.pipeline`；支持大规模 PDF batch、VLLM/SGLang、bench runner | Apache-2.0；模型和运行时另查 | 重型 VLM OCR benchmark、远程 GPU OCR | 不适合本地默认；适合作为云/GPU provider 的质量对标。 |
-| GOT-OCR 2.0 | `179ed08` | Demo 脚本 `run_ocr_2.0.py` / crop/multi-page；`AutoModelForCausalLM` + `trust_remote_code=True` + CUDA | 代码/模型条款需分别复核；demo 默认 CUDA | 轻量视觉 OCR 实验项 | 研究/demo 属性强，不建议整合默认；只可做显式实验 provider。 |
+| pdf-craft | `f463a4e` | Python API `transform_markdown`、`transform_epub`；面向扫描书，支持 `ocr_size`、`toc_llm`、`toc_assumed` | MIT；DeepSeek OCR/LLM/API/model 另查 | 扫描书、截图书、目录/TOC 重建 | 已接入显式 `pdfcraft` 管道，不进默认路径；下一步用样本验证 TOC/章节假设和分段恢复效果。 |
+| olmOCR | `f7cfe4c` | CLI `olmocr` / `python -m olmocr.pipeline`；支持大规模 PDF batch、VLLM/SGLang、bench runner | Apache-2.0；模型和运行时另查 | 重型 VLM OCR benchmark、远程 GPU OCR | 已接入显式 `pdf_pipeline_mode=olmocr` worker；不适合本地默认，适合作为云/GPU provider 的质量对标。 |
+| GOT-OCR 2.0 | `179ed08` | Demo 脚本 `run_ocr_2.0.py` / crop/multi-page；`AutoModelForCausalLM` + `trust_remote_code=True` + CUDA | 代码/模型条款需分别复核；demo 默认 CUDA | 轻量视觉 OCR 实验项 | 已接入 `scripts/got_ocr_image_to_md.py` 显式 wrapper；研究/demo 属性强，不进入默认识别或自动增强顺序。 |
+| DeepSeek-OCR | GitHub official current | Transformers/vLLM OCR model route；`AutoModel` + `trust_remote_code=True`，prompt 可输出 Markdown | 代码/模型/运行时条款需分别复核；本地推理默认偏 CUDA 重环境 | VLM OCR、信息图/页面截图显式实验 | 已接入 `scripts/deepseek_ocr_image_to_md.py` 显式 wrapper；不进入默认识别或自动增强顺序。 |
 | Pix2Text | `f881e9d` | CLI `predict`、Python `Pix2Text.recognize`、server；支持 PDF/page/text_formula/formula/text 等类型 | MIT；CnOCR/EasyOCR/模型另查 | 中文图片、公式、版面、PDF 到 Markdown 专项 | 值得列入中文专项 benchmark；是否接入取决于真实样本质量和安装成本。 |
 | paperless-ngx | `82aefe5` | Django/Celery/Redis 文档归档系统；consume folder、OCRmyPDF/Tesseract、REST/UI | GPL-3.0-only | 文档归档、批处理、人工复查产品形态参考 | 不是 Markdown 转换组件，不建议作为依赖混入；可学习“导入-识别-索引-复查”产品闭环。 |
 
@@ -213,7 +217,7 @@
 | pypdf | `e07c223` | Python 包导出 `PdfReader`、`PdfWriter`；无复杂服务形态 | BSD-3-Clause | PDF 拆分、合并、metadata、轻量文本/对象处理 | 可作为轻量 PDF utility 备选；当前 PyMuPDF 已覆盖多数需求，不优先接入。 |
 | pdfminer.six | `a18de2a` | `pdfminer.high_level.extract_text`、`extract_pages`、`pdf2txt.py`、`dumppdf.py` | MIT | PDF 文本层、layout primitives、调试 | 可作为 PyMuPDF/pdfplumber 之外的纯文本兜底；不适合扫描件和结构化 Markdown 主路径。 |
 | Apache PDFBox | `661acfa` | Java 多模块；`PDFTextStripper`、`tools/ExtractText`、`pdfbox-app` | Apache-2.0 | Java 侧 PDF 文本/metadata/工具参考 | 不建议为普通用户增加 Java 依赖；只作为 Tika/Tabula 生态底层参考。 |
-| CnOCR | `f8b9cc9` | Python CLI `cnocr`、`cnocr-clf`；核心 `cnocr/cn_ocr.py`，包含 PP-OCR 字典/模型资源路径 | Apache-2.0；模型和 ONNX/Paddle 依赖另查 | 中文 OCR 专项 | 可作为中文轻量 OCR benchmark；当前先用 Umi-OCR/PaddleOCR-json/RapidOCR 路线。 |
+| CnOCR | `f8b9cc9` | Python CLI `cnocr`、`cnocr-clf`；核心 `cnocr/cn_ocr.py`，包含 PP-OCR 字典/模型资源路径 | Apache-2.0；模型和 ONNX/Paddle 依赖另查 | 中文 OCR 专项 | 已接入可选 OCR provider comparison/health；不进入默认识别路径，先用中文样本验证质量和安装成本。 |
 | Nougat | `5a92920` | CLI `nougat`、`nougat_api`；`predict.py`、`app.py`、`nougat/model.py` | MIT；模型权重另查 | 学术 PDF、公式、论文 OCR | 只适合作为论文/公式专项候选；不是通用图文材料转换默认后端。 |
 | Unstract | `776d0fd` | Django/Celery/多服务平台；backend、workers、prompt-service、x2text-service、tool-sidecar | AGPL-3.0 | LLM 文档抽取平台、pipeline/人工复查产品参考 | 不直接整合。它是完整平台，和本项目调度层重叠，许可证也更强。 |
 | kreuzberg | `cbf966f` | 多语言/Rust 绑定项目；Python 包 `extract_file`、`extract_bytes`、batch extract、VLM/embedding/rerank hooks | Elastic License 2.0 | 文档抽取 API 形态、benchmark 设计参考 | 不作为默认开源依赖；可参考 API 和 benchmark，不混入 AGPL 项目依赖链。 |
@@ -244,7 +248,7 @@
 | --- | --- | --- | --- |
 | CLI / UI / HTTP / MCP | 自研 CLI、Tkinter UI、HTTP API、MCP stdio | MarkItDown MCP、Docling MCP、Markdownify MCP | 保持自研统一入口，借鉴它们的工具 schema、安装体验和缓存机制。 |
 | 批处理 / handoff / `next_actions` | 自研 manifest、`run_summary`、agent recipes、handoff bundle | Unstructured workflow、Unstract（AGPL 平台参考） | 学习 pipeline/任务状态和企业化 ingest 设计，不急着引入。 |
-| 格式预检 / inspect | PyMuPDF、pdfplumber、自研 PDF 预检、质量评分 | Apache Tika、kreuzberg（Elastic-2.0 参考） | Tika 可补超多格式嗅探；pdfplumber 已用于 PDF 表格/坐标诊断。 |
+| 格式预检 / inspect | PyMuPDF、pdfplumber、Apache Tika、自研 PDF 预检、质量评分 | kreuzberg（Elastic-2.0 参考） | Tika 已接入显式 inspect 增强；pdfplumber 已用于 PDF 表格/坐标诊断。 |
 
 ### 电子书、Office 与通用文档转换
 
@@ -267,17 +271,17 @@
 
 | 模块 | 已整合项目/能力 | 未整合候选 | 下一步建议 |
 | --- | --- | --- | --- |
-| 普通图片 OCR | Umi-OCR / PaddleOCR-json | RapidOCR、Tesseract、CnOCR（均已源码审计） | RapidOCR 适合低配离线包；Tesseract 可做经典兜底。 |
-| 信息图 / layout-heavy 图片 | PaddleOCR-VL wrapper、Qwen-VL wrapper、MinerU VLM 路由 | Surya、GOT-OCR 2.0、olmOCR、Pix2Text | 先继续打磨 PaddleOCR-VL/Qwen-VL；Pix2Text 值得测中文公式和图片。 |
-| 截图乱序/重复重建 | 自研 `image_book_rebuilder` | pdf-craft、paperless-ngx | pdf-craft 可参考扫描书目录/脚注；paperless-ngx 只作为产品形态参考。 |
+| 普通图片 OCR | Umi-OCR / PaddleOCR-json / RapidOCR / CnOCR provider comparison | Tesseract（已源码审计） | RapidOCR 适合低配离线包；CnOCR 适合中文 OCR 对比；Tesseract 可做经典兜底。 |
+| 信息图 / layout-heavy 图片 | Pix2Text wrapper、Surya wrapper、GOT-OCR wrapper、DeepSeek-OCR wrapper、PaddleOCR-VL wrapper、Qwen-VL wrapper、MinerU VLM 路由、olmOCR 显式 benchmark | - | 先继续打磨 Pix2Text/Surya/PaddleOCR-VL/Qwen-VL；GOT-OCR/DeepSeek-OCR/olmOCR 已作为显式对标入口，不进入默认路径。 |
+| 截图乱序/重复重建 | 自研 `image_book_rebuilder`，pdf-craft 显式扫描书管道 | paperless-ngx | pdf-craft 已进入实验 wrapper；paperless-ngx 只作为产品形态参考。 |
 
 ### 表格、公式与学术专项
 
 | 模块 | 已整合项目/能力 | 未整合候选 | 下一步建议 |
 | --- | --- | --- | --- |
 | 表格检测 / 表格修复 | Docling/MinerU/Marker 输出 + 自研质量判断 | Camelot、Tabula、pdfplumber、PaddleOCR PP-Structure | text-based PDF 表格优先接 Camelot/pdfplumber；扫描表格看 PaddleOCR。 |
-| 公式 / 科研 PDF | Marker/MinerU/Docling 可选 | GROBID、Nougat、Pix2Text（均已源码审计）；Mathpix 为在线对标 | GROBID 适合论文结构，不是通用 PDF；Nougat/GPU 成本较高。 |
-| 参考文献 / DOI / 论文结构 | 暂无专项管道 | GROBID | 若真实用户有论文场景，再做 `academic_pdf` 专项路由。 |
+| 公式 / 科研 PDF | Pix2Text wrapper、Marker/MinerU/Docling 可选 | GROBID、Nougat；Mathpix 为在线对标 | Pix2Text 先用于中文截图/公式补强；GROBID 适合论文结构，不是通用 PDF；Nougat/GPU 成本较高。 |
+| 参考文献 / DOI / 论文结构 | GROBID 显式 inspect 增强 | 线上文献 API / Crossref | 当前只做 title/authors/abstract/DOI/reference-count/TEI 证据，不做通用 Markdown 主路径。 |
 
 ### 网页、URL 与 Web Archive
 
@@ -296,20 +300,25 @@
 
 | 优先级 | 项目 | 对应模块 | 理由 |
 | --- | --- | --- | --- |
-| 1 | Pix2Text | 中文图片/公式/版面专项 | 源码入口清楚，和中文截图、公式、图片到 Markdown 场景重合度高，需要真实样本验证质量。 |
-| 2 | pdf-craft | 扫描书/截图书 TOC 重建 | 与“扫描书转 Markdown/EPUB”目标高度相关，先实测再决定是否写 wrapper。 |
-| 3 | Surya | layout-heavy OCR/table/reading order | 能补信息图和复杂版面，但运行时更重，适合先做可选实验 provider。 |
-| 4 | Tabula | text-based PDF 表格专项 fallback | 只有在 Camelot/pdfplumber 覆盖不足时才接，避免增加 Java 依赖。 |
-| 5 | Apache Tika / GROBID | 格式嗅探与论文专项 | Tika 适合兜底 inspect，GROBID 只在论文/参考文献需求明确时接入。 |
+| 已完成第一步 | Pix2Text | 中文图片/公式/版面专项 | 已接入可选 wrapper 和健康检查；下一步是质量样本、安装成本和模型许可复核。 |
+| 已完成第一步 | pdf-craft | 扫描书/截图书 TOC 重建 | 已接入显式 `pdfcraft` 管道；下一步是扫描书样本质量、Poppler/GPU/模型成本和许可证复核。 |
+| 已完成第一步 | Surya | layout-heavy OCR/table/reading order | 已接入可选 wrapper；下一步是信息图、表格和阅读顺序样本质量验证。 |
+| 已完成第一步 | Tabula | text-based PDF 表格专项 fallback | 已接入可选表格诊断 fallback；不进入默认转换路径；继续用表格 PDF 样本验证 Camelot/Tabula/pdfplumber 差异。 |
+| 已完成第一步 | Apache Tika | 格式嗅探、metadata、非主流格式 inspect | 已接入显式 `use_tika=true` inspect 增强；支持 Tika Server 或命令 wrapper；不进入默认转换路径。 |
+| 已完成第一步 | GROBID | 论文结构、参考文献、TEI 专项 | 已接入显式 `use_grobid=true` academic PDF inspect；支持 GROBID Server；不进入默认转换路径。 |
+| 已完成第一步 | CnOCR | 中文/英文 OCR provider comparison | 已接入可选 health/capability 和 `compare_ocr_providers.py`；不进入默认识别路径；下一步是中文样本质量和模型/运行时成本验证。 |
+| 已完成第一步 | olmOCR | VLM PDF/image-to-Markdown benchmark | 已接入显式 `pdf_pipeline_mode=olmocr` worker 和 health/capability；不进入默认路径；下一步是远程/GPU 样本质量与运行成本验证。 |
+| 已完成第一步 | GOT-OCR 2.0 | CUDA 图片 OCR demo-script 实验 | 已接入 `scripts/got_ocr_image_to_md.py` 和 health/capability；不进入默认识别路径；下一步是本机 CUDA/GOT 模型可用性与样本质量验证。 |
+| 已完成第一步 | DeepSeek-OCR | CUDA/Transformers VLM OCR 实验 | 已接入 `scripts/deepseek_ocr_image_to_md.py` 和 health/capability；不进入默认识别路径；下一步是本机或远程 GPU 样本质量与运行成本验证。 |
 
 MarkItDown 已完成第一步可选接入，后续任务转为扩大对比样本和记录质量差异，而不是继续作为待接入候选。
 OCRmyPDF 已完成可选预处理入口，后续任务转为补前后文本层质量指标、失败 fallback 和公开扫描 PDF fixture。
-pdfplumber 已完成 report 诊断入口，后续任务转为补 Camelot 专项抽取、UI 复查清单显示和表格保留率质量指标。
+pdfplumber 已完成 report 诊断入口，Camelot/Tabula 已进入表格专项 artifact fallback；后续任务转为补 UI 复查清单显示和表格保留率质量指标。
 
 ## 已核验来源
 
 - 本机未提交的第三方源码缓存目录。
 - 首批源码审计：MarkItDown、OCRmyPDF、pdfplumber、Camelot、RapidOCR、Apache Tika、GROBID、Crawl4AI、Trafilatura。
-- 第二批源码审计：Pandoc、Calibre、PyMuPDF、PyMuPDF4LLM、MinerU、Marker、Docling、PaddleOCR、Umi-OCR、PaddleOCR-json、Qwen-VL、tkinterdnd2、Unstructured、Tabula Java、tabula-py、Tesseract、Surya、MegaParse、OmniParse、pdf-craft、olmOCR、GOT-OCR 2.0、Pix2Text、paperless-ngx。
+- 第二批源码审计：Pandoc、Calibre、PyMuPDF、PyMuPDF4LLM、MinerU、Marker、Docling、PaddleOCR、Umi-OCR、PaddleOCR-json、Qwen-VL、tkinterdnd2、Unstructured、Tabula Java、tabula-py、Tesseract、Surya、MegaParse、OmniParse、pdf-craft、olmOCR、GOT-OCR 2.0、DeepSeek-OCR、Pix2Text、paperless-ngx。
 - 第三批源码审计：pypdf、pdfminer.six、Apache PDFBox、CnOCR、Nougat、Unstract、kreuzberg、Mammoth、RAGFlow/DeepDoc。
 - 本项目现有文档：`THIRD_PARTY_NOTICES.md`、`docs/REFERENCES_AND_REUSE.md`、`requirements.txt`。

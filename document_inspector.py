@@ -21,7 +21,9 @@ from ebook_markdown_pipeline.batch_convert_books import (  # noqa: E402
 )
 from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, docling_available  # noqa: E402
 from ebook_markdown_pipeline.document_locator import IMAGE_EXTENSIONS  # noqa: E402
+from ebook_markdown_pipeline.grobid_backend import grobid_available, inspect_with_grobid  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import collect_image_sources, image_metadata  # noqa: E402
+from ebook_markdown_pipeline.tika_backend import inspect_with_tika, tika_available  # noqa: E402
 
 
 def main() -> int:
@@ -31,6 +33,8 @@ def main() -> int:
     parser.add_argument("--include-hidden", action="store_true")
     parser.add_argument("--sample-pages", type=int, default=8)
     parser.add_argument("--model-mode", choices=["local", "online", "hybrid", "auto"], default="local")
+    parser.add_argument("--use-tika", action="store_true", help="Use configured Apache Tika as an explicit inspect/metadata enhancement.")
+    parser.add_argument("--use-grobid", action="store_true", help="Use configured GROBID Server for explicit academic PDF/TEI inspection.")
     args = parser.parse_args()
     result = inspect_document(
         args.input,
@@ -38,6 +42,8 @@ def main() -> int:
         include_hidden=args.include_hidden,
         sample_pages=args.sample_pages,
         model_mode=args.model_mode,
+        use_tika=args.use_tika,
+        use_grobid=args.use_grobid,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
@@ -50,11 +56,13 @@ def inspect_document(
     include_hidden: bool = False,
     sample_pages: int = 8,
     model_mode: str = "local",
+    use_tika: bool = False,
+    use_grobid: bool = False,
 ) -> dict[str, Any]:
     if input_path.is_dir():
         if is_web_content_archive(input_path):
             return inspect_web_content_archive(input_path, model_mode=model_mode)
-        return inspect_directory(input_path, recursive=recursive, include_hidden=include_hidden, sample_pages=sample_pages, model_mode=model_mode)
+        return inspect_directory(input_path, recursive=recursive, include_hidden=include_hidden, sample_pages=sample_pages, model_mode=model_mode, use_tika=use_tika, use_grobid=use_grobid)
     if not input_path.exists():
         return {
             "status": "missing",
@@ -63,7 +71,7 @@ def inspect_document(
             "recommendation": "check_path",
             "warnings": [f"Input does not exist: {input_path}"],
         }
-    return inspect_file(input_path, sample_pages=sample_pages, model_mode=model_mode)
+    return inspect_file(input_path, sample_pages=sample_pages, model_mode=model_mode, use_tika=use_tika, use_grobid=use_grobid)
 
 
 def is_web_content_archive(input_path: Path) -> bool:
@@ -125,10 +133,12 @@ def inspect_directory(
     include_hidden: bool,
     sample_pages: int,
     model_mode: str,
+    use_tika: bool,
+    use_grobid: bool,
 ) -> dict[str, Any]:
     image_sources = collect_image_sources(input_path, recursive=recursive, include_hidden=include_hidden)
     document_sources = collect_document_sources(input_path, recursive=recursive, include_hidden=include_hidden)
-    sample_files = [inspect_file(path, sample_pages=sample_pages, model_mode=model_mode) for path in (document_sources + image_sources)[:20]]
+    sample_files = [inspect_file(path, sample_pages=sample_pages, model_mode=model_mode, use_tika=use_tika, use_grobid=use_grobid) for path in (document_sources + image_sources)[:20]]
     warnings = []
     if not document_sources and not image_sources:
         warnings.append("No supported document/image files found.")
@@ -163,15 +173,35 @@ def inspect_directory(
     }
 
 
-def inspect_file(input_path: Path, *, sample_pages: int, model_mode: str = "local") -> dict[str, Any]:
+def inspect_file(input_path: Path, *, sample_pages: int, model_mode: str = "local", use_tika: bool = False, use_grobid: bool = False) -> dict[str, Any]:
     suffix = input_path.suffix.lower()
     if suffix in PDF_FORMATS:
-        return inspect_pdf(input_path, sample_pages=sample_pages, model_mode=model_mode)
+        return inspect_pdf(input_path, sample_pages=sample_pages, model_mode=model_mode, use_grobid=use_grobid)
     if suffix in IMAGE_EXTENSIONS:
         return inspect_image(input_path, model_mode=model_mode)
     if suffix in SUPPORTED_FORMATS:
-        return inspect_supported_document(input_path, model_mode=model_mode)
-    return {
+        return inspect_supported_document(input_path, model_mode=model_mode, use_tika=use_tika)
+    tika_payload = inspect_with_tika(input_path) if tika_available() else {}
+    if tika_payload.get("status") == "ok":
+        return {
+            "status": "ok",
+            "input": str(input_path),
+            "kind": "tika_inspected",
+            "extension": suffix,
+            "size_bytes": input_path.stat().st_size,
+            "recommendation": "manual_tika_text_review",
+            "structure_strategy": {
+                "mode": "tika_metadata_text_inspection",
+                "confidence": "low",
+                "reason": "Apache Tika extracted metadata/text for an otherwise unsupported extension; use it as inspect evidence, not a main Markdown conversion route.",
+            },
+            "tika": tika_payload,
+            "next_actions": [
+                {"tool": "inspect_document", "use_tika": "true", "why": "review Tika metadata/text sample before deciding whether to add a dedicated converter"},
+            ],
+            "warnings": [f"Unsupported file extension: {suffix}; Tika inspect evidence is available."],
+        }
+    payload = {
         "status": "unsupported",
         "input": str(input_path),
         "kind": "unsupported",
@@ -179,9 +209,12 @@ def inspect_file(input_path: Path, *, sample_pages: int, model_mode: str = "loca
         "recommendation": "unsupported",
         "warnings": [f"Unsupported file extension: {suffix}"],
     }
+    if tika_payload:
+        payload["tika"] = tika_payload
+    return payload
 
 
-def inspect_pdf(input_path: Path, *, sample_pages: int, model_mode: str = "local") -> dict[str, Any]:
+def inspect_pdf(input_path: Path, *, sample_pages: int, model_mode: str = "local", use_grobid: bool = False) -> dict[str, Any]:
     options = normalize_command_options(default_options())
     preflight = inspect_pdf_preflight(input_path, options, sample_pages=sample_pages)
     outline = extract_pdf_outline(input_path)
@@ -195,7 +228,7 @@ def inspect_pdf(input_path: Path, *, sample_pages: int, model_mode: str = "local
     if preflight.page_count >= 200:
         warnings.append("Long PDF; prefer segmented processing and progress polling.")
     structure_strategy = pdf_structure_strategy(preflight)
-    return {
+    payload = {
         "status": "ok",
         "input": str(input_path),
         "kind": "pdf",
@@ -209,6 +242,13 @@ def inspect_pdf(input_path: Path, *, sample_pages: int, model_mode: str = "local
         "next_actions": pdf_next_actions(preflight, structure_strategy),
         "warnings": warnings,
     }
+    if use_grobid:
+        payload["grobid"] = inspect_with_grobid(input_path)
+    elif grobid_available():
+        payload["next_actions"].append(
+            {"tool": "inspect_document", "use_grobid": "true", "why": "optional academic PDF/TEI inspection with configured GROBID Server"}
+        )
+    return payload
 
 
 def extract_pdf_outline(input_path: Path, limit: int = 80) -> dict[str, Any]:
@@ -269,7 +309,7 @@ def inspect_image(input_path: Path, *, model_mode: str = "local") -> dict[str, A
     }
 
 
-def inspect_supported_document(input_path: Path, *, model_mode: str = "local") -> dict[str, Any]:
+def inspect_supported_document(input_path: Path, *, model_mode: str = "local", use_tika: bool = False) -> dict[str, Any]:
     suffix = input_path.suffix.lower()
     source_kind = detect_source_kind(input_path)
     if suffix in PANDOC_DIRECT_FORMATS:
@@ -283,7 +323,7 @@ def inspect_supported_document(input_path: Path, *, model_mode: str = "local") -
     warnings = []
     if suffix in DOCLING_FORMATS and not docling_available():
         warnings.append("Docling optional backend is not installed.")
-    return {
+    payload = {
         "status": "ok",
         "input": str(input_path),
         "kind": source_kind,
@@ -295,6 +335,9 @@ def inspect_supported_document(input_path: Path, *, model_mode: str = "local") -
         "next_actions": supported_document_next_actions(suffix, recommendation),
         "warnings": warnings,
     }
+    if use_tika:
+        payload["tika"] = inspect_with_tika(input_path)
+    return payload
 
 
 def directory_structure_strategy(*, document_count: int, image_count: int) -> dict[str, Any]:

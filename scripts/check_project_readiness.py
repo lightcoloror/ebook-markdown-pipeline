@@ -249,6 +249,17 @@ def stage3_checks() -> list[Check]:
     structure_test = read_text("scripts/test_structure_repair.py")
     image_test = read_text("scripts/test_image_book_rebuilder.py")
     agent_test = read_text("scripts/test_agent_fast_contract.py")
+    pdf_layout = read_text("pdf_layout_diagnostics.py")
+    pdfcraft_backend = read_text("pdfcraft_backend.py")
+    pix2text_wrapper = read_text("scripts/pix2text_image_to_md.py")
+    surya_wrapper = read_text("scripts/surya_image_to_md.py")
+    ocr_providers = read_text("ocr_providers.py")
+    ocr_compare = read_text("scripts/compare_ocr_providers.py")
+    tika_backend = read_text("tika_backend.py")
+    grobid_backend = read_text("grobid_backend.py")
+    olmocr_backend = read_text("olmocr_backend.py")
+    got_ocr_wrapper = read_text("scripts/got_ocr_image_to_md.py")
+    deepseek_ocr_wrapper = read_text("scripts/deepseek_ocr_image_to_md.py")
     return [
         contains_all(
             "stage3_pdf_image_quality",
@@ -266,9 +277,79 @@ def stage3_checks() -> list[Check]:
         ),
         contains_all(
             "stage3_pdf_image_quality",
+            "Tika explicit inspect enhancement",
+            tika_backend,
+            ["EBOOK_CONVERTER_TIKA_SERVER_URL", "EBOOK_CONVERTER_TIKA_COMMAND", "inspect_with_tika", "text_sample"],
+            "tika_backend.py",
+        ),
+        contains_all(
+            "stage3_pdf_image_quality",
+            "GROBID academic PDF inspect enhancement",
+            grobid_backend,
+            ["EBOOK_CONVERTER_GROBID_SERVER_URL", "inspect_with_grobid", "reference_count", "section_headings"],
+            "grobid_backend.py",
+        ),
+        contains_all(
+            "stage3_pdf_image_quality",
+            "PDF table diagnostics fallbacks",
+            pdf_layout,
+            ["pdfplumber_available", "camelot_available", "tabula_available", "extract_tables_with_tabula"],
+            "pdf_layout_diagnostics.py",
+        ),
+        contains_all(
+            "stage3_pdf_image_quality",
+            "pdf-craft explicit scanned-book backend",
+            pdfcraft_backend,
+            ["transform_markdown", "toc_assumed", "local_only", "PDFCRAFT_EVENT", "--dry-run"],
+            "pdfcraft_backend.py",
+        ),
+        contains_all(
+            "stage3_pdf_image_quality",
+            "Pix2Text optional image Markdown wrapper",
+            pix2text_wrapper,
+            ["Pix2Text", "from_config", "enable_formula", "enable_table", "result_to_markdown", "--dry-run"],
+            "scripts/pix2text_image_to_md.py",
+        ),
+        contains_all(
+            "stage3_pdf_image_quality",
+            "Surya optional OCR/layout/table wrapper",
+            surya_wrapper,
+            ["surya_ocr", "surya_layout", "surya_table", "results_to_markdown", "render_table_page", "--dry-run"],
+            "scripts/surya_image_to_md.py",
+        ),
+        contains_all(
+            "stage3_pdf_image_quality",
+            "CnOCR provider comparison",
+            ocr_providers + "\n" + ocr_compare,
+            ["cnocr_available", "recognize_image_with_cnocr", "normalize_cnocr_blocks", "\"cnocr\"", "ocr-provider-comparison"],
+            "ocr_providers.py; scripts/compare_ocr_providers.py",
+        ),
+        contains_all(
+            "stage3_pdf_image_quality",
+            "olmOCR explicit VLM OCR backend",
+            olmocr_backend,
+            ["olmocr_available", "build_olmocr_command", "--markdown", "--pdfs", "redact_command", "find_olmocr_markdown"],
+            "olmocr_backend.py",
+        ),
+        contains_all(
+            "stage3_pdf_image_quality",
+            "GOT-OCR explicit image OCR wrapper",
+            got_ocr_wrapper,
+            ["build_got_command", "GOT_OCR_SCRIPT", "GOT_OCR_MODEL", "clean_stdout", "--dry-run"],
+            "scripts/got_ocr_image_to_md.py",
+        ),
+        contains_all(
+            "stage3_pdf_image_quality",
+            "DeepSeek-OCR explicit VLM OCR wrapper",
+            deepseek_ocr_wrapper,
+            ["build_deepseek_command", "DEEPSEEK_OCR_PYTHON", "DEEPSEEK_OCR_MODEL", "prompt_from_args", "--dry-run"],
+            "scripts/deepseek_ocr_image_to_md.py",
+        ),
+        contains_all(
+            "stage3_pdf_image_quality",
             "layer-heavy image strategy",
             image_test,
-            ["layout-heavy", "paddleocr-vl", "qwen-vl", "mineru-vlm"],
+            ["layout-heavy", "pix2text", "surya", "paddleocr-vl", "qwen-vl", "mineru-vlm"],
             "scripts/test_image_book_rebuilder.py",
         ),
         contains_all(
