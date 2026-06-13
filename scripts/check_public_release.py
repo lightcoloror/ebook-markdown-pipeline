@@ -69,6 +69,7 @@ def main() -> int:
         check_homepage_paths_are_portable(),
         check_example_paths_are_portable(files),
         check_agent_docs_paths_are_portable(),
+        check_tool_contract_paths_are_portable(),
         check_private_patterns(files),
         check_secret_patterns(files),
         check_model_cache_markers(files),
@@ -195,6 +196,22 @@ def check_agent_docs_paths_are_portable() -> Check:
         not hits,
         "docs/AGENT_INTEGRATION.md",
         f"hits={hits[:20]}" if hits else "no drive-letter paths in agent integration docs",
+    )
+
+
+def check_tool_contract_paths_are_portable() -> Check:
+    path = PROJECT_DIR / "docs" / "TOOL_CONTRACT.md"
+    drive_path_pattern = re.compile(r"\b[A-Za-z]:[\\/][^\s`'\"\]\)<>]+")
+    hits = []
+    text = read_text(path) or ""
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if drive_path_pattern.search(line):
+            hits.append({"path": relative(path), "line": line_no, "text": line.strip()[:160]})
+    return Check(
+        "tool contract paths are portable",
+        not hits,
+        "docs/TOOL_CONTRACT.md",
+        f"hits={hits[:20]}" if hits else "no drive-letter paths in tool contract docs",
     )
 
 

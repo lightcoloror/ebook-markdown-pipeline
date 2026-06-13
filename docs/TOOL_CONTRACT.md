@@ -168,9 +168,9 @@ For conversion jobs, `quality_summary` is available after completion:
   "review_count": 1,
   "review_items": [
     {
-      "source": "D:\\input\\book.pdf",
-      "output": "D:\\output\\book.md",
-      "report": "D:\\output\\.reports\\book.report.json",
+      "source": ".\\sample-materials\\book.pdf",
+      "output": ".\\agent-output\\book.md",
+      "report": ".\\agent-output\\.reports\\book.report.json",
       "quality_level": "review",
       "quality_score": 74,
       "quality_reasons": ["没有 Markdown 标题，章节层级可能缺失"],
@@ -312,7 +312,7 @@ HTTP `/health` returns the transport contract plus lightweight operating status:
   "ok": true,
   "transport": "http",
   "http_config": {
-    "config_path": "C:\\path\\to\\ebook-markdown-pipeline\\config\\http.env",
+    "config_path": "<project-path>\\config\\http.env",
     "local_url": "http://127.0.0.1:9241",
     "docker_url": "http://host.docker.internal:9241",
     "bind_host": "127.0.0.1",
@@ -325,9 +325,9 @@ HTTP `/health` returns the transport contract plus lightweight operating status:
   },
   "risk_status": "missing_dependencies",
   "config_sources": {
-    "http": "C:\\path\\to\\ebook-markdown-pipeline\\config\\http.env",
-    "example_env": "C:\\path\\to\\ebook-markdown-pipeline\\config.example.env",
-    "local_env": "C:\\path\\to\\ebook-markdown-pipeline\\.env"
+    "http": "<project-path>\\config\\http.env",
+    "example_env": "<project-path>\\config.example.env",
+    "local_env": "<project-path>\\.env"
   },
   "local_env_exists": false,
   "local_env_loaded_keys": [],
@@ -542,7 +542,7 @@ Artifact object:
 ```json
 {
   "type": "markdown",
-  "path": "D:\\output\\book.md",
+  "path": ".\\agent-output\\book.md",
   "label": "Rebuilt Markdown",
   "media_type": "text/markdown",
   "description": "optional"

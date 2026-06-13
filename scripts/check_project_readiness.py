@@ -124,6 +124,13 @@ def stage1_checks() -> list[Check]:
             ["check_agent_docs_paths_are_portable", "agent docs paths are portable", "docs/AGENT_INTEGRATION.md"],
             "scripts/check_public_release.py",
         ),
+        contains_all(
+            "stage1_open_source_usability",
+            "portable tool contract docs guard",
+            public_release,
+            ["check_tool_contract_paths_are_portable", "tool contract paths are portable", "docs/TOOL_CONTRACT.md"],
+            "scripts/check_public_release.py",
+        ),
     ]
 
 
