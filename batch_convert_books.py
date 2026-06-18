@@ -70,6 +70,19 @@ OUTPUT_FORMATS = {
 }
 
 PDF_PIPELINE_MODES = ("auto", "marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown", "ocrmypdf", "pdfcraft", "olmocr")
+SOURCE_SITE_DOMAIN_LABELS = (("z-library", "sk"), ("1lib", "sk"), ("z-lib", "sk"))
+SOURCE_SITE_DOMAIN_PATTERN = "|".join(r"\.".join(re.escape(part) for part in labels) for labels in SOURCE_SITE_DOMAIN_LABELS)
+TRUNCATED_SOURCE_SITE_TAG_RE = re.compile(
+    r"[\s,，、;/|]*\b(?:z-library|z-lib|z-li|1lib|1li|1l)(?:\.[a-z]{0,3})?\s*-\s*([0-9a-z][0-9a-z-]{1,})",
+    re.IGNORECASE,
+)
+SOURCE_SITE_NOISE_RE = re.compile(
+    r"[\s._-]*[\(\[\{（【]?\s*"
+    rf"(?:{SOURCE_SITE_DOMAIN_PATTERN})"
+    rf"(?:\s*[,，、;/|]\s*(?:{SOURCE_SITE_DOMAIN_PATTERN}))*"
+    r"\s*[\)\]\}）】]?",
+    re.IGNORECASE,
+)
 
 COMMON_WINDOWS_COMMAND_PATHS = {
     "pandoc": [
@@ -811,8 +824,10 @@ def build_output_path(
         relative = source.name if input_root.is_file() else source.relative_to(input_root)
     except ValueError:
         relative = Path(source.name)
+    relative_path = Path(relative)
+    relative_path = relative_path.with_name(f"{clean_output_stem(relative_path.stem)}{relative_path.suffix}")
     suffix = output_suffix(args.output_format)
-    output_path = output_root / Path(relative).with_suffix(suffix)
+    output_path = output_root / relative_path.with_suffix(suffix)
     output_path = shorten_output_path_if_needed(output_path, source)
     name_suffix = safe_output_name_suffix(getattr(args, "output_name_suffix", ""))
     if name_suffix:
@@ -830,6 +845,26 @@ def safe_output_name_suffix(value: str) -> str:
     value = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", value)
     value = re.sub(r"\s+", "-", value)
     return value[:60].rstrip(" ._-")
+
+
+def clean_output_stem(stem: str) -> str:
+    return sanitize_output_stem(strip_source_site_noise(stem))
+
+
+def strip_source_site_noise(stem: str) -> str:
+    cleaned = SOURCE_SITE_NOISE_RE.sub(" ", str(stem or ""))
+    cleaned = TRUNCATED_SOURCE_SITE_TAG_RE.sub(r"-\1", cleaned)
+    cleaned = re.sub(r"[\s,，、;/|]*\b(?:1l[a-z]*|z-l[a-z]*)\s*-\s*([0-9a-f]{2,})", r"-\1", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[\s,，、;/|]*\b(?:1l[a-z]*|z-l[a-z]*)\b(?=(?:\.[A-Za-z0-9_-]+)?$)", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[\(\[\{（【]\s*[\)\]\}）】]", " ", cleaned)
+    cleaned = re.sub(r"[\(\[\{（【]\s*(-[0-9a-z][0-9a-z-]*)(?=(?:\.[A-Za-z0-9_-]+)?$)", r"\1", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+([,，、;；])", r"\1", cleaned)
+    cleaned = re.sub(r"\s+(\.[A-Za-z0-9_-]+)$", r"\1", cleaned)
+    cleaned = re.sub(r"\s+(-[0-9a-z][0-9a-z-]*)(?=(?:\.[A-Za-z0-9_-]+)?$)", r"\1", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[,，、;；\s._-]+$", "", cleaned)
+    cleaned = re.sub(r"^[,，、;；\s._-]+", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
 
 
 def shorten_output_path_if_needed(

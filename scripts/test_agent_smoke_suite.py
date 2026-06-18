@@ -14,6 +14,7 @@ FAST_TESTS = [
     "scripts/test_local_env.py",
     "scripts/test_agent_call_helpers.py",
     "scripts/test_minimal_entrypoints.py",
+    "scripts/test_output_naming.py",
     "scripts/test_agent_batch_runner.py",
     "scripts/test_agent_batch_handoff_cli.py",
     "scripts/test_agent_batch_handoff_http.py",
