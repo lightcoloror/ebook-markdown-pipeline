@@ -57,6 +57,8 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"Health response is missing HTTP config: {health}")
     if not isinstance(health.get("pipeline_capabilities"), dict) or health.get("risk_status") not in {"ok", "degraded", "missing_dependencies"}:
         raise RuntimeError(f"Health response is missing capability/risk summary: {health}")
+    if "minimal_ok" not in health or health.get("optional_missing_is_ok") is not True:
+        raise RuntimeError(f"Health response should distinguish minimal readiness from optional missing backends: {health}")
     if not isinstance(health.get("provider_status"), dict) or not isinstance(health.get("backend_status"), dict):
         raise RuntimeError(f"Health response is missing provider/backend status: {health}")
     if not health.get("config_sources", {}).get("http") or not health.get("config_sources", {}).get("example_env"):
@@ -67,6 +69,9 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"Health response should expose recognition-first route defaults: {health}")
     if not health.get("long_task_guidance", {}).get("prefer_async_tools"):
         raise RuntimeError(f"Health response is missing long task guidance: {health}")
+    soft_risks = set(health.get("long_task_guidance", {}).get("soft_environment_risks") or [])
+    if not {"media_helper", "python_dependency_consistency"}.issubset(soft_risks):
+        raise RuntimeError(f"Health response should expose soft environment risk names: {health}")
 
     capabilities = request_json(f"{url.rstrip('/')}/capabilities", headers=headers)
     if capabilities.get("schema_version") != "ebook-capabilities-v1" or capabilities.get("transport") != "http":
@@ -75,6 +80,8 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"Capabilities endpoint is missing pipeline capabilities: {capabilities}")
     if capabilities.get("risk_status") not in {"ok", "degraded", "missing_dependencies"}:
         raise RuntimeError(f"Capabilities endpoint is missing risk status: {capabilities}")
+    if "minimal_ok" not in capabilities or capabilities.get("optional_missing_is_ok") is not True:
+        raise RuntimeError(f"Capabilities endpoint should expose minimal readiness: {capabilities}")
 
     contract = request_json(f"{url.rstrip('/')}/contract", headers=headers)
     if contract.get("schema_version") != "ebook-http-contract-v1" or contract.get("transport") != "http":
@@ -121,6 +128,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         "inspect_document",
         "process_material",
         "process_web_archive",
+        "enhance_job_artifact",
         "read_artifact",
         "inspect_agent_batch_results",
         "list_agent_batch_results",

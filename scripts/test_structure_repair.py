@@ -55,6 +55,8 @@ def main() -> int:
     report = result.report()
     if report.get("grammar") != "chapter_section_article_clause_item_subitem":
         raise AssertionError(f"Expected grammar name in report: {report}")
+    if "cleanup_decisions" not in report or "cleanup_counts" not in report:
+        raise AssertionError(f"Expected structure repair report to expose cleanup audit fields: {report}")
     candidate_sources = report.get("candidate_sources") or {}
     for expected_source in ("domain_grammar:chapter", "domain_grammar:section", "domain_grammar:article", "domain_grammar:parenthesized_clause"):
         if candidate_sources.get(expected_source, 0) < 1:
@@ -142,6 +144,42 @@ def main() -> int:
         raise AssertionError(f"Expected font signal in decision: {candidate_result.decisions[0]}")
     if candidate_result.report()["decisions"][0]["confidence"] < 0.85:
         raise AssertionError(f"Expected high confidence from font candidate score: {candidate_result.report()}")
+    noisy_source = (
+        "目录\n\n"
+        "第一章 总则 .... 1\n"
+        "第二章 保险责任 .... 3\n"
+        "第三章 责任免除 .... 6\n\n"
+        "图文材料转换器测试书\n\n"
+        "1\n\n"
+        "第一章 总则\n\n"
+        "第五条 保险责任\n\n"
+        "（一）旅游意外身故\n\n"
+        "正文内容足够长，用于证明上一行是真实标题。\n\n"
+        "图文材料转换器测试书\n\n"
+        "2\n\n"
+        "普通重复正文\n"
+        "普通重复正文\n\n"
+        "图文材料转换器测试书\n\n"
+        "3\n\n"
+        "图文材料转换器测试书\n\n"
+        "4\n"
+    )
+    noisy_result = repair_markdown_structure(noisy_source, source_kind="pdf")
+    noisy_report = noisy_result.report()
+    if "<!-- removed toc_remnant:" not in noisy_result.markdown:
+        raise AssertionError(f"Expected dotted TOC remnants to be audited:\n{noisy_result.markdown}")
+    if "<!-- removed repeated_header_footer: 图文材料转换器测试书 -->" not in noisy_result.markdown:
+        raise AssertionError(f"Expected repeated running title to be audited:\n{noisy_result.markdown}")
+    if "<!-- removed standalone_page_number:" not in noisy_result.markdown:
+        raise AssertionError(f"Expected standalone page numbers to be audited:\n{noisy_result.markdown}")
+    if "<!-- removed consecutive_duplicate: 普通重复正文 -->" not in noisy_result.markdown:
+        raise AssertionError(f"Expected consecutive duplicate lines to be audited:\n{noisy_result.markdown}")
+    cleanup_counts = noisy_report.get("cleanup_counts") or {}
+    for expected_kind in ("toc_remnant", "repeated_header_footer", "standalone_page_number", "consecutive_duplicate"):
+        if cleanup_counts.get(expected_kind, 0) < 1:
+            raise AssertionError(f"Expected cleanup count for {expected_kind}: {noisy_report}")
+    if "### 第五条 保险责任" not in noisy_result.markdown or "#### （一）旅游意外身故" not in noisy_result.markdown:
+        raise AssertionError(f"Expected structural headings to survive cleanup:\n{noisy_result.markdown}")
     try:
         import pymupdf
     except Exception:

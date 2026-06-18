@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +12,9 @@ MARKITDOWN_FORMATS = {".epub", ".docx", ".pptx", ".xlsx", ".html", ".htm", ".pdf
 
 def markitdown_available() -> bool:
     try:
-        from markitdown import MarkItDown  # noqa: F401
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Couldn't find ffmpeg or avconv.*", category=RuntimeWarning)
+            from markitdown import MarkItDown  # noqa: F401
     except Exception:
         return False
     return True

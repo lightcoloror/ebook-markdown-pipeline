@@ -203,6 +203,10 @@ def main() -> int:
                 output_dir = Path(command[command.index("--output") + 1])
                 output_dir.mkdir(parents=True, exist_ok=True)
                 (output_dir / "ocr-provider-comparison.md").write_text("# OCR\n", encoding="utf-8")
+            elif script == "generate_backend_scorecard.py":
+                output_dir = Path(command[command.index("--output") + 1])
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "backend-scorecard.md").write_text("# Backend Scorecard\n", encoding="utf-8")
             elif script == "test_docs_contract.py":
                 pass
             elif script == "check_public_release.py":
@@ -244,7 +248,7 @@ def main() -> int:
             raise AssertionError(f"Expected release fake run to pass: {release_code}")
         if latest_payloads:
             raise AssertionError(f"Release test runs should not update latest quality gate: {latest_payloads}")
-        for expected in ["run_benchmarks.py", "compare_benchmark_quality.py", "compare_ocr_providers.py", "test_docs_contract.py", "check_public_release.py"]:
+        for expected in ["run_benchmarks.py", "compare_benchmark_quality.py", "compare_ocr_providers.py", "generate_backend_scorecard.py", "test_docs_contract.py", "check_public_release.py"]:
             if expected not in release_calls:
                 raise AssertionError(f"Release profile did not call {expected}: {release_calls}")
         if not (release_output / "release-summary.json").exists() or not (release_output / "release-summary.md").exists():

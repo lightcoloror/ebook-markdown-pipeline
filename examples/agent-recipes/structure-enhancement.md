@@ -9,7 +9,7 @@ This is a second-pass review workflow. It does not replace the original output, 
 - The job finished with `status=done`.
 - The output Markdown exists and is readable.
 - `quality_summary.review_count > 0`.
-- A review item recommends `enhance_markdown_structure`, or the quality reasons mention weak headings.
+- A review item recommends `enhance_markdown_structure` / `enhance_job_artifact`, or the quality reasons mention weak headings.
 
 Do not use this as a blind replacement for rerunning PDFs through MinerU/Docling. For complex PDFs, compare parser outputs first when the report recommends `compare_pdf_pipelines`.
 
@@ -26,7 +26,26 @@ Do not use this as a blind replacement for rerunning PDFs through MinerU/Docling
 }
 ```
 
-2. Find a review item whose `next_actions` contains:
+2. If `process_material` already returned an `enhance_job_artifact` action, call it exactly as returned:
+
+```json
+{
+  "name": "enhance_job_artifact",
+  "arguments": {
+    "job_id": "job-...",
+    "artifact_type": "markdown",
+    "output": "path/to/.structure-enhanced",
+    "source_kind": "markdown",
+    "model_mode": "local",
+    "provider_mode": "fake",
+    "overwrite": false
+  }
+}
+```
+
+This is the preferred path when the agent has a job id but should not guess the generated Markdown path.
+
+3. If the completed job report already names the Markdown path, find a review item whose `next_actions` contains:
 
 ```json
 {
@@ -42,7 +61,7 @@ Do not use this as a blind replacement for rerunning PDFs through MinerU/Docling
 }
 ```
 
-3. Call the action exactly as returned:
+4. Call the action exactly as returned:
 
 ```json
 {
@@ -58,7 +77,7 @@ Do not use this as a blind replacement for rerunning PDFs through MinerU/Docling
 }
 ```
 
-4. Read the returned artifacts:
+5. Read the returned artifacts:
 
 ```json
 {

@@ -35,9 +35,17 @@ The converter is local-first and tool-first. Backends are optional specialist to
 - GROBID is an explicit academic-PDF enhancement; it helps inspect papers and references but does not replace the general PDF Markdown route.
 - Heavy PDF/OCR/VLM backends should be selected by recommendation, review action, or explicit user/agent request.
 - Online model APIs must go through the provider abstraction and are never required for the default local workflow.
+- `media_helper` and `python_dependency_consistency` are environment soft-risk capabilities, not conversion backends. If they are degraded, normal EPUB/TXT/text-layer-PDF conversion can still proceed; fix them when optional media/provider/model-download workflows need them.
 
 ## Diagnostics And Artifacts
 
 - PDF layout diagnostics write `table-diagnostics.json` and table candidates under `.reports/tables/`; Camelot and Tabula artifacts are fallback evidence, not main conversion output.
 - OCR provider comparison writes `ocr-provider-comparison.json/md` and `ocr-blocks.jsonl`.
+- Optional backend scorecard writes `backend-scorecard.json/md` and summarizes availability, install cost, GPU/model needs, license notes, and whether a backend should stay explicit-only or appear as a recommended follow-up.
 - Quality gates write `benchmark-summary.md` and `quality-regression-summary.md/json`.
+
+Run the scorecard directly when deciding whether to promote a newly installed optional backend:
+
+```powershell
+python scripts\generate_backend_scorecard.py --output .\benchmarks\runs\backend-scorecard
+```

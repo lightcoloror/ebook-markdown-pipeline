@@ -359,6 +359,10 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "mineru_segment_min_pages": {"type": "integer"},
                     "mineru_segment_pages": {"type": "integer"},
                     "output_name_suffix": {"type": "string"},
+                    "provider_mode": {"type": "string", "enum": ["fake", "openai_compatible"], "default": "fake"},
+                    "provider": {"type": "string"},
+                    "online_providers_config": {"type": "string"},
+                    "allow_remote": {"type": "boolean", "default": False},
                 },
                 "required": ["input", "output"],
             },
@@ -416,6 +420,26 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "overwrite": {"type": "boolean", "default": False},
                 },
                 "required": ["input", "output"],
+            },
+        },
+        {
+            "name": "enhance_job_artifact",
+            "description": "Run a safe second-pass Markdown structure enhancement on a completed job artifact. Finds the Markdown artifact by job_id and writes versioned output without overwriting by default.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "job_id": {"type": "string"},
+                    "artifact_type": {"type": "string", "default": "markdown"},
+                    "output": {"type": "string"},
+                    "source_kind": {"type": "string", "default": "markdown"},
+                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto"], "default": "local"},
+                    "provider_mode": {"type": "string", "enum": ["fake", "openai_compatible"], "default": "fake"},
+                    "provider": {"type": "string"},
+                    "config": {"type": "string"},
+                    "allow_remote": {"type": "boolean", "default": False},
+                    "overwrite": {"type": "boolean", "default": False},
+                },
+                "required": ["job_id"],
             },
         },
         {
@@ -675,6 +699,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return run_online_enhancement(arguments)
     if name == "enhance_markdown_structure":
         return enhance_markdown_structure(arguments)
+    if name == "enhance_job_artifact":
+        return enhance_job_artifact(arguments)
     if name == "start_conversion":
         return start_conversion(arguments)
     if name == "get_job_status":
@@ -731,6 +757,7 @@ def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
             "inspect_agent_batch_results",
             "list_agent_batch_results",
             "build_agent_handoff_bundle",
+            "enhance_job_artifact",
         ],
         "supports_async_jobs": True,
         "supports_artifacts": True,
@@ -809,6 +836,7 @@ def agent_operating_context() -> dict[str, Any]:
             "baseline_routes": ["markitdown"],
             "safe_pdf_default": "auto preflight, fallback diagnostics, versioned outputs",
             "large_pdf_advice": "Use page ranges or pipeline comparison before forcing whole-document heavy OCR/VLM.",
+            "soft_environment_risks": ["media_helper", "python_dependency_consistency"],
         },
         "recommended_agent_flow": [
             "call get_agent_contract once",
@@ -843,7 +871,9 @@ def safe_pipeline_capabilities() -> dict[str, Any]:
 def agent_risk_status(capabilities: dict[str, Any]) -> str:
     if capabilities.get("error"):
         return "missing_dependencies"
-    if capabilities.get("missing"):
+    critical = {"structured_ebooks", "pdf_fast_text"}
+    missing = set(capabilities.get("missing") or [])
+    if missing.intersection(critical):
         return "missing_dependencies"
     if capabilities.get("degraded"):
         return "degraded"
@@ -899,6 +929,8 @@ def health_check(arguments: dict[str, Any]) -> dict[str, Any]:
     ready = [item["name"] for item in capabilities if item.get("status") == "ok"]
     degraded = [item["name"] for item in capabilities if item.get("status") == "degraded"]
     missing = [item["name"] for item in capabilities if item.get("status") == "missing"]
+    minimal_required = ["structured_ebooks", "pdf_fast_text"]
+    missing_minimal = [name for name in minimal_required if name in missing]
     return {
         "schema_version": "health-check-v2",
         "checks": checks,
@@ -918,6 +950,10 @@ def health_check(arguments: dict[str, Any]) -> dict[str, Any]:
             "missing": missing,
         },
         "ok": all(item["status"] != "missing" for item in checks),
+        "minimal_ok": not missing_minimal,
+        "minimal_required_capabilities": minimal_required,
+        "missing_minimal_capabilities": missing_minimal,
+        "optional_missing_is_ok": True,
         "ready_capabilities": ready,
         "degraded_capabilities": degraded,
         "missing_capabilities": missing,
@@ -1131,6 +1167,11 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
     delegated_arguments.pop("query", None)
     delegated_arguments.pop("image_book_threshold", None)
     delegated_arguments.pop("model_mode", None)
+    delegated_arguments.pop("provider_mode", None)
+    delegated_arguments.pop("provider", None)
+    delegated_arguments.pop("online_providers_config", None)
+    delegated_arguments.pop("online_models_config", None)
+    delegated_arguments.pop("allow_remote", None)
     delegated_arguments.pop("use_grobid", None)
 
     if route == "start_location_index":
@@ -1193,12 +1234,16 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
 
     artifacts = delegated.get("artifacts", []) if isinstance(delegated, dict) else []
     job_id = delegated.get("job_id") if isinstance(delegated, dict) else None
+    online_followup = online_enhancement_job_next_action(inspection, arguments, output_path, job_id=job_id)
+    if online_followup:
+        next_actions.append(online_followup)
     normalized_next_actions = normalize_agent_next_actions(next_actions)
     return {
         "schema_version": "process-material-v2",
         "status": "routed",
         "route": route,
         "inspection": inspection,
+        "online_enhancement": inspection.get("online_enhancement") or {},
         "delegated": delegated,
         "job_id": job_id,
         "artifacts": artifacts,
@@ -1207,6 +1252,43 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
         "errors": [],
         "next_actions": normalized_next_actions,
         "recommended_followup": recommended_followup_for_route(route, normalized_next_actions, job_id=job_id),
+    }
+
+
+def online_enhancement_job_next_action(
+    inspection: dict[str, Any],
+    arguments: dict[str, Any],
+    output_path: Path,
+    *,
+    job_id: str | None,
+) -> dict[str, Any] | None:
+    if not job_id:
+        return None
+    online = inspection.get("online_enhancement") if isinstance(inspection.get("online_enhancement"), dict) else {}
+    routes = set(str(item) for item in (online.get("recommended_routes") or []))
+    if not online.get("recommended") or not online.get("enabled_by_model_mode") or "text_structure_llm" not in routes:
+        return None
+    provider_config = arguments.get("online_providers_config") or arguments.get("online_models_config") or arguments.get("config")
+    action_args: dict[str, Any] = {
+        "job_id": job_id,
+        "artifact_type": "markdown",
+        "output": str(output_path / ".structure-enhanced"),
+        "source_kind": "markdown",
+        "model_mode": str(arguments.get("model_mode") or "local"),
+        "provider_mode": str(arguments.get("provider_mode") or "fake"),
+        "allow_remote": bool(arguments.get("allow_remote", False)),
+        "overwrite": False,
+    }
+    if arguments.get("provider"):
+        action_args["provider"] = arguments["provider"]
+    if provider_config:
+        action_args["config"] = str(provider_config)
+    return {
+        "after_job_status": "done",
+        "action": "enhance_completed_markdown_structure",
+        "tool": "enhance_job_artifact",
+        "arguments": action_args,
+        "why": "inspection recommends optional text-structure enhancement after local conversion; output is versioned and remote calls still require allow_remote=true",
     }
 
 
@@ -1252,11 +1334,14 @@ def run_online_enhancement(arguments: dict[str, Any]) -> dict[str, Any]:
             "message": "Remote provider calls require allow_remote=true. This prevents accidental API usage and cost/privacy surprises.",
             "retryable": False,
             "next_actions": [
-                {
-                    "action": "retry_with_explicit_remote_permission",
-                    "tool": "run_online_enhancement",
-                    "arguments": {**{key: value for key, value in arguments.items() if key != "allow_remote"}, "allow_remote": True},
-                }
+                normalize_agent_action(
+                    {
+                        "action": "retry_with_explicit_remote_permission",
+                        "tool": "run_online_enhancement",
+                        "arguments": {**{key: value for key, value in arguments.items() if key != "allow_remote"}, "allow_remote": True},
+                        "why": "remote provider calls require explicit user/caller permission",
+                    }
+                )
             ],
         }
 
@@ -1494,6 +1579,73 @@ def enhance_markdown_structure(arguments: dict[str, Any]) -> dict[str, Any]:
         "artifacts": artifacts,
         "next_actions": artifact_next_actions(artifacts),
     }
+
+
+def enhance_job_artifact(arguments: dict[str, Any]) -> dict[str, Any]:
+    job_id = str(arguments.get("job_id") or "")
+    artifact_type = str(arguments.get("artifact_type") or "markdown")
+    if not job_id:
+        return {"error": True, "message": "enhance_job_artifact requires job_id.", "retryable": False}
+    with JOBS_LOCK:
+        job = dict(JOBS.get(job_id) or {})
+    if not job:
+        return {"error": True, "message": f"Job not found: {job_id}", "retryable": False}
+    if job.get("status") == "running":
+        return {
+            "error": True,
+            "status": "running",
+            "message": f"Job {job_id} is still running. Poll get_job_status before enhancing artifacts.",
+            "retryable": True,
+            "next_actions": [
+                normalize_agent_action(
+                    {
+                        "action": "poll_job_status",
+                        "tool": "get_job_status",
+                        "arguments": {"job_id": job_id},
+                        "why": "wait for Markdown artifacts before running the enhancement pass",
+                    }
+                )
+            ],
+        }
+    artifact_item = first_job_artifact(job, artifact_type)
+    if not artifact_item:
+        return {
+            "error": True,
+            "status": job.get("status") or "unknown",
+            "message": f"No readable {artifact_type} artifact found for job {job_id}.",
+            "retryable": False,
+            "available_artifacts": job.get("artifacts") or [],
+        }
+    artifact_path = Path(str(artifact_item.get("path") or ""))
+    output_value = str(arguments.get("output") or "")
+    enhancement_args: dict[str, Any] = {
+        "input": str(artifact_path),
+        "output": output_value or str(artifact_path.parent / ".structure-enhanced"),
+        "source_kind": str(arguments.get("source_kind") or "markdown"),
+        "model_mode": str(arguments.get("model_mode") or "local"),
+        "provider_mode": str(arguments.get("provider_mode") or "fake"),
+        "allow_remote": bool(arguments.get("allow_remote", False)),
+        "overwrite": bool(arguments.get("overwrite", False)),
+    }
+    for key in ("provider", "config"):
+        if arguments.get(key):
+            enhancement_args[key] = arguments[key]
+    result = enhance_markdown_structure(enhancement_args)
+    result["source_job_id"] = job_id
+    result["source_artifact"] = artifact_item
+    return result
+
+
+def first_job_artifact(job: dict[str, Any], artifact_type: str) -> dict[str, Any] | None:
+    for item in job.get("artifacts") or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("type") or "") != artifact_type:
+            continue
+        path = Path(str(item.get("path") or ""))
+        if path.is_file():
+            return item
+    return None
 
 
 def unique_output_path(path: Path) -> Path:
@@ -2085,6 +2237,7 @@ SAFE_DEFAULT_TOOLS = {
     "inspect_document",
     "query_location_index",
     "enhance_markdown_structure",
+    "enhance_job_artifact",
     "manual_review",
 }
 
@@ -2146,7 +2299,8 @@ def normalize_agent_action(action: dict[str, Any]) -> dict[str, Any]:
     if isinstance(arguments, dict) and arguments.get("overwrite") is True:
         destructive = True
     normalized["destructive"] = destructive
-    normalized.setdefault("safe_default", bool(tool in SAFE_DEFAULT_TOOLS and not destructive))
+    remote_allowed = isinstance(arguments, dict) and arguments.get("allow_remote") is True
+    normalized.setdefault("safe_default", bool(tool in SAFE_DEFAULT_TOOLS and not destructive and not remote_allowed))
     return normalized
 
 

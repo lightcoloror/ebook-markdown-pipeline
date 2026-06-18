@@ -196,9 +196,17 @@ python scripts\check_public_release.py
 python scripts\show_latest_quality_gate.py
 ```
 
-The release profile runs the minimal quality gate, MarkItDown backend comparison, OCR provider comparison, docs contract, and public release checks. It writes `release-summary.json/md` and updates the ignored `benchmarks/runs/latest/release-index.json/md` handoff index. `show_latest_quality_gate.py` prints that latest handoff summary for humans and agents.
+The release profile runs the minimal quality gate, MarkItDown backend comparison, OCR provider comparison, optional backend scorecard, docs contract, and public release checks. It writes `release-summary.json/md`, `backend-scorecard.json/md`, and updates the ignored `benchmarks/runs/latest/release-index.json/md` handoff index. `show_latest_quality_gate.py` prints that latest handoff summary for humans and agents.
 
 Use `--no-update-latest` for temporary release-profile experiments when you do not want to replace the latest handoff index.
+
+Before tagging a release, follow [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) and copy relevant items from [CHANGELOG.md](CHANGELOG.md) into the GitHub release body. A reusable release body template is in [docs/GITHUB_RELEASE_TEMPLATE.md](docs/GITHUB_RELEASE_TEMPLATE.md).
+
+To inspect optional backend readiness without running heavy model jobs:
+
+```powershell
+python scripts\generate_backend_scorecard.py --output .\benchmarks\runs\backend-scorecard
+```
 
 ## CLI Examples
 
@@ -218,6 +226,8 @@ Run a health check for the selected inputs:
 ```powershell
 python batch_convert_books.py .\samples .\out --recursive --health-check
 ```
+
+Health output distinguishes `minimal_ok` from optional/heavy backend readiness. Soft warnings such as `media_helper` (FFmpeg/avconv) or `python_dependency_consistency` (requests/urllib3/chardet stack) do not block EPUB/TXT/text-layer-PDF conversion.
 
 Resume a failed or interrupted batch:
 

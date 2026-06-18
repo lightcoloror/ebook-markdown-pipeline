@@ -23,6 +23,17 @@ class HeadingDecision:
 
 
 @dataclass
+class NoiseCleanupDecision:
+    line_number: int
+    original: str
+    replacement: str
+    kind: str
+    reason: str
+    signals: list[str]
+    confidence: float = 0.84
+
+
+@dataclass
 class HeadingCandidate:
     title: str
     level: int | None = None
@@ -40,9 +51,11 @@ class StructureRepairResult:
     markdown: str
     decisions: list[HeadingDecision]
     candidates: list[HeadingCandidate] | None = None
+    cleanup_decisions: list[NoiseCleanupDecision] | None = None
 
     def report(self) -> dict[str, Any]:
         candidates = self.candidates or []
+        cleanup_decisions = self.cleanup_decisions or []
         source_counts: dict[str, int] = {}
         for item in candidates:
             source_counts[item.source or "unknown"] = source_counts.get(item.source or "unknown", 0) + 1
@@ -51,16 +64,24 @@ class StructureRepairResult:
         for item in rendered_decisions:
             action = str(item.get("action") or "unknown")
             action_counts[action] = action_counts.get(action, 0) + 1
+        cleanup_counts: dict[str, int] = {}
+        rendered_cleanup = []
+        for item in cleanup_decisions:
+            cleanup_counts[item.kind] = cleanup_counts.get(item.kind, 0) + 1
+            rendered_cleanup.append(cleanup_report_item(item))
         return {
             "schema_version": "structure-repair-v1",
             "grammar": "chapter_section_article_clause_item_subitem",
             "decision_count": len(self.decisions),
             "action_counts": action_counts,
+            "cleanup_decision_count": len(cleanup_decisions),
+            "cleanup_counts": cleanup_counts,
             "candidate_count": len(candidates),
             "candidate_sources": source_counts,
             "candidate_samples": [asdict(item) for item in candidates[:20]],
             "inferred_outline": build_markdown_outline(self.markdown),
             "decisions": rendered_decisions,
+            "cleanup_decisions": rendered_cleanup,
         }
 
 
@@ -76,7 +97,7 @@ def repair_markdown_structure(
     chapter/section headings are usually already present, `第X条 ...` becomes
     an article heading, and `（一）...` becomes a child of the latest article.
     """
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    lines, cleanup_decisions = cleanup_common_document_noise(text.replace("\r\n", "\n").replace("\r", "\n").split("\n"))
     repaired: list[str] = []
     decisions: list[HeadingDecision] = []
     domain_candidates = collect_domain_heading_candidates(lines)
@@ -417,7 +438,12 @@ def repair_markdown_structure(
             continue
 
         repaired.append(line)
-    return StructureRepairResult(markdown="\n".join(repaired), decisions=decisions, candidates=normalized_candidates)
+    return StructureRepairResult(
+        markdown="\n".join(repaired),
+        decisions=decisions,
+        candidates=normalized_candidates,
+        cleanup_decisions=cleanup_decisions,
+    )
 
 
 def parse_existing_heading(line: str) -> tuple[int, str] | None:
@@ -431,6 +457,14 @@ def decision_report_item(decision: HeadingDecision) -> dict[str, Any]:
     item = asdict(decision)
     item["action"] = classify_decision_action(decision)
     item["changed"] = decision.original != decision.repaired
+    item["confidence"] = round(float(decision.confidence), 3)
+    return item
+
+
+def cleanup_report_item(decision: NoiseCleanupDecision) -> dict[str, Any]:
+    item = asdict(decision)
+    item["action"] = "replaced_with_audit_comment" if decision.original != decision.replacement else "kept"
+    item["changed"] = decision.original != decision.replacement
     item["confidence"] = round(float(decision.confidence), 3)
     return item
 
@@ -521,6 +555,157 @@ def build_markdown_outline(text: str) -> list[dict[str, Any]]:
         outline.append(node)
         stack.append(node)
     return outline
+
+
+def cleanup_common_document_noise(lines: list[str]) -> tuple[list[str], list[NoiseCleanupDecision]]:
+    """Replace obvious OCR/PDF noise with audit comments before heading repair.
+
+    The rules are deliberately conservative. They only target artifacts that
+    consistently hurt downstream structure: standalone page numbers, repeated
+    short running headers/footers, consecutive duplicate lines, and early TOC
+    dotted-leader remnants.
+    """
+    repeated_keys = repeated_document_noise_keys(lines)
+    page_number_indexes = standalone_page_number_indexes(lines)
+    toc_indexes = toc_remnant_indexes(lines)
+    decisions: list[NoiseCleanupDecision] = []
+    cleaned: list[str] = []
+    previous_key = ""
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        key = normalize_document_noise_key(line)
+        replacement = ""
+        kind = ""
+        reason = ""
+        signals: list[str] = []
+
+        if idx in toc_indexes:
+            kind = "toc_remnant"
+            reason = "Early dotted-leader table-of-contents line was replaced with an audit comment."
+            signals = ["toc_pattern:dotted_leader", "position:early_document"]
+        elif idx in page_number_indexes:
+            kind = "standalone_page_number"
+            reason = "Standalone page-number line was replaced with an audit comment."
+            signals = ["page_number:standalone", "blank_separated"]
+        elif key and key in repeated_keys:
+            kind = "repeated_header_footer"
+            reason = "Short repeated running header/footer candidate was replaced with an audit comment."
+            signals = ["noise_key:repeated", f"noise_key:{key}"]
+        elif key and previous_key and key == previous_key and not is_structural_heading_text(stripped):
+            kind = "consecutive_duplicate"
+            reason = "Consecutive duplicate line was replaced with an audit comment."
+            signals = ["duplicate:consecutive", f"noise_key:{key}"]
+
+        if kind:
+            replacement = f"<!-- removed {kind}: {html_comment_safe(stripped)} -->"
+            decisions.append(
+                NoiseCleanupDecision(
+                    line_number=idx + 1,
+                    original=line,
+                    replacement=replacement,
+                    kind=kind,
+                    reason=reason,
+                    signals=signals,
+                    confidence=cleanup_confidence(kind, signals),
+                )
+            )
+            cleaned.append(replacement)
+            previous_key = ""
+            continue
+
+        cleaned.append(line)
+        if key:
+            previous_key = key
+        elif stripped and not stripped.startswith("<!--"):
+            previous_key = ""
+    return cleaned, decisions
+
+
+def cleanup_confidence(kind: str, signals: list[str]) -> float:
+    base = {
+        "toc_remnant": 0.80,
+        "standalone_page_number": 0.86,
+        "repeated_header_footer": 0.84,
+        "consecutive_duplicate": 0.78,
+    }.get(kind, 0.70)
+    if any(signal.startswith("noise_key:") for signal in signals):
+        base += 0.04
+    return round(min(base, 0.96), 3)
+
+
+def repeated_document_noise_keys(lines: list[str]) -> set[str]:
+    counts: dict[str, int] = {}
+    for line in lines:
+        key = normalize_document_noise_key(line)
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+    return {key for key, count in counts.items() if count >= 4 and (len(key) <= 20 or count >= 6)}
+
+
+def standalone_page_number_indexes(lines: list[str]) -> set[int]:
+    indexes = [
+        idx
+        for idx, line in enumerate(lines)
+        if is_standalone_page_number_line(line.strip()) and is_blank_separated(lines, idx)
+    ]
+    return set(indexes) if len(indexes) >= 3 else set()
+
+
+def toc_remnant_indexes(lines: list[str]) -> set[int]:
+    candidates = [
+        idx
+        for idx, line in enumerate(lines[:160])
+        if is_toc_dotted_leader_line(line.strip())
+    ]
+    return set(candidates) if len(candidates) >= 3 else set()
+
+
+def is_toc_dotted_leader_line(line: str) -> bool:
+    if not line or line.startswith(("#", "|", "<!--")):
+        return False
+    return bool(re.match(r"^.{2,90}(?:\.{3,}|…{2,}|·{3,})\s*\d{1,4}\s*$", line))
+
+
+def is_standalone_page_number_line(line: str) -> bool:
+    stripped = re.sub(r"\s+", "", line.strip())
+    if not stripped:
+        return False
+    return bool(re.match(r"^[\-—–_·•]*(?:第)?\d{1,4}(?:页)?(?:/\d{1,4})?[\-—–_·•]*$", stripped, re.I))
+
+
+def normalize_document_noise_key(line: str) -> str:
+    stripped = re.sub(r"\s+", "", line.strip())
+    if not stripped:
+        return ""
+    if line.lstrip().startswith(("#", "|", ">", "-", "*", "<!--")):
+        return ""
+    if is_structural_heading_text(stripped):
+        return ""
+    if is_standalone_page_number_line(stripped):
+        return ""
+    stripped = re.sub(r"^[\-—–_·•]*(?:第)?\d{1,4}(?:页)?(?:/\d{1,4})?[\-—–_·•]+", "", stripped)
+    stripped = re.sub(r"[\-—–_·•]+(?:第)?\d{1,4}(?:页)?(?:/\d{1,4})?[\-—–_·•]*$", "", stripped)
+    stripped = stripped.strip("-—–_·•")
+    if not stripped or len(stripped) > 32:
+        return ""
+    if re.search(r"[。！？!?；;：:，,、]$", stripped):
+        return ""
+    return stripped.casefold()
+
+
+def is_structural_heading_text(line: str) -> bool:
+    return (
+        is_chapter_heading(line)
+        or is_section_heading(line)
+        or is_article_heading(line)
+        or is_parenthesized_clause_heading(line)
+        or is_numeric_item_heading(line)
+        or is_parenthesized_digit_heading(line)
+    )
+
+
+def html_comment_safe(value: str) -> str:
+    return value.replace("--", "- -").strip()
 
 
 def collect_domain_heading_candidates(lines: list[str]) -> list[HeadingCandidate]:

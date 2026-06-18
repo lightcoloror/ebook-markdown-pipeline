@@ -536,9 +536,18 @@ class BookConverterUI:
 
         if unsupported:
             self.write_log(f"已忽略 {len(unsupported)} 个不支持文件。/ Ignored {len(unsupported)} unsupported file(s).")
-        if any(path.suffix.lower() in IMAGE_EXTENSIONS for path in files):
-            self.scan_location_inputs()
+        image_files = [path for path in files if path.suffix.lower() in IMAGE_EXTENSIONS]
+        if image_files and len(image_files) == len(files):
+            image_root = Path(os.path.commonpath([str(path.parent) for path in image_files]))
+            self.scan_image_book_inputs(image_root, image_files)
         else:
+            if image_files:
+                self.write_log(
+                    "拖入了图片和文档的混合批次；本次普通扫描会处理文档。"
+                    "如需识别图片，请单独拖入图片或在高级工具中使用截图成书。/ "
+                    "Mixed image/document drop detected; normal scan will process documents. "
+                    "Drop images separately or use Image Book in Advanced Tools."
+                )
             self.scan()
 
     def build_options(self):

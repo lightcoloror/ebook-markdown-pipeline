@@ -23,13 +23,13 @@ MCP-native agents can call `get_agent_contract` first to retrieve `schema_versio
 
 The contract and HTTP `/health` also expose operating context: config sources, pipeline capabilities, `risk_status`, recognition-first route defaults, and long-task guidance. Agents should inspect those fields before choosing heavy PDF/OCR/VLM routes.
 
-`inspect_document` and `process_material` accept `model_mode=local|online|hybrid|auto`. In the current implementation this only adds `online_enhancement` recommendations and risk fields; it does not call remote providers. Agents should treat `online_enhancement.remote_call_enabled=false` as a hard stop and must not call vendor APIs directly.
+`inspect_document` and `process_material` accept `model_mode=local|online|hybrid|auto`. Inspection never calls remote providers. `process_material` can return an `enhance_job_artifact` next action when a completed Markdown artifact should receive a second-pass structure enhancement; that action remains versioned/non-overwriting and still requires `allow_remote=true` for real remote providers. Agents should treat `online_enhancement.remote_call_enabled=false` as a hard stop and must not call vendor APIs directly.
 
 When an explicit online/fake enhancement is required, use `run_online_enhancement`. The tool supports `ocr_layout`, `vlm_layout`, `text_structure`, `table_repair`, and `embedding`. It defaults to `provider_mode=fake`; real OpenAI-compatible calls require `provider_mode=openai_compatible`, `model_mode=hybrid|online|auto`, and `allow_remote=true`.
 
 Pass `output` when the enhancement result should survive handoff to another agent or human reviewer. The tool writes `online-enhancement-<task>.json/md` artifacts and returns `next_actions` for reading them.
 
-For an already converted Markdown file with weak headings, call `enhance_markdown_structure`. It runs local structure repair first, writes a versioned `*.structure-enhanced.md` plus reports, and only invokes `TextStructureProvider` when `model_mode` is explicitly non-local.
+For an already converted Markdown file with weak headings, call `enhance_markdown_structure`. It runs local structure repair first, writes a versioned `*.structure-enhanced.md` plus reports, and only invokes `TextStructureProvider` when `model_mode` is explicitly non-local. If an agent only has a completed `job_id`, prefer `enhance_job_artifact`; it finds the Markdown artifact itself and then delegates to the same structure enhancement path.
 
 ## Recommended Integration
 
@@ -152,7 +152,7 @@ Container-side health check:
 curl -H "Authorization: Bearer replace-with-a-local-token" "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/health"
 ```
 
-The health response includes `schema_version`, `tool_count`, `tools`, `supports_async_jobs`, `supports_artifacts`, `http_config`, `config_sources`, `local_env_exists`, `local_env_loaded_keys`, `pipeline_capabilities`, `provider_status`, `backend_status`, `capability_status`, and `risk_status`. Agents should use it for capability discovery before making tool calls and should read `http_config.config_path` and `config_sources.local_env` instead of guessing ports or local override files. `local_env_loaded_keys` contains key names only; it must not expose environment variable values.
+The health response includes `schema_version`, `tool_count`, `tools`, `supports_async_jobs`, `supports_artifacts`, `http_config`, `config_sources`, `local_env_exists`, `local_env_loaded_keys`, `pipeline_capabilities`, `provider_status`, `backend_status`, `capability_status`, `minimal_ok`, `optional_missing_is_ok`, and `risk_status`. Agents should use it for capability discovery before making tool calls and should read `http_config.config_path` and `config_sources.local_env` instead of guessing ports or local override files. `local_env_loaded_keys` contains key names only; it must not expose environment variable values. Missing optional heavy backends should not block the default local recognition route when `minimal_ok=true`. Soft environment risks such as `media_helper` and `python_dependency_consistency` may be `degraded` without blocking EPUB/TXT/text-layer-PDF conversion.
 
 For a smaller capability-only payload, call:
 

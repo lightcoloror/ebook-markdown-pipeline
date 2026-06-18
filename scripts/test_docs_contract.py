@@ -44,6 +44,7 @@ def main() -> int:
             "OCR character volume",
             "structure repair decision",
             "duration",
+            "enhance_job_artifact",
         ],
         "docs/TOOL_CONTRACT.md": [
             "Batch Quality Baselines",
@@ -76,8 +77,13 @@ def main() -> int:
             "EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG",
             "online_provider_health",
             "without making remote API calls",
+            "minimal_ok",
+            "optional_missing_is_ok",
+            "media_helper",
+            "python_dependency_consistency",
             "local_env_loaded_keys",
             "must not contain secret values",
+            "enhance_job_artifact",
             "GOT-OCR explicit image OCR wrapper",
             "scripts/got_ocr_image_to_md.py",
             "GOT_OCR_SCRIPT",
@@ -135,6 +141,8 @@ def main() -> int:
             "benchmark-quality-comparison.json/md",
             "check_project_readiness.py",
             "check_public_release.py",
+            "generate_backend_scorecard.py",
+            "optional backend scorecard",
             "project-readiness.json/md",
             "test_minimal_entrypoints.py",
             "公开 TXT fixture",
@@ -145,6 +153,7 @@ def main() -> int:
             "python book_converter_ui.py",
             "python batch_convert_books.py",
             "python scripts\\run_quality_gate.py --profile minimal",
+            "RELEASE_CHECKLIST.md",
         ],
         "docs/BACKENDS.md": [
             "Pandoc",
@@ -171,6 +180,7 @@ def main() -> int:
             "commercial-use terms",
             "olmOCR",
             "not main Markdown conversion",
+            "backend-scorecard.json/md",
         ],
         "docs/PROJECT_OVERVIEW.md": [
             "GitHub About Text",
@@ -312,6 +322,7 @@ def main() -> int:
             "structure-enhancement.md",
             "online-enhancement.md",
             "enhance_markdown_structure",
+            "enhance_job_artifact",
             "Weak heading hierarchy",
         ],
         "examples/agent-recipes/online-enhancement.md": [
@@ -326,6 +337,7 @@ def main() -> int:
         ],
         "examples/agent-recipes/structure-enhancement.md": [
             "enhance_markdown_structure",
+            "enhance_job_artifact",
             "enhance_markdown_structure.py",
             "model_mode",
             "local",

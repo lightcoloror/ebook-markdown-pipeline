@@ -28,6 +28,7 @@ REQUIRED_TOOLS = {
     "process_web_archive",
     "run_online_enhancement",
     "enhance_markdown_structure",
+    "enhance_job_artifact",
     "get_job_status",
     "read_artifact",
     "inspect_agent_batch_results",
@@ -69,6 +70,10 @@ HEALTH_FIELDS = {
     "backend_status",
     "capability_status",
     "ok",
+    "minimal_ok",
+    "minimal_required_capabilities",
+    "missing_minimal_capabilities",
+    "optional_missing_is_ok",
     "ready_capabilities",
     "degraded_capabilities",
     "missing_capabilities",
@@ -146,6 +151,11 @@ def main() -> int:
             raise AssertionError(f"health_check must expose capability matrix: {health}")
         if not isinstance(health.get("backend_status"), dict) or not isinstance(health.get("provider_status"), dict):
             raise AssertionError(f"health_check must expose backend/provider status: {health}")
+        if "minimal_ok" not in health or health.get("optional_missing_is_ok") is not True:
+            raise AssertionError(f"health_check must distinguish minimal readiness from optional missing backends: {health}")
+        capability_names = {item.get("name") for item in health.get("capabilities") or []}
+        if not {"media_helper", "python_dependency_consistency"}.issubset(capability_names):
+            raise AssertionError(f"health_check must expose soft environment risk capabilities: {health}")
         online_health = health.get("online_provider_health") or {}
         if online_health.get("schema_version") != "online-model-providers-v1":
             raise AssertionError(f"health_check must expose online provider config health: {health}")
@@ -162,6 +172,7 @@ def main() -> int:
         assert_web_archive_route(tmpdir)
         assert_online_enhancement_tool(tmpdir)
         assert_markdown_structure_enhancement_tool(tmpdir)
+        assert_job_artifact_enhancement_tool(routed, tmpdir)
 
         assert_quality_summary_next_actions(tmpdir)
 
@@ -353,6 +364,28 @@ def assert_pdf_outline_inspection(tmpdir: Path) -> None:
         raise AssertionError(f"PDF bookmarks should expose optional text-structure online route: {inspection}")
     if online.get("remote_call_enabled") is not False:
         raise AssertionError(f"Inspection must not trigger remote calls: {inspection}")
+    routed = call_tool(
+        "process_material",
+        {
+            "input": str(pdf_path),
+            "output": str(tmpdir / "outlined-process-out"),
+            "recursive": False,
+            "pdf_pipeline_mode": "pymupdf4llm",
+            "model_mode": "hybrid",
+        },
+    )
+    actions = routed.get("next_actions") or []
+    if not any(item.get("tool") == "enhance_job_artifact" for item in actions):
+        raise AssertionError(f"Hybrid process_material should expose a job artifact enhancement action: {routed}")
+    for action in actions:
+        if action.get("tool") == "enhance_job_artifact":
+            assert_executable_next_actions([action])
+            args = action.get("arguments") or {}
+            if args.get("overwrite") is not False or args.get("model_mode") != "hybrid":
+                raise AssertionError(f"Enhancement action must be versioned and preserve model_mode: {routed}")
+    outline_job = poll_job(str(routed.get("job_id")))
+    if outline_job.get("status") != "done":
+        raise AssertionError(f"Expected outlined process job to finish: {outline_job}")
 
 
 def assert_presentation_pdf_inspection(tmpdir: Path) -> None:
@@ -663,6 +696,9 @@ def assert_online_enhancement_tool(tmpdir: Path) -> None:
     )
     if needs_permission.get("error") is not True or "allow_remote=true" not in needs_permission.get("message", ""):
         raise AssertionError(f"Expected explicit remote permission requirement: {needs_permission}")
+    assert_executable_next_actions(needs_permission.get("next_actions") or [])
+    if any((item.get("arguments") or {}).get("allow_remote") is True and item.get("safe_default") is True for item in needs_permission.get("next_actions") or []):
+        raise AssertionError(f"Remote-permission retry actions must not be safe defaults: {needs_permission}")
 
 
 def assert_markdown_structure_enhancement_tool(tmpdir: Path) -> None:
@@ -699,6 +735,24 @@ def assert_markdown_structure_enhancement_tool(tmpdir: Path) -> None:
     hybrid_report = json.loads(Path(hybrid.get("report") or "").read_text(encoding="utf-8"))
     if (hybrid_report.get("online_enhancement") or {}).get("status") != "ok":
         raise AssertionError(f"Expected online enhancement payload in report: {hybrid_report}")
+
+
+def assert_job_artifact_enhancement_tool(routed: dict[str, Any], tmpdir: Path) -> None:
+    enhanced = call_tool(
+        "enhance_job_artifact",
+        {
+            "job_id": str(routed.get("job_id")),
+            "output": str(tmpdir / "job-artifact-enhanced"),
+            "model_mode": "local",
+        },
+    )
+    if enhanced.get("status") != "ok" or enhanced.get("source_job_id") != routed.get("job_id"):
+        raise AssertionError(f"Expected job artifact enhancement success: {enhanced}")
+    if not Path(enhanced.get("output") or "").exists():
+        raise AssertionError(f"Expected enhanced Markdown output to exist: {enhanced}")
+    source_artifact = enhanced.get("source_artifact") or {}
+    if source_artifact.get("type") != "markdown":
+        raise AssertionError(f"Expected Markdown source artifact: {enhanced}")
 
 
 def assert_http_contract(input_path: Path, output_path: Path) -> None:

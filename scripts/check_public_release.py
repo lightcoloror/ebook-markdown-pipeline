@@ -106,6 +106,9 @@ def check_required_docs() -> Check:
         "docs/QUICKSTART.md",
         "docs/BACKENDS.md",
         "docs/INSTALLATION.md",
+        "docs/RELEASE_CHECKLIST.md",
+        "docs/GITHUB_RELEASE_TEMPLATE.md",
+        "CHANGELOG.md",
         "THIRD_PARTY_NOTICES.md",
         "docs/TOOL_CONTRACT.md",
     ]

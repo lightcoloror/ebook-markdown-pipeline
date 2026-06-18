@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import hashlib
 import html
+import importlib.metadata as importlib_metadata
 import importlib.util
 import json
 import os
@@ -1105,6 +1106,8 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
         }
     )
     checks.extend(vlm_image_backend_health())
+    checks.append(ffmpeg_avconv_health())
+    checks.append(requests_dependency_health(fast=fast))
     cache_status, cache_detail = mineru_model_cache_status(fast=fast)
     checks.append(
         {
@@ -1123,6 +1126,94 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
         }
     )
     return checks
+
+
+def ffmpeg_avconv_health() -> dict[str, str]:
+    ffmpeg = resolve_command_path("ffmpeg")
+    avconv = resolve_command_path("avconv")
+    if ffmpeg or avconv:
+        return {
+            "name": "FFmpeg/avconv",
+            "kind": "command",
+            "status": "ok",
+            "detail": f"optional media helper available: {ffmpeg or avconv}",
+        }
+    return {
+        "name": "FFmpeg/avconv",
+        "kind": "command",
+        "status": "degraded",
+        "detail": "optional media helper not found; pydub/media-adjacent workflows may warn, but normal ebook/PDF conversion is unaffected",
+    }
+
+
+def requests_dependency_health(*, fast: bool = False) -> dict[str, str]:
+    versions = {
+        "requests": package_version("requests"),
+        "urllib3": package_version("urllib3"),
+        "charset-normalizer": package_version("charset-normalizer"),
+        "chardet": package_version("chardet"),
+    }
+    version_detail = "; ".join(f"{name}={value or 'not installed'}" for name, value in versions.items())
+    if not versions["requests"]:
+        return {
+            "name": "Python requests stack",
+            "kind": "python",
+            "status": "degraded",
+            "detail": f"requests is not installed; optional HTTP/provider tooling may be unavailable; {version_detail}",
+        }
+    if fast:
+        return {
+            "name": "Python requests stack",
+            "kind": "python",
+            "status": "ok",
+            "detail": f"version snapshot only in fast mode; {version_detail}",
+        }
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-W", "default", "-c", "import requests"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=8,
+            check=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "name": "Python requests stack",
+            "kind": "python",
+            "status": "degraded",
+            "detail": f"requests dependency probe failed; {version_detail}; {exc}",
+        }
+    output = (completed.stdout or "").strip()
+    if completed.returncode != 0:
+        return {
+            "name": "Python requests stack",
+            "kind": "python",
+            "status": "degraded",
+            "detail": f"requests import failed; {version_detail}; {output[:240]}",
+        }
+    if "RequestsDependencyWarning" in output:
+        return {
+            "name": "Python requests stack",
+            "kind": "python",
+            "status": "degraded",
+            "detail": f"requests/urllib3/chardet compatibility warning detected; {version_detail}; {output[:240]}",
+        }
+    return {
+        "name": "Python requests stack",
+        "kind": "python",
+        "status": "ok",
+        "detail": f"requests imports without dependency warning; {version_detail}",
+    }
+
+
+def package_version(name: str) -> str:
+    try:
+        return importlib_metadata.version(name)
+    except importlib_metadata.PackageNotFoundError:
+        return ""
 
 
 def vlm_image_backend_health() -> list[dict[str, str]]:
@@ -1240,6 +1331,8 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
     deepseek_ocr_ok = check_ok("DeepSeek-OCR wrapper")
     paddle_vl_ok = check_ok("PaddleOCR-VL wrapper")
     qwen_vl_ok = check_ok("Qwen-VL wrapper")
+    media_helper_ok = check_ok("FFmpeg/avconv")
+    requests_stack_ok = check_ok("Python requests stack")
     mineru_cache = check_status("MinerU model cache")
     cuda_status = check_status("CUDA for torch")
 
@@ -1490,6 +1583,30 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
             "ok" if cuda_status == "ok" else "degraded",
             "Torch CUDA is available." if cuda_status == "ok" else "Torch CUDA is unavailable; model pipelines may run on CPU.",
             "Prefer GPU MinerU/VLM workloads." if cuda_status == "ok" else "Use lighter/fallback pipelines or install CUDA-enabled torch.",
+        )
+    )
+    capabilities.append(
+        capability_item(
+            "media_helper",
+            "ok" if media_helper_ok else "degraded",
+            "FFmpeg/avconv is available for optional media-adjacent workflows."
+            if media_helper_ok
+            else "FFmpeg/avconv is missing; pydub may warn, but normal ebook/PDF conversion is unaffected.",
+            "No action needed for normal conversion."
+            if media_helper_ok
+            else "Install FFmpeg only if audio/media/web-archive helper workflows need it.",
+        )
+    )
+    capabilities.append(
+        capability_item(
+            "python_dependency_consistency",
+            "ok" if requests_stack_ok else "degraded",
+            "The requests/urllib3/charset stack imports without compatibility warnings."
+            if requests_stack_ok
+            else "The Python HTTP dependency stack may be inconsistent; optional network/provider/model-download flows can be flaky.",
+            "Keep using the minimal local path."
+            if requests_stack_ok
+            else "Prefer a project virtual environment and reinstall optional provider/backend dependencies there.",
         )
     )
     return capabilities
@@ -3104,7 +3221,7 @@ def postprocess_text_output(
             collected_candidates.extend(heading_candidates)
         repair = repair_markdown_structure(text, source_kind=source_kind, heading_candidates=collected_candidates)
         text = repair.markdown
-        if repair.decisions:
+        if repair.decisions or repair.cleanup_decisions:
             reports = getattr(args, "_structure_repair_reports", None)
             if reports is None:
                 reports = {}

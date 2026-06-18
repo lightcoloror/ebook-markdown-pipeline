@@ -239,10 +239,10 @@
 ### 后续 TODO
 
 - `online_providers.py` 已提供 `OcrLayoutProvider`、`VlmLayoutProvider`、`TextStructureProvider`、`TableRepairProvider`、`EmbeddingProvider` 抽象，fake provider 测试，以及 OpenAI-compatible adapter。
-- `config/online_providers.example.json` 模板已存在；旧命名 `config/online_models.example.json` 保留为兼容别名。`health_check` / agent contract 已能读取 provider health，`inspect_document` / `process_material` 已能返回 `online_enhancement` 推荐和风险字段，后续让实际管道按显式 `model_mode` 调用 provider。
+- `config/online_providers.example.json` 模板已存在；旧命名 `config/online_models.example.json` 保留为兼容别名。`health_check` / agent contract 已能读取 provider health，`inspect_document` / `process_material` 已能返回 `online_enhancement` 推荐和风险字段。`process_material` 可在 `model_mode=hybrid|online|auto` 且需要文本结构补强时返回 `enhance_job_artifact`，由完成后的 Markdown artifact 触发安全二次增强。
 - `run_online_enhancement` 已提供显式 fake/OpenAI-compatible 调用入口，覆盖 `ocr_layout`、`vlm_layout`、`text_structure`、`table_repair`、`embedding`，真实远程调用需要 `allow_remote=true`。
 - 扩展 `health_check`，在已有 provider 配置/缺失密钥检测基础上增加可选真实连通性、预算和隐私风险检查。
-- 扩展实际管道，在 `model_mode=hybrid|online|auto` 且用户确认成本/隐私风险后读取 `online_enhancement` 并调用 provider。
+- 继续扩展实际管道，在 `model_mode=hybrid|online|auto` 且用户确认成本/隐私风险后，对 OCR/VLM 局部页面、表格候选和信息图片段调用 provider。
 - 扩展 `process_material`，支持 `model_mode=local|online|hybrid|auto`。
 - 为在线 OCR/VLM/结构修复输出增加 fixture 和 smoke test，先用 fake provider 保证契约稳定。
 

@@ -108,6 +108,7 @@ def run_release_profile(args: argparse.Namespace, fixtures_dir: Path, output: Pa
     minimal_output = output / "minimal"
     backend_output = output / "backend-compare"
     ocr_output = output / "ocr-provider-comparison"
+    backend_scorecard_output = output / "backend-scorecard"
     docs_output = output / "docs-contract"
     public_output = output / "public-release"
 
@@ -134,6 +135,15 @@ def run_release_profile(args: argparse.Namespace, fixtures_dir: Path, output: Pa
             "umi",
             "--output",
             str(ocr_output),
+        ],
+        check=False,
+    )
+    backend_scorecard = run(
+        [
+            sys.executable,
+            str(PROJECT_DIR / "scripts" / "generate_backend_scorecard.py"),
+            "--output",
+            str(backend_scorecard_output),
         ],
         check=False,
     )
@@ -172,6 +182,7 @@ def run_release_profile(args: argparse.Namespace, fixtures_dir: Path, output: Pa
                 extra={"regression_tags": regression_tags},
             ),
             release_step("ocr_provider_comparison", ocr.returncode, ocr_output / "ocr-provider-comparison.md"),
+            release_step("optional_backend_scorecard", backend_scorecard.returncode, backend_scorecard_output / "backend-scorecard.md"),
             release_step("docs_contract", docs.returncode, docs_output / "docs-contract.txt"),
             release_step("public_release", public.returncode, public_output / "public-release-check.md"),
         ],

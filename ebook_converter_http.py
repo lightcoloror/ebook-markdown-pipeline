@@ -68,6 +68,7 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
                 tools = tool_schemas()
                 capabilities = cached_capability_summary(capability_cache)
                 operating_context = agent_operating_context()
+                minimal_status = minimal_capability_status(capabilities)
                 self.write_json(
                     {
                         "ok": True,
@@ -105,6 +106,7 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
                             "degraded": capabilities.get("degraded", []),
                             "missing": capabilities.get("missing", []),
                         },
+                        **minimal_status,
                         "operating_context": operating_context,
                         "config_sources": operating_context.get("config_sources", {}),
                         "local_env_exists": operating_context.get("local_env_exists", False),
@@ -118,6 +120,7 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
             if self.path == "/capabilities":
                 capabilities = cached_capability_summary(capability_cache)
                 operating_context = agent_operating_context()
+                minimal_status = minimal_capability_status(capabilities)
                 self.write_json(
                     {
                         "ok": True,
@@ -128,6 +131,7 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
                         "pipeline_capabilities": capabilities,
                         "risk_status": agent_risk_status(capabilities),
                         "provider_status": operating_context.get("online_provider_health", {}),
+                        **minimal_status,
                         "route_defaults": operating_context.get("route_defaults", {}),
                         "long_task_guidance": operating_context.get("long_task_guidance", {}),
                     }
@@ -244,6 +248,7 @@ def http_contract_payload(config: HttpConfig | None = None, *, bind_host: str | 
             "inspect_agent_batch_results",
             "list_agent_batch_results",
             "build_agent_handoff_bundle",
+            "enhance_job_artifact",
         ],
         "supports_async_jobs": True,
         "supports_artifacts": True,
@@ -302,6 +307,18 @@ def safe_capability_summary() -> dict[str, Any]:
         "degraded": payload.get("degraded_capabilities", []),
         "missing": payload.get("missing_capabilities", []),
         "capabilities": payload.get("capabilities", []),
+    }
+
+
+def minimal_capability_status(capabilities: dict[str, Any]) -> dict[str, Any]:
+    required = ["structured_ebooks", "pdf_fast_text"]
+    missing = set(capabilities.get("missing") or [])
+    missing_required = [name for name in required if name in missing]
+    return {
+        "minimal_ok": not missing_required,
+        "minimal_required_capabilities": required,
+        "missing_minimal_capabilities": missing_required,
+        "optional_missing_is_ok": True,
     }
 
 

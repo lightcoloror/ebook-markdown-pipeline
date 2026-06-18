@@ -39,7 +39,7 @@ flowchart TD
     quality -->|"no"| read["Read Markdown/report artifact"]
     quality -->|"yes"| review["Read review_report and follow next_actions"]
     review --> weak{"Weak heading hierarchy?"}
-    weak -->|"yes"| enhance["Run enhance_markdown_structure\nlocal, non-overwrite"]
+    weak -->|"yes"| enhance["Run enhance_markdown_structure or enhance_job_artifact\nlocal, non-overwrite"]
     weak -->|"no"| rerun["Use versioned rerun actions only"]
     enhance --> compare
     rerun --> compare["Compare outputs before replacing anything"]

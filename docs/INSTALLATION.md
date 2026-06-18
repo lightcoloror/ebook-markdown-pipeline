@@ -189,6 +189,8 @@ Check the environment:
 python batch_convert_books.py .\samples .\out --health-check
 ```
 
+The health report separates minimal readiness from optional/heavy backends. `media_helper=degraded` means FFmpeg/avconv is missing for optional media-adjacent helpers; `python_dependency_consistency=degraded` means the requests/urllib3/chardet stack may be inconsistent for optional HTTP/provider/model-download workflows. Neither warning blocks the minimal local conversion path.
+
 Compare PDF pipelines for a representative file:
 
 ```powershell

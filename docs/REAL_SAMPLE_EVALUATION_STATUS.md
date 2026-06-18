@@ -1,8 +1,27 @@
 # Real Sample Evaluation Status
 
-Last updated: 2026-06-01 18:02
+Last updated: 2026-06-18 12:52
 
 This document tracks the evidence needed before changing default pipelines, especially the optional Docling backend.
+
+## v0.2 Release-Candidate Status
+
+The public release path is now guarded by `scripts/check_public_release.py` and `scripts/run_quality_gate.py --profile release`. The release profile includes the minimal quality gate, backend comparison, OCR provider comparison, optional backend scorecard, docs contract, and public safety check.
+
+The current local/private real-sample policy remains unchanged:
+
+- Keep `benchmarks/samples.local.json` and real copyrighted materials untracked.
+- Use public generated fixtures for committed regression gates.
+- Use the local manifest only for quality decisions about real complex PDFs, scanned books, infographics, screenshot books, Chinese heading hierarchy, and table-heavy files.
+- Treat `duration_regression` as a release-review label: decide whether it reflects an acceptable comparison-backend slowdown or a default-route regression before publishing release notes.
+
+Recent v0.2 hardening added:
+
+- Release checklist, changelog, and GitHub release template.
+- Optional backend scorecard.
+- Structure-repair cleanup audits for repeated headers/footers, standalone page numbers, duplicate lines, and early TOC remnants.
+- `enhance_job_artifact` for job-id-based second-pass Markdown structure enhancement.
+- Health soft-risk capabilities for FFmpeg/avconv and requests dependency consistency; these do not block the minimal local conversion path.
 
 ## Current Sample Set
 

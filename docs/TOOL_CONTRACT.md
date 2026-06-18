@@ -15,7 +15,7 @@ Preferred order:
 1. `process_material`
 2. `get_job_status`
 3. `read_artifact`
-4. Specialist tools only when needed, such as `enhance_markdown_structure` for a completed Markdown file that still has weak hierarchy.
+4. Specialist tools only when needed, such as `enhance_markdown_structure` for a known Markdown file or `enhance_job_artifact` when an agent only has a completed job id.
 
 Agents should not directly parse PDFs, images, temporary directories, SQLite files, or model outputs when a tool exists for that purpose.
 
@@ -49,7 +49,7 @@ Online-model option:
 
 - `inspect_document` returns `online_enhancement` with `recommended`, `enabled_by_model_mode`, `remote_call_enabled`, `recommended_routes`, `estimated_pages`, `estimated_items`, `estimated_cost_risk`, `privacy_risk`, `reason`, and `next_step`.
 - `remote_call_enabled` is currently always `false` in inspection. The field exists so future provider-backed pipelines can become explicit and auditable.
-- Agents should not call vendor APIs directly even when `online_enhancement.recommended=true`; use `run_online_enhancement` only after the user or caller explicitly chooses online/hybrid enhancement.
+- Agents should not call vendor APIs directly even when `online_enhancement.recommended=true`; use `run_online_enhancement`, `enhance_markdown_structure`, or `enhance_job_artifact` only after the user or caller explicitly chooses online/hybrid enhancement.
 
 Tika inspect option:
 
@@ -267,7 +267,7 @@ Agents should treat `quality_summary.review_count > 0` as a prompt to read the `
 
 Review checklist JSON entries and completed conversion jobs also include machine-readable `next_actions`. Prefer actions with `tool` and `arguments` / `arguments_list` instead of inferring commands from prose. Rerun actions default to `overwrite=false`, `resume=false`, and an `output_name_suffix` such as `-agent-rerun-mineru`, so agents can compare outputs without replacing the original. These actions are advisory, not automatic permission to overwrite files; ask the user before destructive replacement.
 
-When a completed output is usable but has weak heading hierarchy, `next_actions` may include `enhance_markdown_structure` with `model_mode=local`, `overwrite=false`, and an output folder such as `.structure-enhanced`. This is a safe second-pass suggestion, not an automatic acceptance of the enhanced result.
+When a completed output is usable but has weak heading hierarchy, `next_actions` may include `enhance_markdown_structure` with `model_mode=local`, `overwrite=false`, and an output folder such as `.structure-enhanced`. When the caller has a job id but does not yet know the Markdown output path, `process_material(model_mode=hybrid|online|auto)` may instead include `enhance_job_artifact` with `job_id`, `artifact_type=markdown`, and the same versioned/non-overwriting defaults. These are safe second-pass suggestions, not automatic acceptance of the enhanced result.
 
 ## Structure Repair Report
 
@@ -287,6 +287,10 @@ Important fields:
 Low-confidence or surprising repairs should be treated as review cues, not as silent final truth.
 
 Use `enhance_markdown_structure` when a Markdown file already exists but its heading hierarchy needs a safe second pass. It always writes a new `*.structure-enhanced.md` plus `*.structure-enhanced.report.json/md`; it does not overwrite the source unless `overwrite=true` is explicitly passed. With `model_mode=local`, it only uses local rules. With `model_mode=hybrid|online|auto`, it can call `TextStructureProvider` through the same `provider_mode` / `allow_remote` safety rules as `run_online_enhancement`.
+
+Use `enhance_job_artifact` when the prior step returned a `job_id` and the agent should not guess output paths. It reads the completed job, finds the first readable `markdown` artifact, and delegates to `enhance_markdown_structure`. If the job is still running, it returns a retryable error with a `get_job_status` next action. If no Markdown artifact exists, it returns the available artifact list for review.
+
+Any action whose arguments include `allow_remote=true` must be treated as an explicit user/caller decision and is not a `safe_default`, even when it is non-destructive and writes versioned artifacts.
 
 ## Batch Quality Baselines
 
@@ -421,14 +425,14 @@ Use `risk_status` as a quick preflight:
     "missing": ["docling_documents"]
   },
   "ready_capabilities": ["structured_ebooks", "pdf_fast_text"],
-  "degraded_capabilities": ["gpu_acceleration"],
+  "degraded_capabilities": ["gpu_acceleration", "media_helper", "python_dependency_consistency"],
   "missing_capabilities": ["docling_documents"]
 }
 ```
 
 Agents should use `capabilities` before choosing heavy PDF/OCR routes. For example, if `pdf_structure_recovery` is missing, prefer `pdf_fast_text`, `local_ocr`, or a user-visible health fix instead of blindly launching MinerU.
 
-`get_agent_contract`, HTTP `/contract`, HTTP `/health`, and HTTP `/capabilities` also expose the same operating context fields: `pipeline_capabilities`, `risk_status`, `config_sources`, `local_env_exists`, `local_env_loaded_keys`, `route_defaults`, provider/backend status, and `long_task_guidance`. Agents should use these fields instead of guessing ports, assuming every optional backend is installed, or launching heavy whole-document OCR/VLM jobs synchronously. `local_env_loaded_keys` lists environment variable names only and must not contain secret values.
+`get_agent_contract`, HTTP `/contract`, HTTP `/health`, and HTTP `/capabilities` also expose the same operating context fields: `pipeline_capabilities`, `risk_status`, `config_sources`, `local_env_exists`, `local_env_loaded_keys`, `route_defaults`, provider/backend status, `minimal_ok`, `optional_missing_is_ok`, and `long_task_guidance`. Agents should use these fields instead of guessing ports, assuming every optional backend is installed, or launching heavy whole-document OCR/VLM jobs synchronously. `local_env_loaded_keys` lists environment variable names only and must not contain secret values. Missing optional OCR/VLM backends are expected on a minimal install and are not a reason to skip local conversion when `minimal_ok=true`. Soft risks such as `media_helper` and `python_dependency_consistency` are warnings for optional media/provider/model-download workflows, not blockers for the minimal local path.
 
 Use `show_latest_quality_gate` when an agent needs the most recent local release quality-gate handoff summary without shell access. It reads `benchmarks/runs/latest/release-index.json` first, falls back to the newest `benchmarks/runs/quality-gate/*/release-summary.json`, and returns `status=missing` with a safe manual command if no summary exists. When the index exists but referenced output/report paths have been deleted, it returns `status=stale`, `artifact_status=stale`, and `missing_artifacts`; agents should treat that as a request to run or ask for a fresh release gate rather than trusting the old summary.
 

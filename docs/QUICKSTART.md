@@ -46,3 +46,5 @@ python scripts\run_quality_gate.py --profile minimal
 ```
 
 The quality gate reuses the committed public fixtures by default and only generates them when missing; use `--regenerate-fixtures` when you intentionally want to refresh those sample files. If those checks pass, the minimal local workflow is ready. Install heavier backends only when a report recommends them.
+
+For public release preparation, use [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) after this minimal smoke path passes.

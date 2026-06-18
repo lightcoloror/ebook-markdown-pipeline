@@ -60,6 +60,9 @@ def stage1_checks() -> list[Check]:
     minimal_test = read_text("scripts/test_minimal_entrypoints.py")
     local_env_test = read_text("scripts/test_local_env.py")
     public_release = read_text("scripts/check_public_release.py")
+    release_checklist = read_text("docs/RELEASE_CHECKLIST.md")
+    changelog = read_text("CHANGELOG.md")
+    release_template = read_text("docs/GITHUB_RELEASE_TEMPLATE.md")
     return [
         contains_all(
             "stage1_open_source_usability",
@@ -131,6 +134,19 @@ def stage1_checks() -> list[Check]:
             ["check_tool_contract_paths_are_portable", "tool contract paths are portable", "docs/TOOL_CONTRACT.md"],
             "scripts/check_public_release.py",
         ),
+        contains_all(
+            "stage1_open_source_usability",
+            "release checklist and changelog",
+            release_checklist + "\n" + changelog + "\n" + release_template + "\n" + public_release,
+            [
+                "python scripts\\run_quality_gate.py --profile release",
+                "python scripts\\check_public_release.py",
+                "Optional backend scorecard",
+                "CHANGELOG.md",
+                "docs/GITHUB_RELEASE_TEMPLATE.md",
+            ],
+            "docs/RELEASE_CHECKLIST.md; CHANGELOG.md; docs/GITHUB_RELEASE_TEMPLATE.md; scripts/check_public_release.py",
+        ),
     ]
 
 
@@ -151,6 +167,8 @@ def stage2_checks() -> list[Check]:
     gitignore = read_text(".gitignore")
     quality_test = read_text("scripts/test_quality_gate.py")
     run_quality_gate = read_text("scripts/run_quality_gate.py")
+    backend_scorecard = read_text("scripts/generate_backend_scorecard.py")
+    backend_scorecard_test = read_text("scripts/test_backend_scorecard.py")
     readme = read_text("README.md")
     tracked_private_manifest_check = private_manifest_tracking_check()
     return [
@@ -211,6 +229,19 @@ def stage2_checks() -> list[Check]:
             run_quality_gate + "\n" + quality_test,
             ["should_generate_fixtures", "--regenerate-fixtures", "--no-update-latest", "write_latest_release_index", "Release test runs should not update latest"],
             "scripts/run_quality_gate.py; scripts/test_quality_gate.py",
+        ),
+        contains_all(
+            "stage2_quality_regression",
+            "optional backend scorecard",
+            run_quality_gate + "\n" + backend_scorecard + "\n" + backend_scorecard_test + "\n" + readme,
+            [
+                "generate_backend_scorecard.py",
+                "optional-backend-scorecard-v1",
+                "backend-scorecard.json",
+                "backend-scorecard.md",
+                "optional backend scorecard",
+            ],
+            "scripts/run_quality_gate.py; scripts/generate_backend_scorecard.py; scripts/test_backend_scorecard.py; README.md",
         ),
         tracked_private_manifest_check,
     ]
@@ -399,14 +430,14 @@ def stage4_checks() -> list[Check]:
             "stage4_agent_productization",
             "health and contract context",
             mcp,
-            ["config_sources", "local_env_exists", "local_env_loaded_keys", "pipeline_capabilities", "risk_status", "long_task_guidance", "online_provider_health"],
+            ["config_sources", "local_env_exists", "local_env_loaded_keys", "pipeline_capabilities", "risk_status", "long_task_guidance", "online_provider_health", "media_helper", "python_dependency_consistency"],
             "ebook_converter_mcp.py",
         ),
         contains_all(
             "stage4_agent_productization",
             "machine executable next actions",
             contract,
-            ["next_actions", "tool", "arguments", "powershell_command", "overwrite=false"],
+            ["next_actions", "tool", "arguments", "powershell_command", "overwrite=false", "enhance_job_artifact"],
             "docs/TOOL_CONTRACT.md",
         ),
         contains_all(
