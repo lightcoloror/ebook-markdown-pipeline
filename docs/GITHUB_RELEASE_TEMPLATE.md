@@ -19,7 +19,13 @@ python book_converter_ui.py
 
 ## Quality Gate
 
-Paste the latest result from:
+Generate the first draft from the current changelog and quality-gate evidence:
+
+```powershell
+python scripts\prepare_github_release_notes.py --version vX.Y.Z --output .\release-notes.md
+```
+
+Then verify or paste the latest local result from:
 
 ```powershell
 python scripts\run_quality_gate.py --profile release

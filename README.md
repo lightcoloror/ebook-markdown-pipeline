@@ -202,6 +202,14 @@ Use `--no-update-latest` for temporary release-profile experiments when you do n
 
 Before tagging a release, follow [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) and copy relevant items from [CHANGELOG.md](CHANGELOG.md) into the GitHub release body. A reusable release body template is in [docs/GITHUB_RELEASE_TEMPLATE.md](docs/GITHUB_RELEASE_TEMPLATE.md).
 
+To generate a public-safe GitHub release draft from `CHANGELOG.md` and the latest quality-gate evidence:
+
+```powershell
+python scripts\prepare_github_release_notes.py --version v0.2.0-rc1 --output .\release-notes.md
+```
+
+By default the draft redacts local absolute artifact paths. Add `--include-local-paths` only for private/local review.
+
 To inspect optional backend readiness without running heavy model jobs:
 
 ```powershell

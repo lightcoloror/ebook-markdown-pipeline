@@ -10,6 +10,7 @@ Run from the repository root:
 python scripts\run_quality_gate.py --profile release
 python scripts\check_public_release.py
 python scripts\show_latest_quality_gate.py
+python scripts\prepare_github_release_notes.py --version vX.Y.Z --output .\release-notes.md
 ```
 
 The release profile writes `release-summary.json/md` and updates `benchmarks/runs/latest/release-index.json/md`. If this is only an experiment, pass `--no-update-latest`.
@@ -46,3 +47,5 @@ Before publishing, copy the relevant items from `CHANGELOG.md` into the GitHub r
 - Known optional backend limitations.
 - Latest release quality-gate status and output path.
 - Third-party/backend license reminder.
+
+Prefer generating the first draft with `scripts/prepare_github_release_notes.py`. The default output redacts local absolute paths for public sharing; use `--include-local-paths` only for private/local review.

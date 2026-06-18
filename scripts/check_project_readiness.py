@@ -63,6 +63,7 @@ def stage1_checks() -> list[Check]:
     release_checklist = read_text("docs/RELEASE_CHECKLIST.md")
     changelog = read_text("CHANGELOG.md")
     release_template = read_text("docs/GITHUB_RELEASE_TEMPLATE.md")
+    release_notes_generator = read_text("scripts/prepare_github_release_notes.py")
     return [
         contains_all(
             "stage1_open_source_usability",
@@ -137,15 +138,17 @@ def stage1_checks() -> list[Check]:
         contains_all(
             "stage1_open_source_usability",
             "release checklist and changelog",
-            release_checklist + "\n" + changelog + "\n" + release_template + "\n" + public_release,
+            release_checklist + "\n" + changelog + "\n" + release_template + "\n" + public_release + "\n" + release_notes_generator,
             [
                 "python scripts\\run_quality_gate.py --profile release",
                 "python scripts\\check_public_release.py",
+                "python scripts\\prepare_github_release_notes.py --version vX.Y.Z --output .\\release-notes.md",
                 "Optional backend scorecard",
+                "redacts local absolute paths",
                 "CHANGELOG.md",
                 "docs/GITHUB_RELEASE_TEMPLATE.md",
             ],
-            "docs/RELEASE_CHECKLIST.md; CHANGELOG.md; docs/GITHUB_RELEASE_TEMPLATE.md; scripts/check_public_release.py",
+            "docs/RELEASE_CHECKLIST.md; CHANGELOG.md; docs/GITHUB_RELEASE_TEMPLATE.md; scripts/check_public_release.py; scripts/prepare_github_release_notes.py",
         ),
     ]
 

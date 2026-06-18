@@ -11,6 +11,7 @@ All notable public-facing changes should be recorded here. This project keeps op
 - Structure repair cleanup audit fields for repeated headers/footers, standalone page numbers, consecutive duplicate lines, and early table-of-contents remnants.
 - `enhance_job_artifact` agent tool for safe second-pass Markdown structure enhancement from a completed job id without guessing output paths.
 - Soft environment capability checks for FFmpeg/avconv (`media_helper`) and requests/urllib3/chardet compatibility (`python_dependency_consistency`).
+- Public-safe GitHub release notes generator that combines `CHANGELOG.md` with release quality-gate evidence and omits local artifact paths by default.
 
 ### Changed
 
