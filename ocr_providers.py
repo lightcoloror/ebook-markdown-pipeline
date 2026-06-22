@@ -227,9 +227,9 @@ def extract_rapidocr_items(raw: Any) -> list[Any]:
 
 
 def rows_from_parallel_values(boxes: Any, texts: Any, scores: Any = None) -> list[Any]:
-    boxes_list = list(boxes or [])
-    texts_list = list(texts or [])
-    scores_list = list(scores or [])
+    boxes_list = list(optional_sequence(boxes))
+    texts_list = list(optional_sequence(texts))
+    scores_list = list(optional_sequence(scores))
     rows = []
     for index, text in enumerate(texts_list):
         rows.append(
@@ -240,6 +240,17 @@ def rows_from_parallel_values(boxes: Any, texts: Any, scores: Any = None) -> lis
             ]
         )
     return rows
+
+
+def optional_sequence(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if hasattr(value, "tolist"):
+        try:
+            value = value.tolist()
+        except Exception:
+            pass
+    return list(value)
 
 
 def normalize_rapidocr_item(item: Any, *, index: int) -> dict[str, Any] | None:
@@ -283,9 +294,13 @@ def normalize_score(value: Any) -> float | None:
 
 
 def normalize_ocr_box(raw_box: Any) -> list[float] | None:
-    if not raw_box:
+    if raw_box is None:
         return None
     try:
+        if hasattr(raw_box, "tolist"):
+            raw_box = raw_box.tolist()
+        if not raw_box:
+            return None
         if isinstance(raw_box, dict):
             values = [raw_box.get(key) for key in ("x1", "y1", "x2", "y2")]
             if all(value is not None for value in values):

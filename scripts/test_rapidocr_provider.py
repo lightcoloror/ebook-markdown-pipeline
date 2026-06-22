@@ -8,9 +8,17 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR.parent))
 
 from ebook_markdown_pipeline.batch_convert_books import default_options, dependency_health_report, environment_capability_summary  # noqa: E402
-from ebook_markdown_pipeline.ocr_providers import normalize_rapidocr_blocks, rapidocr_default_params, rapidocr_model_root_dir, recognize_image_with_rapidocr  # noqa: E402
+from ebook_markdown_pipeline.ocr_providers import normalize_ocr_box, normalize_rapidocr_blocks, rapidocr_default_params, rapidocr_model_root_dir, recognize_image_with_rapidocr, rows_from_parallel_values  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book_from_sources  # noqa: E402
 import ebook_markdown_pipeline.image_book_rebuilder as rebuilder  # noqa: E402
+
+
+class ArrayLike:
+    def __init__(self, value):
+        self.value = value
+
+    def tolist(self):
+        return self.value
 
 
 class FakeRapidOCREngine:
@@ -44,6 +52,30 @@ def main() -> int:
         }
     ]:
         raise AssertionError(f"Unexpected normalized RapidOCR blocks: {blocks}")
+
+    array_blocks = normalize_rapidocr_blocks(
+        {
+            "boxes": ArrayLike([[[2, 3], [10, 3], [10, 12], [2, 12]]]),
+            "txts": ArrayLike(["Array-like OCR block"]),
+            "scores": None,
+        }
+    )
+    if array_blocks != [
+        {
+            "index": 1,
+            "text": "Array-like OCR block",
+            "provider": "rapidocr",
+            "bbox": [2.0, 3.0, 10.0, 12.0],
+        }
+    ]:
+        raise AssertionError(f"Unexpected array-like RapidOCR blocks: {array_blocks}")
+
+    rows = rows_from_parallel_values(ArrayLike([]), ArrayLike(["Text without box"]), ArrayLike([]))
+    if rows != [[None, "Text without box", None]]:
+        raise AssertionError(f"Unexpected rows with empty array-like boxes/scores: {rows}")
+
+    if normalize_ocr_box(ArrayLike([[5, 6], [12, 6], [12, 14], [5, 14]])) != [5.0, 6.0, 12.0, 14.0]:
+        raise AssertionError("Array-like OCR boxes should normalize through tolist().")
 
     with tempfile.TemporaryDirectory(prefix="rapidocr-provider-") as tmp:
         root = Path(tmp)
