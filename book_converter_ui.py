@@ -2197,8 +2197,9 @@ class BookConverterUI:
         label_map = {
             "read_report": "读报告 / Report",
             "open_output": "看输出 / Output",
-            "compare_pdf_pipelines": "PDF对比 / Compare",
-            "rerun": "重跑 / Rerun",
+            "enhance_markdown_structure": "版本化结构增强 / Safe structure",
+            "compare_pdf_pipelines": "PDF对比不覆盖 / Compare",
+            "rerun": "版本化重跑 / Safe rerun",
             "export_location_review_pack": "导出复查包 / Review pack",
             "inspect_pdf_outline": "查书签 / Outline",
             "inspect_toc": "查目录 / TOC",
@@ -2303,6 +2304,13 @@ class BookConverterUI:
             return True
         if name == "compare_pdf_pipelines":
             self.start_pdf_pipeline_compare()
+            return True
+        if name == "enhance_markdown_structure":
+            self.open_selected_output()
+            self.write_log(
+                "建议 / Suggestion: 结构增强默认写入版本化文件，不覆盖原输出。"
+                " / Structure enhancement should write versioned output without overwriting."
+            )
             return True
         if name == "rerun":
             pipeline = str(action.get("pipeline") or "")

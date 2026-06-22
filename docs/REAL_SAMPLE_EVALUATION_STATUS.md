@@ -154,6 +154,16 @@ Result:
 
 This is the strongest stability evidence so far: the full 50-sample manifest completed without failures under the current timeout/fallback protections. Remaining work is quality-focused rather than crash/stuck-focused: the 4 poor and 8 review outputs mostly lack Markdown headings, contain HTML residue, or show OCR line-break noise. These are candidates for targeted PDF pipeline comparison and structure-enhancement passes rather than broad stability fixes.
 
+To turn those review/poor outputs into a repeatable improvement queue, run:
+
+```powershell
+python scripts\build_quality_improvement_queue.py `
+  --benchmark-results benchmarks\runs\full-real-current\benchmark-results.json `
+  --output benchmarks\runs\full-real-current\quality-improvement-queue
+```
+
+The queue classifies items into structure repair, OCR cleanup, Markdown cleanup, table/layout review, or manual review. It redacts full local paths by default; use `--include-paths` only for private local triage.
+
 ## Latest Four-Pipeline PDF Comparison
 
 Run directory: `benchmarks/compare-runs/real-four-pipelines-01`

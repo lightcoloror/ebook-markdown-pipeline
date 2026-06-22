@@ -158,9 +158,8 @@ If an external dispatch system tracks ports, it should record:
 
 - service: `ebook_markdown_pipeline`
 - mode: `on-demand HTTP bridge`
-- config source: `D:\used-by-codex\ebook_markdown_pipeline\config\http.env`
+- config source: `<project-path>\config\http.env`
 - current configured URL: `http://127.0.0.1:9241`
 - status when not listening: `on-demand` or `needs_manual_start`, not `regression`
 
 Any future port change should be made in `config/http.env` first, then verified through `scripts/test_http_config.py` and `/health` after startup.
-
