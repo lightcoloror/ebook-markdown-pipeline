@@ -26,6 +26,7 @@ from ebook_markdown_pipeline.ebook_converter_mcp import (  # noqa: E402
 )
 from ebook_markdown_pipeline.artifact_schema import SCHEMA_VERSION  # noqa: E402
 from ebook_markdown_pipeline.http_config import HttpConfig, load_http_config  # noqa: E402
+from ebook_markdown_pipeline.service_readiness import service_readiness_payload  # noqa: E402
 
 
 def main() -> int:
@@ -69,6 +70,7 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
                 capabilities = cached_capability_summary(capability_cache)
                 operating_context = agent_operating_context()
                 minimal_status = minimal_capability_status(capabilities)
+                readiness = service_readiness_payload(config=http_config)
                 self.write_json(
                     {
                         "ok": True,
@@ -82,6 +84,7 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
                         "tools": [tool["name"] for tool in tools],
                         "supports_async_jobs": True,
                         "supports_artifacts": True,
+                        "service_readiness": readiness,
                         "http_config": {
                             "scheme": http_config.scheme,
                             "host": http_config.host,
@@ -230,6 +233,7 @@ def http_contract_payload(config: HttpConfig | None = None, *, bind_host: str | 
     http_config = config or load_http_config()
     tools = tool_schemas()
     operating_context = agent_operating_context()
+    readiness = service_readiness_payload(config=http_config)
     return {
         "schema_version": "ebook-http-contract-v1",
         "server": SERVER_NAME,
@@ -252,6 +256,7 @@ def http_contract_payload(config: HttpConfig | None = None, *, bind_host: str | 
         ],
         "supports_async_jobs": True,
         "supports_artifacts": True,
+        "service_readiness": readiness,
         "capability_endpoints": ["/health", "/capabilities", "/contract"],
         "operating_context": operating_context,
         "pipeline_capabilities": operating_context["pipeline_capabilities"],

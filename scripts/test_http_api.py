@@ -49,6 +49,13 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"Health response has wrong display name: {health}")
     if not health.get("supports_async_jobs") or not health.get("supports_artifacts"):
         raise RuntimeError(f"Health response is missing capability flags: {health}")
+    readiness = health.get("service_readiness") or {}
+    if readiness.get("schema_version") != "ebook-service-readiness-v1":
+        raise RuntimeError(f"Health response is missing service readiness: {health}")
+    if readiness.get("status") not in {"ready", "on-demand", "needs_manual_start", "degraded", "blocked"}:
+        raise RuntimeError(f"Health response has invalid service readiness status: {health}")
+    if "hard-coding 8765" not in readiness.get("fallback", {}).get("do_not_assume_port", ""):
+        raise RuntimeError(f"Health service readiness should warn against stale fixed ports: {health}")
     health_tool_names = set(health.get("tools", []))
     if not {"get_agent_contract", "read_artifact", "show_latest_quality_gate", "inspect_agent_batch_results", "list_agent_batch_results", "build_agent_handoff_bundle"}.issubset(health_tool_names):
         raise RuntimeError(f"Health response is missing tool names: {health}")
@@ -97,6 +104,11 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"HTTP contract missing process_material v2 schema: {contract}")
     if not contract.get("supports_async_jobs") or not contract.get("supports_artifacts"):
         raise RuntimeError(f"HTTP contract missing capability flags: {contract}")
+    contract_readiness = contract.get("service_readiness") or {}
+    if contract_readiness.get("schema_version") != "ebook-service-readiness-v1":
+        raise RuntimeError(f"HTTP contract missing service readiness: {contract}")
+    if "mcp" not in contract_readiness.get("preferred_entrypoints", []):
+        raise RuntimeError(f"HTTP contract should advertise MCP fallback in service readiness: {contract}")
     if "/capabilities" not in contract.get("capability_endpoints", []):
         raise RuntimeError(f"HTTP contract should advertise /capabilities: {contract}")
     if contract.get("tool_count", 0) < 10 or not isinstance(contract.get("tools"), list):

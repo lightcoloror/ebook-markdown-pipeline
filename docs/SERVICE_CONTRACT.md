@@ -1,0 +1,166 @@
+# Service Contract And Readiness
+
+This document is the source of truth for discovering and starting the service-facing entry points of the Graphic-Text Material Converter.
+
+Last reviewed: 2026-06-19 07:45 Asia/Shanghai by Codex.
+
+## Status Summary
+
+- Current status for dispatch: `on-demand`.
+- HTTP `8765` is not the current contract port.
+- The current HTTP port is read from `config/http.env`; at this review it is `9241`.
+- The HTTP bridge is not expected to be always-on unless an operator or automation explicitly starts it.
+- MCP stdio and CLI remain valid without any listening HTTP port.
+
+## Current Port Contract
+
+The single HTTP port source is:
+
+```text
+config/http.env
+```
+
+Current values:
+
+```text
+EBOOK_CONVERTER_HTTP_SCHEME=http
+EBOOK_CONVERTER_HTTP_HOST=127.0.0.1
+EBOOK_CONVERTER_HTTP_PORT=9241
+EBOOK_CONVERTER_DOCKER_HTTP_HOST=0.0.0.0
+```
+
+Do not hard-code `8765`, `9241`, or any other port in dispatch prompts, desktop shortcuts, Docker manifests, or external monitors. Read `config/http.env`, or call HTTP `/health` after the bridge has been started.
+
+## Is HTTP Always Running?
+
+No. The HTTP bridge is an on-demand transport adapter for Docker-hosted or cross-process agents. It is useful when an agent cannot use Windows stdio MCP directly.
+
+If neither `127.0.0.1:9241` nor the configured port is listening, treat that as `needs_manual_start` for HTTP only, not as a converter outage.
+
+## Entry Point Priority
+
+Use this order for normal operations:
+
+1. `MCP stdio`: preferred for OpenClaw, Hermes, Codex, Claude Code, and any agent that can launch `start_mcp.cmd` and use tool schemas.
+2. `HTTP bridge`: preferred for Docker-hosted agents or remote/local processes that cannot use Windows stdio MCP. It must be explicitly started first.
+3. `CLI`: stable fallback for local automation, batch processing, debugging, and recovery when HTTP is unavailable.
+4. `Desktop UI`: preferred for manual human operation.
+5. `Watch-folder`: not a first-class always-on service in this project. Use agent batch manifests, output folders, and handoff artifacts instead of assuming a watcher is running.
+
+## Availability Checks
+
+### Read The Config
+
+```powershell
+Get-Content .\config\http.env
+```
+
+### Check Whether HTTP Is Listening
+
+```powershell
+Get-NetTCPConnection -LocalPort <EBOOK_CONVERTER_HTTP_PORT> -ErrorAction SilentlyContinue
+```
+
+No result means the HTTP bridge is not running. That is expected for on-demand mode.
+
+### Check MCP Without Starting HTTP
+
+```powershell
+python scripts\test_mcp_stdio.py
+```
+
+### Check HTTP Config Without Starting HTTP
+
+```powershell
+python scripts\test_http_config.py
+```
+
+### Check Core Import Without Heavy Backends
+
+```powershell
+python -c "import batch_convert_books; print('ebook_markdown_pipeline import ok')"
+```
+
+These checks do not run a real ebook/PDF conversion and do not start heavyweight OCR/VLM backends.
+
+## Safe HTTP Startup
+
+Start locally for host-only access:
+
+```powershell
+.\start_http_api.cmd
+```
+
+Or:
+
+```powershell
+python ebook_converter_http.py
+```
+
+Start for Docker agent access only when a local API token is set:
+
+```powershell
+$env:EBOOK_CONVERTER_API_TOKEN = "replace-with-a-local-token"
+python ebook_converter_http.py --host 0.0.0.0
+```
+
+The server reads the default host and port from `config/http.env`. Binding to a non-local host without a token is refused by `ebook_converter_http.py`.
+
+After startup, verify:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:<EBOOK_CONVERTER_HTTP_PORT>/health
+```
+
+The health payload includes `http_config`, `config_sources`, `pipeline_capabilities`, `minimal_ok`, `optional_missing_is_ok`, and route defaults. Agents should inspect those fields before choosing heavy OCR/PDF/VLM routes.
+
+## Failure And Fallback Semantics
+
+If HTTP is not listening:
+
+- For MCP-capable agents: use `start_mcp.cmd` and call `get_agent_contract` / `process_material`.
+- For local automation: call the CLI or Python helper examples directly.
+- For Docker agents: report `needs_manual_start` for the HTTP bridge and either ask the operator to start it or switch to a host-side CLI batch/handoff flow.
+- Do not mark the whole converter as down if MCP and CLI checks pass.
+
+If the configured HTTP port is occupied:
+
+- Do not edit scattered scripts or prompts.
+- Change only `config/http.env` after a local port preflight.
+- Then re-run `python scripts\test_http_config.py` and update any external port registry through the owning dispatch process.
+
+If `/health` responds but optional backends are missing:
+
+- Treat `minimal_ok=true` as sufficient for EPUB/TXT/text-layer PDF conversion.
+- Treat missing MinerU, Marker, Docling, OCR/VLM providers, or GPU as optional degradation unless the specific job requires them.
+
+## OpenClaw And Local-Tools Degradation Policy
+
+OpenClaw or local-tools checks should classify this project as:
+
+- `ready` when MCP or CLI health checks pass and no HTTP bridge is required for the current job.
+- `on-demand` when HTTP is not listening but `config/http.env`, MCP, and CLI checks pass.
+- `needs_manual_start` when Docker/OpenClaw specifically requires HTTP and the bridge is not running.
+- `degraded` when minimal checks pass but the requested optional backend is missing or slow/risky.
+- `blocked` only when the required entry point for the requested job fails and no fallback is acceptable.
+
+For Docker-based OpenClaw/Hermes jobs, the safe fallback order is:
+
+1. Start HTTP bridge explicitly, then call `http://host.docker.internal:<EBOOK_CONVERTER_HTTP_PORT>`.
+2. If HTTP cannot be started, run a host-side CLI or MCP batch and hand off `agent-batch-results.json` / `run_summary.md`.
+3. If neither host-side execution nor HTTP is allowed, report `blocked` with the missing entry point and required manual action.
+
+## Port Registry Backfill
+
+This project should not directly modify the global port registry from inside conversion code or documentation checks.
+
+If an external dispatch system tracks ports, it should record:
+
+- service: `ebook_markdown_pipeline`
+- mode: `on-demand HTTP bridge`
+- config source: `D:\used-by-codex\ebook_markdown_pipeline\config\http.env`
+- current configured URL: `http://127.0.0.1:9241`
+- status when not listening: `on-demand` or `needs_manual_start`, not `regression`
+
+Any future port change should be made in `config/http.env` first, then verified through `scripts/test_http_config.py` and `/health` after startup.
+

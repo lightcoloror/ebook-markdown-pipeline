@@ -17,6 +17,8 @@ The long-term technical direction is documented in [TECHNICAL_DIRECTION.md](TECH
 
 The stable agent calling contract is documented in [TOOL_CONTRACT.md](TOOL_CONTRACT.md). Agents should prefer `process_material`, poll long jobs with `get_job_status`, and read outputs through `read_artifact`.
 
+Service discovery, HTTP on-demand status, port configuration, and MCP/HTTP/CLI fallback rules are documented in [SERVICE_CONTRACT.md](SERVICE_CONTRACT.md). Dispatchers should read that document before treating a missing HTTP listener as a converter outage.
+
 The architecture diagrams and module boundaries are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 MCP-native agents can call `get_agent_contract` first to retrieve `schema_version=ebook-agent-contract-v1`, preferred entrypoints, specialist tools, full tool schemas, artifact/error contract versions, and docs pointers without scraping this document.

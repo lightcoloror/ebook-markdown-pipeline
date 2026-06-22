@@ -297,6 +297,7 @@ MCP 工具包括：
 
 稳定调用契约见 [docs/TOOL_CONTRACT.md](docs/TOOL_CONTRACT.md)，详细接入说明见 [docs/AGENT_INTEGRATION.md](docs/AGENT_INTEGRATION.md)。支持 skill 的 agent 可参考 [skills/ebook-markdown-pipeline/SKILL.md](skills/ebook-markdown-pipeline/SKILL.md)。其中 `ebook-markdown-pipeline` 是稳定机器 ID，用户可见名称是“图文材料转换器”。
 HTTP、MCP stdio 和 CLI-style 的最小调用示例见 [examples/agent-calls](examples/agent-calls)。
+服务发现、HTTP 按需启动、端口配置和 MCP/HTTP/CLI 降级规则见 [docs/SERVICE_CONTRACT.md](docs/SERVICE_CONTRACT.md)。调度器不要把缺失的 HTTP 监听直接判定为转换器故障，应先读取 `config/http.env` 并确认当前任务是否真的需要 HTTP。
 
 如果要把当前机器环境封装成可复查材料，可导出环境快照：
 

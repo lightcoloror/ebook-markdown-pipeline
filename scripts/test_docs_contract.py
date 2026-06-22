@@ -9,6 +9,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 def main() -> int:
     required = {
         "docs/AGENT_INTEGRATION.md": [
+            "SERVICE_CONTRACT.md",
             "--baseline-results",
             "get_agent_contract",
             "ebook-agent-contract-v1",
@@ -113,6 +114,7 @@ def main() -> int:
             "Quality comparison status",
         ],
         "README.md": [
+            "docs/SERVICE_CONTRACT.md",
             "docs/QUICKSTART.md",
             "docs/BACKENDS.md",
             "docs/PROJECT_OVERVIEW.md",
@@ -155,6 +157,18 @@ def main() -> int:
             "python scripts\\prepare_github_release_notes.py --version vX.Y.Z --output .\\release-notes.md",
             "redacts local absolute paths",
             "--include-local-paths",
+        ],
+        "docs/SERVICE_CONTRACT.md": [
+            "on-demand",
+            "`8765` is not the current contract port",
+            "config/http.env",
+            "EBOOK_CONVERTER_HTTP_PORT=9241",
+            "MCP stdio",
+            "HTTP bridge",
+            "CLI",
+            "needs_manual_start",
+            "OpenClaw",
+            "host.docker.internal",
         ],
         "docs/GITHUB_RELEASE_TEMPLATE.md": [
             "python scripts\\prepare_github_release_notes.py --version vX.Y.Z --output .\\release-notes.md",
