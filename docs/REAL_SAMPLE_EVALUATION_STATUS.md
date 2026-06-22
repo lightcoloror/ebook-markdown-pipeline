@@ -164,6 +164,8 @@ python scripts\build_quality_improvement_queue.py `
 
 The queue classifies items into structure repair, OCR cleanup, Markdown cleanup, table/layout review, or manual review. It redacts full local paths by default; use `--include-paths` only for private local triage.
 
+The same queue is now available from the desktop UI in `高级工具 / Advanced Tools` -> `质量队列 / Quality Queue`, and from agents through the MCP/HTTP tool `build_quality_improvement_queue`. UI/local triage uses `include_paths=true` so selected outputs and reports can be opened safely; public CLI output remains path-redacted by default.
+
 ## Latest Four-Pipeline PDF Comparison
 
 Run directory: `benchmarks/compare-runs/real-four-pipelines-01`

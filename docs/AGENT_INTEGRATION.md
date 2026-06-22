@@ -77,6 +77,8 @@ Pass `--output <dir>` to persist `agent-smoke-summary.json/md` as handoff eviden
 
 Agents can call `show_latest_quality_gate` through MCP/HTTP to read the ignored local `benchmarks/runs/latest/release-index.json` handoff summary without shell access. If no latest summary exists, the tool returns `status=missing` with a safe manual command suggestion. If the index exists but points at deleted temporary reports, it returns `status=stale`, `artifact_status=stale`, and `missing_artifacts` so agents can ask for or run a fresh release gate instead of trusting dangling paths.
 
+Agents can call `build_quality_improvement_queue` through MCP/HTTP to turn a `benchmark-results.json` file into `quality-improvement-queue.json/md`. The queue classifies review/poor/failed samples into structure repair, OCR cleanup, Markdown cleanup, table/layout review, or manual review. It redacts full local paths by default; pass `include_paths=true` only for private local triage when executable follow-up actions need concrete source/output/report paths.
+
 When running release-profile experiments in temporary directories, pass `--no-update-latest` so the shared latest handoff index continues to point at the last intentional release gate run.
 
 Use `--fail-fast` for local debugging when the first failure is enough; omit it when you want a complete handoff report.
@@ -230,6 +232,23 @@ Useful optional parameters:
 - `include_hidden`
 - `output_format`
 - `pdf_pipeline_mode`
+
+### `build_quality_improvement_queue`
+
+Builds a review queue from benchmark results. Use it after real-sample or release-quality runs when an agent needs to decide which outputs need structure enhancement, OCR cleanup, Markdown cleanup, table/layout review, or manual review.
+
+Input:
+
+```json
+{
+  "benchmark_results": "benchmarks/runs/full-real-current/benchmark-results.json",
+  "output": "benchmarks/runs/full-real-current/quality-improvement-queue",
+  "include_paths": false,
+  "format": "json"
+}
+```
+
+Output includes `summary`, `items`, `artifacts`, `next_actions`, and `recommended_followup`. Default output is public-safe and path-redacted. For a private local handoff, use `include_paths=true` so `next_actions` can include concrete non-overwriting structure-enhancement or report-reading arguments.
 
 ### `health_check`
 

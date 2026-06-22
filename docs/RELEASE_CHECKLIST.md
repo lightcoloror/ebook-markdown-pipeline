@@ -11,6 +11,7 @@ python scripts\run_quality_gate.py --profile release
 python scripts\check_public_release.py
 python scripts\show_latest_quality_gate.py
 python scripts\check_service_readiness.py --json
+python scripts\build_quality_improvement_queue.py --benchmark-results benchmarks\runs\full-real-current\benchmark-results.json --output benchmarks\runs\full-real-current\quality-improvement-queue
 python scripts\prepare_github_release_notes.py --version vX.Y.Z --output .\release-notes.md
 ```
 
@@ -31,6 +32,7 @@ The release profile writes `release-summary.json/md` and updates `benchmarks/run
 - OCR provider comparison should write `ocr-provider-comparison.json/md`.
 - Optional backend scorecard should write `backend-scorecard.json/md`.
 - Release summary should list regression tags such as `structure_regression`, `ocr_regression`, `table_regression`, or `duration_regression` when present.
+- Quality improvement queue should classify current review/poor/failed benchmark outputs and stay path-redacted unless it is a private local triage run.
 
 ## Agent Contract
 
@@ -39,6 +41,7 @@ The release profile writes `release-summary.json/md` and updates `benchmarks/run
 - `enhance_job_artifact` should remain non-overwriting by default and should not require agents to guess Markdown output paths.
 - `/health`, `/capabilities`, and `get_agent_contract` must expose backend/provider capability status.
 - `scripts/check_service_readiness.py --json` should report `on-demand` or `ready`, not `blocked`, when HTTP is not required.
+- `build_quality_improvement_queue` should return non-destructive `next_actions`; concrete local paths should require `include_paths=true`.
 - Remote online model calls must require explicit `allow_remote=true`.
 
 ## Release Notes

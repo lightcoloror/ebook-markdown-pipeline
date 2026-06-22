@@ -7,9 +7,10 @@ import tempfile
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_DIR / "scripts"))
+sys.path.insert(0, str(PROJECT_DIR.parent))
 
-from build_quality_improvement_queue import build_quality_improvement_queue  # noqa: E402
+from ebook_markdown_pipeline.quality_improvement_queue import build_quality_improvement_queue  # noqa: E402
+from ebook_markdown_pipeline.ebook_converter_mcp import call_tool  # noqa: E402
 
 
 def main() -> int:
@@ -61,6 +62,10 @@ def main() -> int:
         raise AssertionError(f"Expected classified issue categories: {queue}")
     if "source" in queue["items"][0] or "D:\\private" in json.dumps(queue, ensure_ascii=False):
         raise AssertionError(f"Default queue output should redact private paths: {queue}")
+    queue_with_paths = build_quality_improvement_queue(payload, include_paths=True)
+    structure_action = next((item for item in queue_with_paths.get("next_actions") or [] if item.get("tool") == "enhance_markdown_structure"), None)
+    if not structure_action or (structure_action.get("arguments") or {}).get("input") != r"D:\private\weak.md":
+        raise AssertionError(f"Expected include_paths queue to expose executable structure action: {queue_with_paths}")
 
     with tempfile.TemporaryDirectory(prefix="quality-queue-") as tmp:
         root = Path(tmp)
@@ -81,6 +86,22 @@ def main() -> int:
             raise AssertionError(f"Unexpected CLI queue result: {result}")
         if not (output_dir / "quality-improvement-queue.md").exists():
             raise AssertionError("Expected Markdown quality queue artifact.")
+        agent_output = root / "agent-queue"
+        agent_result = call_tool(
+            "build_quality_improvement_queue",
+            {
+                "benchmark_results": str(input_path),
+                "output": str(agent_output),
+                "format": "markdown",
+            },
+        )
+        if agent_result.get("status") != "ok" or agent_result.get("summary", {}).get("count") != 2:
+            raise AssertionError(f"Unexpected agent queue result: {agent_result}")
+        if "D:\\private" in json.dumps(agent_result, ensure_ascii=False):
+            raise AssertionError(f"Agent queue should redact private paths by default: {agent_result}")
+        action = (agent_result.get("recommended_followup") or {})
+        if action.get("destructive") is not False or action.get("safe_default") is not True:
+            raise AssertionError(f"Expected safe non-destructive follow-up: {action}")
 
     print("Quality improvement queue test passed.")
     return 0
@@ -88,4 +109,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

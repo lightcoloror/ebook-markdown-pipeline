@@ -34,6 +34,11 @@ try:
     )
     from ebook_markdown_pipeline.environment_report import compare_environment_lock, export_environment_report  # noqa: E402
     from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book_from_sources  # noqa: E402
+    from ebook_markdown_pipeline.quality_improvement_queue import (  # noqa: E402
+        build_quality_improvement_queue,
+        load_benchmark_results,
+        write_quality_queue_artifacts,
+    )
     from ebook_markdown_pipeline import (
         OUTPUT_FORMATS,
         DOCUMENT_PIPELINE_MODES,
@@ -67,6 +72,11 @@ except ModuleNotFoundError:
     )
     from environment_report import compare_environment_lock, export_environment_report  # noqa: E402
     from image_book_rebuilder import rebuild_image_book_from_sources  # noqa: E402
+    from quality_improvement_queue import (  # noqa: E402
+        build_quality_improvement_queue,
+        load_benchmark_results,
+        write_quality_queue_artifacts,
+    )
     from batch_convert_books import (
         OUTPUT_FORMATS,
         DOCUMENT_PIPELINE_MODES,
@@ -322,6 +332,7 @@ class BookConverterUI:
             0,
             [
                 ("执行建议 / Do Action", self.execute_selected_suggestion),
+                ("质量队列 / Quality Queue", self.open_quality_improvement_queue),
                 ("推荐重跑 / Rerun Rec", self.rerun_selected_recommended),
                 ("重跑失败 / Retry Failed", self.retry_failed_items),
                 ("复查清单 / Checklist", self.open_review_checklist),
@@ -1204,6 +1215,99 @@ class BookConverterUI:
             messagebox.showerror("问题清单格式错误 / Invalid checklist", "review-checklist.json 应该是数组。/ review-checklist.json should be an array.")
             return
         self.populate_history_rows(entries, source_label="review-checklist")
+
+    def open_quality_improvement_queue(self) -> None:
+        benchmark_results = self.find_quality_queue_benchmark_results()
+        if not benchmark_results:
+            selected = filedialog.askopenfilename(
+                title="选择 benchmark-results.json / Select benchmark-results.json",
+                filetypes=[("Benchmark results", "benchmark-results.json"), ("JSON", "*.json"), ("All files", "*.*")],
+            )
+            if not selected:
+                return
+            benchmark_results = Path(selected)
+        output_root = self.quality_queue_output_root()
+        try:
+            payload = build_quality_improvement_queue(load_benchmark_results(benchmark_results), include_paths=True)
+            artifacts = write_quality_queue_artifacts(output_root, payload)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("质量队列失败 / Quality queue failed", str(exc))
+            return
+        self.populate_quality_queue_rows(payload, artifacts=artifacts, source_label=str(benchmark_results))
+        self.write_log(
+            f"质量队列 / Quality queue: {payload.get('summary', {}).get('count', 0)} item(s); "
+            f"{artifacts.get('markdown')}"
+        )
+        self.open_path(Path(artifacts["markdown"]))
+
+    def find_quality_queue_benchmark_results(self) -> Path | None:
+        candidates: list[Path] = []
+        output_text = self.output_var.get().strip()
+        if output_text:
+            output_path = Path(output_text)
+            candidates.extend(
+                [
+                    output_path / ".reports" / "benchmark-results.json",
+                    output_path / "benchmark-results.json",
+                ]
+            )
+        project_root = Path(__file__).resolve().parent
+        candidates.extend(
+            [
+                project_root / "benchmarks" / "runs" / "full-real-current" / "benchmark-results.json",
+                project_root / "benchmarks" / "runs" / "latest" / "benchmark-results.json",
+            ]
+        )
+        quality_gate_root = project_root / "benchmarks" / "runs" / "quality-gate"
+        if quality_gate_root.exists():
+            try:
+                candidates.extend(sorted(quality_gate_root.glob("*/benchmark-results.json"), key=lambda path: path.stat().st_mtime, reverse=True))
+            except Exception:
+                pass
+        for path in candidates:
+            if path.exists():
+                return path
+        return None
+
+    def quality_queue_output_root(self) -> Path:
+        output_text = self.output_var.get().strip()
+        if output_text:
+            return Path(output_text) / ".reports" / "quality-improvement-queue"
+        return Path(__file__).resolve().parent / ".tmp" / "quality-improvement-queue"
+
+    def populate_quality_queue_rows(self, payload: dict, *, artifacts: dict[str, str], source_label: str) -> None:
+        entries = [self.quality_queue_item_to_history_entry(item) for item in payload.get("items") or []]
+        self.populate_history_rows(entries, source_label="quality-improvement-queue")
+        self.latest_artifacts.extend(Path(path) for path in artifacts.values())
+        summary = payload.get("summary") or {}
+        self.current_stage_var.set(f"质量队列 / Queue: {summary.get('count', 0)}")
+        self.write_log(f"质量队列来源 / Queue source: {source_label}")
+
+    def quality_queue_item_to_history_entry(self, item: dict) -> dict:
+        return {
+            "source": str(item.get("source") or item.get("source_name") or item.get("id") or ""),
+            "output": str(item.get("output") or item.get("output_name") or ""),
+            "report": str(item.get("report") or ""),
+            "status": "review",
+            "pipeline": str(item.get("recommended_focus") or "quality_queue"),
+            "detected_format": str(item.get("category") or ""),
+            "quality_level": str(item.get("quality_level") or ""),
+            "quality_score": item.get("quality_score"),
+            "quality_reasons": item.get("reasons") or item.get("issue_categories") or [],
+            "suggested_action": self.quality_queue_action_label(item),
+            "message": str(item.get("safe_default_action") or item.get("next_step") or ""),
+        }
+
+    def quality_queue_action_label(self, item: dict) -> str:
+        focus = str(item.get("recommended_focus") or "")
+        labels = {
+            "structure_repair": "结构增强不覆盖 / Safe structure",
+            "ocr_cleanup": "查看OCR噪声 / OCR review",
+            "markdown_cleanup": "清理规则复查 / Cleanup review",
+            "table_layout_review": "表格版面复查 / Layout review",
+            "manual_review": "人工复查 / Manual review",
+        }
+        return labels.get(focus, "人工复查 / Manual review")
 
     def open_selected_history(self) -> None:
         record = self.selected_history_record()

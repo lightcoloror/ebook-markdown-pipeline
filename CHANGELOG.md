@@ -13,6 +13,7 @@ All notable public-facing changes should be recorded here. This project keeps op
 - Soft environment capability checks for FFmpeg/avconv (`media_helper`) and requests/urllib3/chardet compatibility (`python_dependency_consistency`).
 - Public-safe GitHub release notes generator that combines `CHANGELOG.md` with release quality-gate evidence and omits local artifact paths by default.
 - Quality improvement queue generator for classifying review/poor benchmark outputs into structure, OCR cleanup, Markdown cleanup, and table/layout follow-up work.
+- `build_quality_improvement_queue` MCP/HTTP tool and desktop UI advanced action for opening quality queues as review workbenches.
 
 ### Changed
 
@@ -21,6 +22,7 @@ All notable public-facing changes should be recorded here. This project keeps op
 - `process_material` now exposes top-level `online_enhancement` guidance and can return a versioned/non-overwriting `enhance_job_artifact` next action when `model_mode=hybrid|online|auto` recommends text-structure repair.
 - Output filenames now strip common source-site domain tags before writing Markdown/report artifacts.
 - HTTP health/contract responses now expose on-demand service readiness and configured HTTP fallback guidance.
+- Quality queue follow-up actions are safe/non-destructive by default; concrete local paths are only included when explicitly requested for private triage.
 
 ### Safety
 

@@ -42,6 +42,11 @@ from ebook_markdown_pipeline.online_providers import (  # noqa: E402
     provider_registry_health,
 )
 from ebook_markdown_pipeline.process_web_archive import process_web_archive as process_web_archive_core  # noqa: E402
+from ebook_markdown_pipeline.quality_improvement_queue import (  # noqa: E402
+    build_quality_improvement_queue as build_quality_improvement_queue_payload,
+    load_benchmark_results,
+    write_quality_queue_artifacts,
+)
 from ebook_markdown_pipeline.structure_repair import repair_markdown_structure  # noqa: E402
 
 
@@ -83,6 +88,7 @@ JSON_ARTIFACT_TYPES = {
     "environment_lock_compare",
     "environment_lock_compare_json",
     "quality_comparison_json",
+    "quality_improvement_queue_json",
     "visual_check_json",
     "visual_blocks_json",
     "table_candidates_json",
@@ -280,6 +286,20 @@ def tool_schemas() -> list[dict[str, Any]]:
                 "properties": {
                     "format": {"type": "string", "enum": ["json", "markdown"], "default": "json"},
                 },
+            },
+        },
+        {
+            "name": "build_quality_improvement_queue",
+            "description": "Build a safe review/poor improvement queue from benchmark results for UI/agent follow-up.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "benchmark_results": {"type": "string"},
+                    "output": {"type": "string"},
+                    "include_paths": {"type": "boolean", "default": False},
+                    "format": {"type": "string", "enum": ["json", "markdown"], "default": "json"},
+                },
+                "required": ["benchmark_results", "output"],
             },
         },
         {
@@ -685,6 +705,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return health_check(arguments)
     if name == "show_latest_quality_gate":
         return show_latest_quality_gate(arguments)
+    if name == "build_quality_improvement_queue":
+        return build_quality_improvement_queue_tool(arguments)
     if name == "export_environment_report":
         return export_environment_report_tool(arguments)
     if name == "compare_environment_lock":
@@ -752,6 +774,7 @@ def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
         "specialist_tools": [
             "health_check",
             "show_latest_quality_gate",
+            "build_quality_improvement_queue",
             "inspect_document",
             "scan_books",
             "inspect_agent_batch_results",
@@ -993,6 +1016,32 @@ def show_latest_quality_gate(arguments: dict[str, Any]) -> dict[str, Any]:
     }
     if str(arguments.get("format") or "json") == "markdown":
         result["markdown"] = render_latest_quality_gate_markdown(result)
+    return result
+
+
+def build_quality_improvement_queue_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    benchmark_results = Path(arguments["benchmark_results"])
+    output = Path(arguments["output"])
+    include_paths = bool(arguments.get("include_paths", False))
+    payload = build_quality_improvement_queue_payload(load_benchmark_results(benchmark_results), include_paths=include_paths)
+    artifacts = write_quality_queue_artifacts(output, payload)
+    next_actions = normalize_agent_next_actions(payload.get("next_actions") or [])
+    result = {
+        "schema_version": payload["schema_version"],
+        "status": "ok",
+        "benchmark_results": str(benchmark_results) if include_paths else benchmark_results.name,
+        "output": str(output) if include_paths else output.name,
+        "summary": payload.get("summary") or {},
+        "items": payload.get("items") or [],
+        "artifacts": [
+            artifact("quality_improvement_queue_json", artifacts["json"], label="Quality improvement queue JSON", media_type="application/json"),
+            artifact("quality_improvement_queue", artifacts["markdown"], label="Quality improvement queue", media_type="text/markdown"),
+        ],
+        "next_actions": next_actions,
+        "recommended_followup": recommended_followup_for_route("quality_improvement_queue", next_actions),
+    }
+    if str(arguments.get("format") or "json") == "markdown":
+        result["markdown"] = Path(artifacts["markdown"]).read_text(encoding="utf-8")
     return result
 
 
@@ -3085,6 +3134,8 @@ def infer_artifact_type(path: Path) -> str:
             return "environment_lock"
         if "benchmark-quality-comparison" in name:
             return "quality_comparison_json"
+        if "quality-improvement-queue" in name:
+            return "quality_improvement_queue_json"
         if "visual_check_result" in name:
             return "visual_check_json"
         if "visual_blocks" in name:
