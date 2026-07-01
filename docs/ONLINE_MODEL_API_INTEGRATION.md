@@ -84,6 +84,7 @@
 | Umi-OCR / Tesseract | `OcrLayoutProvider` | 可替换，但保留本地 fallback。 |
 | MinerU pipeline | `OcrLayoutProvider` + `VlmLayoutProvider` + 表格/公式 provider | 只在复杂 PDF 或扫描件启用在线替代，避免整本无差别调用。 |
 | MinerU VLM / PaddleOCR-VL / Qwen-VL | `VlmLayoutProvider` | 作为疑难页、信息图、截图书补强层。 |
+| Unlimited-OCR | `VlmLayoutProvider` candidate | 暂不接入、不下载模型。它只作为 long-horizon VLM OCR 候选；除非质量评测证明它能明显优于现有重后端并替换其中一个模块，否则不新增依赖和存储成本。 |
 | Marker | `TextStructureProvider` 或在线文档解析 provider | 参考其 service 插拔模式，不直接复制供应商绑定。 |
 | PyMuPDF / PyMuPDF4LLM | 不建议替换 | 继续本地运行，便宜、快、稳定。 |
 | `structure_repair` | `TextStructureProvider` 补强 | 规则优先，LLM 只处理低置信度结构。 |
@@ -127,3 +128,4 @@
 7. 下一步：把 `OcrLayoutProvider` 接入实际 OCR fallback/疑难页流程，用于云 OCR/layout 替代本地 OCR。
 8. 下一步：把 `EmbeddingProvider` 接入定位索引和语义检索 sidecar。
 9. 下一步：加入预算、并发、重试、超时、隐私确认和 report 记录。
+10. 候选暂缓：Unlimited-OCR 可作为 `VlmLayoutProvider` 或远程 OpenAI-compatible VLM 服务候选，但当前不接入。先用 scorecard 比较信息图、截图书和复杂多页 PDF 输出；只有明显提升质量并能替换现有重型模块时再实施。

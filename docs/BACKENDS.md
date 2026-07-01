@@ -27,6 +27,7 @@ The converter is local-first and tool-first. Backends are optional specialist to
 | DeepSeek-OCR | CUDA/Transformers VLM OCR experiment wrapper | Optional explicit only | Heavy | Wrapper for explicit image-to-Markdown OCR experiments; not part of auto routing. |
 | olmOCR | VLM PDF/image OCR to Markdown benchmark | Optional explicit only | Heavy | Use as a GPU/remote-inference comparison backend for complex scanned PDFs; not part of auto routing. |
 | PaddleOCR-VL / Qwen-VL / MinerU VLM | Layout-heavy image/infographic enhancement fallback | Optional heavy | Heavy | Explicit enhancement only; not required for minimal conversion. |
+| Unlimited-OCR | Long-horizon VLM OCR candidate for multi-page images/PDF pages | Not integrated; candidate only | Heavy | Do not install or route by default. Consider only if fixture/real-sample scorecards prove a clear quality gain and it can replace an existing heavy VLM/OCR module rather than add another large model. |
 
 ## Routing Defaults
 
@@ -35,6 +36,7 @@ The converter is local-first and tool-first. Backends are optional specialist to
 - GROBID is an explicit academic-PDF enhancement; it helps inspect papers and references but does not replace the general PDF Markdown route.
 - Heavy PDF/OCR/VLM backends should be selected by recommendation, review action, or explicit user/agent request.
 - Online model APIs must go through the provider abstraction and are never required for the default local workflow.
+- Unlimited-OCR is documented as a possible future heavy enhancement backend, but it is intentionally not integrated for now because local model/runtime storage cost is high. Promotion requires evidence that it materially improves layout-heavy/image-book quality and can simplify or replace an existing heavy route such as PaddleOCR-VL, Qwen-VL, MinerU VLM, GOT-OCR, DeepSeek-OCR, or olmOCR.
 - `media_helper` and `python_dependency_consistency` are environment soft-risk capabilities, not conversion backends. If they are degraded, normal EPUB/TXT/text-layer-PDF conversion can still proceed; fix them when optional media/provider/model-download workflows need them.
 
 ## Diagnostics And Artifacts

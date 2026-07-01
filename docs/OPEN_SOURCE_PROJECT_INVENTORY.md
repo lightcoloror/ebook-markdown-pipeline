@@ -5,7 +5,7 @@
 - 开源发布时说明本项目参考、调用、对标了哪些项目。
 - 后续接入新后端前，先明确许可证、依赖成本、模型授权和适合的整合边界。
 
-更新时间：2026-06-13 12:11:45
+更新时间：2026-07-01 00:07:51
 更新工具/模型：Codex GPT-5
 
 > 注意：本文是工程调研和合规排查清单，不是法律意见。许可证、模型授权、商用条款可能变化；真实分发前必须重新打开上游仓库的 LICENSE、NOTICE、模型卡和发布包逐项确认。
@@ -29,6 +29,7 @@
 | Umi-OCR / PaddleOCR-json | 图片、扫描页、本地 OCR 兜底 | 外部本地程序/模块路径 | 源码审计：Umi-OCR `83173ef` 为 MIT；PaddleOCR-json `1beac1c` 为 Apache-2.0；具体 OCR 模型/发布包另查 | 保持外部工具接入，程序和模型分别记录 |
 | PaddleOCR-VL | 信息图、复杂版面、layout-heavy 图片补强 | 可选 wrapper/命令 | 源码审计版本 `c166448`：PaddleOCR 代码 Apache-2.0；PaddleOCR-VL/模型权重条款另查 | 作为可选增强后端，模型条款单独复核 |
 | Qwen-VL | 重型 VLM 图文理解补强 | 可选 wrapper/API | 源码审计版本 `9658872`：代码 Apache-2.0；Qwen2/Qwen2.5/Qwen3-VL 模型卡和权重条款逐模型复核 | 作为可选增强后端，模型条款单独复核 |
+| Unlimited-OCR | 长上下文多页 OCR/VLM 图文解析候选 | 暂不接入 | 初步观察：代码 MIT；模型权重、`trust_remote_code`、vLLM/SGLang/CUDA/runtime 条款和硬件成本另查 | 暂不下载、不进入路由；只有质量评测证明明显提升且能替换现有重后端时再接入 |
 | Pix2Text | 中文截图、公式、图片页到 Markdown 补强 | 可选 wrapper/Python 包 | 源码审计版本 `f881e9d`：MIT；CnOCR/EasyOCR/模型依赖另查 | 已接入可选 wrapper，不进入最小安装；继续用真实中文图片和公式样本验证质量 |
 | pdf-craft | 扫描书 PDF 到 Markdown/EPUB、TOC 假设恢复 | 可选 wrapper/Python 包 | 源码审计版本 `f463a4e`：MIT；DeepSeek OCR、Poppler、GPU/runtime 和传递依赖另查 | 已接入显式 `pdfcraft` PDF 管道；不进入默认路径；继续用扫描书样本验证质量和成本 |
 | Surya | OCR、layout、reading order、table 识别 | 可选 wrapper/外部命令 | 源码审计版本 `17452f3`：Apache-2.0；模型运行与权重条款另查，商业/分发前必须复核 | 已接入显式 wrapper，不进入默认路径；继续用信息图/表格/复杂截图样本验证质量和成本 |
@@ -61,6 +62,7 @@
 | P2 | olmOCR | 扫描文档 OCR/VLM | 扫描文档质量候选 | 源码审计 `f7cfe4c`：Apache-2.0，模型许可另查 | 已接入显式 `olmocr` PDF 管道；只作 GPU/远程 VLM OCR benchmark，不进入默认路径 |
 | P2 | GOT-OCR 2.0 | 轻量视觉 OCR | 单机 GPU/较小模型路线 | 源码审计 `179ed08`：demo/模型授权需分别复核 | 已接入显式 demo-script wrapper；只作手动 CUDA 图片 OCR 实验，不进入默认路径 |
 | P2 | Pix2Text | 中文社区 OCR/公式/版面 | 中文图文、公式、表格场景可测 | 源码审计 `f881e9d`：MIT，模型依赖另查 | 已接入可选 wrapper；后续转为质量验证和安装成本评估 |
+| P2 | Unlimited-OCR | 长上下文多页 OCR/VLM 图文解析候选 | 适合对标截图书、信息图、多页图文 PDF 的重型补强质量 | 初步观察：代码 MIT；模型权重、`trust_remote_code`、vLLM/SGLang/CUDA/runtime 条款和硬件成本另查 | 暂不接入、不下载。只有当公开 fixture 和真实样本证明它明显优于现有重后端，并能替换而不是叠加 PaddleOCR-VL/Qwen-VL/MinerU VLM/olmOCR 等模块时再推进 |
 | P2 | paperless-ngx | 文档归档/OCR/检索产品形态 | 虽不主打 Markdown，但适合学习资料管理闭环 | 源码审计 `82aefe5`：GPL-3.0-only | 产品化参考，不建议直接混入 |
 
 ## Agent / MCP 生态参考项目
@@ -124,6 +126,7 @@
 - Surya
 - olmOCR
 - GOT-OCR 2.0
+- Unlimited-OCR
 - Pix2Text
 - Docling 模型包
 - pdf-craft 的 DeepSeek OCR/LLM 配置
@@ -152,6 +155,7 @@
 5. Tabula / Camelot / pdfplumber：验证 text-based PDF 表格抽取差异，决定是否还需要 Tabula。
 6. Apache Tika：已接入显式 inspect 增强；下一步验证非主流格式 MIME/metadata/text sample 的实际价值。
 7. GROBID：已接入显式 academic PDF inspect；下一步验证真实论文 PDF 的 title/author/abstract/reference/TEI 质量。
+8. Unlimited-OCR：只进入候选评测，不进入安装和默认路由。评测目标不是“再加一个重模型”，而是判断它是否能显著提升截图书、信息图和复杂多页 OCR 的 Markdown 质量，并替换掉一个现有重型模块以节省空间和维护成本。
 
 ## 本地源码审计结果（首批）
 
@@ -205,6 +209,7 @@
 | olmOCR | `f7cfe4c` | CLI `olmocr` / `python -m olmocr.pipeline`；支持大规模 PDF batch、VLLM/SGLang、bench runner | Apache-2.0；模型和运行时另查 | 重型 VLM OCR benchmark、远程 GPU OCR | 已接入显式 `pdf_pipeline_mode=olmocr` worker；不适合本地默认，适合作为云/GPU provider 的质量对标。 |
 | GOT-OCR 2.0 | `179ed08` | Demo 脚本 `run_ocr_2.0.py` / crop/multi-page；`AutoModelForCausalLM` + `trust_remote_code=True` + CUDA | 代码/模型条款需分别复核；demo 默认 CUDA | 轻量视觉 OCR 实验项 | 已接入 `scripts/got_ocr_image_to_md.py` 显式 wrapper；研究/demo 属性强，不进入默认识别或自动增强顺序。 |
 | DeepSeek-OCR | GitHub official current | Transformers/vLLM OCR model route；`AutoModel` + `trust_remote_code=True`，prompt 可输出 Markdown | 代码/模型/运行时条款需分别复核；本地推理默认偏 CUDA 重环境 | VLM OCR、信息图/页面截图显式实验 | 已接入 `scripts/deepseek_ocr_image_to_md.py` 显式 wrapper；不进入默认识别或自动增强顺序。 |
+| Unlimited-OCR | GitHub/Hugging Face current | 面向 one-shot long-horizon parsing 的 VLM OCR；上游示例偏向 vLLM/SGLang/OpenAI-compatible 服务或本地 CUDA 推理 | 代码初步为 MIT；模型权重、`trust_remote_code`、vLLM/SGLang、CUDA/runtime 和商用分发边界需复核；模型/缓存空间成本高 | 信息图、截图书、多页图文 PDF 的重型补强候选 | 暂不接入。先记录为候选对标项；只有在质量矩阵证明它能明显改善输出并可能替代现有重型 VLM/OCR 模块时，才通过 `VlmLayoutProvider` 或外部命令 wrapper 接入。 |
 | Pix2Text | `f881e9d` | CLI `predict`、Python `Pix2Text.recognize`、server；支持 PDF/page/text_formula/formula/text 等类型 | MIT；CnOCR/EasyOCR/模型另查 | 中文图片、公式、版面、PDF 到 Markdown 专项 | 值得列入中文专项 benchmark；是否接入取决于真实样本质量和安装成本。 |
 | paperless-ngx | `82aefe5` | Django/Celery/Redis 文档归档系统；consume folder、OCRmyPDF/Tesseract、REST/UI | GPL-3.0-only | 文档归档、批处理、人工复查产品形态参考 | 不是 Markdown 转换组件，不建议作为依赖混入；可学习“导入-识别-索引-复查”产品闭环。 |
 

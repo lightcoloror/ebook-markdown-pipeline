@@ -205,6 +205,7 @@
 | Umi-OCR / Tesseract | `ocr_layout` | 可替换，但保留本地 fallback。 |
 | MinerU pipeline | `ocr_layout` + `vlm_layout` + `table_parser` + `formula_parser` | 只在复杂 PDF 或扫描件启用在线替代，避免整本无差别调用。 |
 | MinerU VLM / PaddleOCR-VL / Qwen-VL / DeepSeek-OCR | `vlm_layout` | 作为疑难页、信息图、截图书补强层。 |
+| Unlimited-OCR | `vlm_layout` 候选 | 暂不接入、不下载模型。只有当质量评测证明它能明显提升长上下文多页图文解析，并能替换一个现有重型 VLM/OCR 路线以节省空间和维护成本时再接入。 |
 | Marker | `ocr_layout` / `vlm_layout` / 文档解析 API | 可作为在线文档解析 provider 的一种实现。 |
 | PyMuPDF / PyMuPDF4LLM | 不建议替换 | 继续本地运行，便宜、快、稳定。 |
 | `structure_repair` | `text_structure_llm` 补强 | 规则优先，LLM 只处理低置信度结构。 |
