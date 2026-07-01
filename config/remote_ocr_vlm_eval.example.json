@@ -1,0 +1,23 @@
+{
+  "schema_version": "remote-ocr-vlm-eval-v1",
+  "notes": "Copy this file to a local ignored manifest before adding private samples or real provider names. Do not commit private inputs or API keys.",
+  "default_task": "vlm_layout",
+  "default_prompt": "Extract the document layout into concise Markdown. Preserve reading order. Only output real tables as Markdown tables. Flag uncertainty instead of guessing.",
+  "providers": [
+    {
+      "name": "openai_compatible_vlm",
+      "task": "vlm_layout",
+      "provider_mode": "openai_compatible",
+      "model_mode": "hybrid"
+    }
+  ],
+  "samples": [
+    {
+      "id": "public-infographic-placeholder",
+      "path": "benchmarks/fixtures/images/infographic-placeholder.png",
+      "mime_type": "image/png",
+      "category": "infographic",
+      "expected_focus": ["reading_order", "headings", "true_tables_only"]
+    }
+  ]
+}

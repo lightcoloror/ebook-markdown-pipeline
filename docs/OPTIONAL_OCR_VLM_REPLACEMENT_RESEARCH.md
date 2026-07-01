@@ -91,6 +91,30 @@ Unlimited-OCR 继续保持“候选但暂缓”：除非它能在同一组样本
 - Surya README：650M、olmOCR-bench、5 pages/s RTX 5090、90+ 语言、Apache code 与模型权重商业条款。
 - Pix2Text README：小模型、layout/table/formula/text、80+ 语言、Markdown/PDF、MIT。
 
+## 远程评测入口
+
+本项目提供一个不下载本地模型的远程评测入口：
+
+```powershell
+python scripts\run_remote_ocr_vlm_eval.py --manifest config\remote_ocr_vlm_eval.example.json --output benchmarks\runs\remote-ocr-vlm-eval-plan
+```
+
+默认只写 dry-run plan，不会访问网络。真实调用必须显式提供本地 provider 配置，并同时传 `--execute --allow-remote`：
+
+```powershell
+python scripts\run_remote_ocr_vlm_eval.py `
+  --manifest path\to\remote_ocr_vlm_eval.local.json `
+  --provider-config config\online_providers.local.json `
+  --execute --allow-remote `
+  --output benchmarks\runs\remote-ocr-vlm-eval-current
+```
+
+测试/合同验证可使用 fake provider，不访问远程服务：
+
+```powershell
+python scripts\run_remote_ocr_vlm_eval.py --execute --fake --output benchmarks\runs\remote-ocr-vlm-eval-fake
+```
+
 ## 当前决策
 
 - 先不安装任何新模型。

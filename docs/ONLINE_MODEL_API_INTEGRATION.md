@@ -107,6 +107,24 @@
 
 默认推荐 `hybrid`：本地先做文件类型、页数、文本层、扫描比例、图片比例、目录/书签、疑难页比例预检；只有扫描页、复杂图文页、信息图、表格页、公式页、低置信度结构页才调用在线 API。
 
+## 远程 OCR/VLM 替换评测
+
+`run_remote_ocr_vlm_eval.py` 用于在不下载本地模型的情况下，对远程 OCR/VLM provider 做小样本替换评测。它读取 `config/remote_ocr_vlm_eval.example.json` 或本地未提交 manifest，按 provider/sample 组合调用 `run_online_enhancement`。
+
+安全边界：
+
+- 默认 dry-run，只写 plan 和 Markdown/JSON scorecard，不访问网络。
+- 真实远程调用必须显式传 `--execute --allow-remote`。
+- 合同测试可用 `--execute --fake`，不访问远程服务。
+- 私有样本 manifest、API key、真实业务样本不得提交；只提交模板、脚本和公开 fixture。
+
+示例：
+
+```powershell
+python scripts\run_remote_ocr_vlm_eval.py --manifest config\remote_ocr_vlm_eval.example.json --output benchmarks\runs\remote-ocr-vlm-eval-plan
+python scripts\run_remote_ocr_vlm_eval.py --execute --fake --output benchmarks\runs\remote-ocr-vlm-eval-fake
+```
+
 ## Agent 接口约束
 
 - Agent 仍然优先调用 `process_material`。
