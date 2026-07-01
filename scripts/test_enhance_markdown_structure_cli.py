@@ -33,6 +33,8 @@ def main() -> int:
             ],
             cwd=str(PROJECT_DIR),
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             check=False,
         )

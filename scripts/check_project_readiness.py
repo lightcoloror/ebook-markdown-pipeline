@@ -258,6 +258,8 @@ def private_manifest_tracking_check() -> Check:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=15,
         )
     except Exception as exc:  # pragma: no cover - defensive diagnostic path

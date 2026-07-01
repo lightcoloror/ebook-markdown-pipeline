@@ -1027,6 +1027,8 @@ def run_enhancement_command(
             cwd=str(output_dir),
             env=env,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             timeout=timeout_seconds if timeout_seconds > 0 else None,

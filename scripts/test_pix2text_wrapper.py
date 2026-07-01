@@ -40,6 +40,8 @@ def main() -> None:
                 "--dry-run",
             ],
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             check=False,

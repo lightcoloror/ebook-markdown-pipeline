@@ -81,6 +81,7 @@ def run_cli(*args: str) -> dict:
         cwd=PROJECT_DIR,
         text=True,
         encoding="utf-8",
+        errors="replace",
         capture_output=True,
         check=True,
     )

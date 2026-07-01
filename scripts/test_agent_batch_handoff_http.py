@@ -149,6 +149,7 @@ def run_cli(url: str, *args: str) -> dict:
         env=env,
         text=True,
         encoding="utf-8",
+        errors="replace",
         capture_output=True,
         check=True,
     )

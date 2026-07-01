@@ -77,6 +77,8 @@ def main() -> int:
         command,
         env=env,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         timeout=args.timeout if args.timeout > 0 else None,

@@ -29,6 +29,7 @@ def main() -> int:
         stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
+        errors="replace",
     )
     next_id = 1
 

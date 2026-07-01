@@ -90,7 +90,59 @@ def rapidocr_model_root_dir() -> Path:
 
 
 def rapidocr_default_params() -> dict[str, Any]:
-    return {"Global.model_root_dir": str(rapidocr_model_root_dir())}
+    params: dict[str, Any] = {"Global.model_root_dir": str(rapidocr_model_root_dir())}
+    device = rapidocr_requested_device()
+    if device == "cuda":
+        params["EngineConfig.onnxruntime.use_cuda"] = True
+        params["EngineConfig.paddle.use_cuda"] = True
+        params["EngineConfig.torch.use_cuda"] = True
+        params["EngineConfig.onnxruntime.cuda_ep_cfg.device_id"] = rapidocr_cuda_device_id()
+        params["EngineConfig.paddle.cuda_ep_cfg.device_id"] = rapidocr_cuda_device_id()
+        params["EngineConfig.torch.cuda_ep_cfg.device_id"] = rapidocr_cuda_device_id()
+    elif device == "cpu":
+        params["EngineConfig.onnxruntime.use_cuda"] = False
+        params["EngineConfig.paddle.use_cuda"] = False
+        params["EngineConfig.torch.use_cuda"] = False
+    return params
+
+
+def rapidocr_requested_device() -> str:
+    value = os.environ.get("EBOOK_CONVERTER_RAPIDOCR_DEVICE", "").strip().lower()
+    if value in {"cuda", "gpu"}:
+        return "cuda"
+    if value in {"cpu", "off"}:
+        return "cpu"
+    return "auto"
+
+
+def rapidocr_cuda_device_id() -> int:
+    raw = os.environ.get("EBOOK_CONVERTER_RAPIDOCR_CUDA_DEVICE_ID", "0").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
+
+
+def rapidocr_runtime_info() -> dict[str, Any]:
+    available_providers: list[str] = []
+    onnxruntime_version = ""
+    try:
+        import onnxruntime as ort  # type: ignore
+
+        onnxruntime_version = str(getattr(ort, "__version__", ""))
+        available_providers = [str(provider) for provider in ort.get_available_providers()]
+    except Exception:
+        pass
+    requested_device = rapidocr_requested_device()
+    return {
+        "package": rapidocr_package_name(),
+        "requested_device": requested_device,
+        "cuda_device_id": rapidocr_cuda_device_id(),
+        "onnxruntime_version": onnxruntime_version,
+        "available_providers": available_providers,
+        "cuda_provider_available": "CUDAExecutionProvider" in available_providers,
+        "cuda_requested_but_unavailable": requested_device == "cuda" and "CUDAExecutionProvider" not in available_providers,
+    }
 
 
 def recognize_image_with_rapidocr(image_path: Path, engine=None) -> dict[str, Any]:

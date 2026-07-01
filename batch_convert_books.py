@@ -29,7 +29,7 @@ try:
     from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
     from ebook_markdown_pipeline.markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ebook_markdown_pipeline.ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
-    from ebook_markdown_pipeline.ocr_providers import cnocr_available, pix2text_available, rapidocr_available, rapidocr_package_name
+    from ebook_markdown_pipeline.ocr_providers import cnocr_available, pix2text_available, rapidocr_available, rapidocr_package_name, rapidocr_runtime_info
     from ebook_markdown_pipeline.grobid_backend import grobid_health
     from ebook_markdown_pipeline.olmocr_backend import olmocr_available, olmocr_health
     from ebook_markdown_pipeline.pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, camelot_available, pdfplumber_available, tabula_available
@@ -41,7 +41,7 @@ except ModuleNotFoundError:  # Allows running this file directly by absolute pat
     from docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
     from markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
-    from ocr_providers import cnocr_available, pix2text_available, rapidocr_available, rapidocr_package_name
+    from ocr_providers import cnocr_available, pix2text_available, rapidocr_available, rapidocr_package_name, rapidocr_runtime_info
     from grobid_backend import grobid_health
     from olmocr_backend import olmocr_available, olmocr_health
     from pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, camelot_available, pdfplumber_available, tabula_available
@@ -1130,6 +1130,24 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
             "kind": "python",
             "status": "ok" if rapidocr_available() else "missing",
             "detail": f"importable via {rapidocr_package}" if rapidocr_package else "optional Python OCR provider not installed",
+        }
+    )
+    rapidocr_runtime = rapidocr_runtime_info()
+    runtime_detail = (
+        f"requested_device={rapidocr_runtime.get('requested_device')}; "
+        f"onnxruntime={rapidocr_runtime.get('onnxruntime_version') or 'missing'}; "
+        f"providers={rapidocr_runtime.get('available_providers') or []}"
+    )
+    checks.append(
+        {
+            "name": "RapidOCR runtime",
+            "kind": "gpu",
+            "status": "missing"
+            if not rapidocr_available()
+            else "blocked"
+            if rapidocr_runtime.get("cuda_requested_but_unavailable")
+            else "ok",
+            "detail": runtime_detail,
         }
     )
     checks.append(
@@ -5324,6 +5342,8 @@ def terminate_process_tree(process: subprocess.Popen) -> None:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
             )
             process.wait(timeout=10)

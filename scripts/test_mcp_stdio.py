@@ -35,6 +35,7 @@ def main() -> int:
             stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
+            errors="replace",
         )
         try:
             initialize = call(proc, 1, "initialize")

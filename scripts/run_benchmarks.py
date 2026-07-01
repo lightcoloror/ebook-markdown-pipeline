@@ -182,6 +182,8 @@ def terminate_process_tree(process: multiprocessing.Process) -> None:
         subprocess.run(
             ["taskkill", "/PID", str(process.pid), "/T", "/F"],
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
