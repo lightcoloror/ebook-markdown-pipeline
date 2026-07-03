@@ -11,6 +11,7 @@ sys.path.insert(0, str(PROJECT_DIR.parent))
 from ebook_markdown_pipeline.batch_convert_books import (  # noqa: E402
     DOCLING_TEXT_FALLBACK_FORMATS,
     build_output_path,
+    markitdown_available,
     read_delimited_text_rows,
     render_delimited_text_markdown,
     required_dependencies,
@@ -62,7 +63,7 @@ def main() -> int:
         if delimiter_name != "tab":
             raise AssertionError(f"Expected tab delimiter, got {delimiter_name!r}")
 
-        args = SimpleNamespace(output_format="markdown", document_pipeline_mode="auto")
+        args = SimpleNamespace(output_format="markdown", document_pipeline_mode="auto", docling_fallback_to_pandoc=True, pandoc_command="pandoc")
         if source_kind_for_conversion(tsv_path, args) != "docling":
             raise AssertionError("TSV should be routed through the document fallback path.")
         if required_dependencies([csv_path, tsv_path], args):
@@ -72,6 +73,30 @@ def main() -> int:
         output_path = build_output_path(csv_path, root, root / "out", args)
         if output_path.name != "policy-list.md":
             raise AssertionError(f"Unexpected output name: {output_path}")
+
+        docx_path = root / "fallback.docx"
+        docx_path.write_bytes(b"not a real docx; dependency routing only")
+        docx_required = required_dependencies([docx_path], args)
+        if "docling" in docx_required:
+            raise AssertionError(f"Auto DOCX fallback should not block on broken Docling: {docx_required}")
+        if "pandoc" not in docx_required:
+            raise AssertionError(f"Auto DOCX fallback should require Pandoc when Docling is unavailable: {docx_required}")
+
+        pptx_path = root / "fallback.pptx"
+        pptx_path.write_bytes(b"not a real pptx; dependency routing only")
+        pptx_required = required_dependencies([pptx_path], args)
+        if markitdown_available() and "docling" in pptx_required:
+            raise AssertionError(f"Auto PPTX fallback should use MarkItDown instead of blocking on Docling: {pptx_required}")
+
+        forced_docling_args = SimpleNamespace(
+            output_format="markdown",
+            document_pipeline_mode="docling",
+            docling_fallback_to_pandoc=True,
+            pandoc_command="pandoc",
+        )
+        forced_required = required_dependencies([csv_path], forced_docling_args)
+        if "docling" not in forced_required:
+            raise AssertionError("Explicit Docling mode should still require Docling for CSV.")
     finally:
         if root.exists():
             shutil.rmtree(root)

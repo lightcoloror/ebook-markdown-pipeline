@@ -952,6 +952,22 @@ def find_missing_dependencies(sources: Iterable[Path], args: argparse.Namespace)
     return missing
 
 
+def docling_fallback_dependency(source: Path, args: argparse.Namespace) -> str | None:
+    if not getattr(args, "docling_fallback_to_pandoc", True):
+        return None
+    if getattr(args, "document_pipeline_mode", "auto") == "docling":
+        return None
+    suffix = source.suffix.lower()
+    if suffix in DOCLING_TEXT_FALLBACK_FORMATS:
+        return "builtin"
+    if suffix == ".md":
+        return "builtin" if args.output_format == "markdown" else "pandoc"
+    if suffix in DOCLING_PANDOC_FALLBACK_FORMATS:
+        return "pandoc"
+    if suffix in MARKITDOWN_FORMATS and suffix not in PDF_FORMATS and markitdown_available():
+        return "markitdown"
+    return None
+
 def required_dependencies(sources: Iterable[Path], args: argparse.Namespace) -> set[str]:
     required = set()
     for source in sources:
@@ -984,9 +1000,12 @@ def required_dependencies(sources: Iterable[Path], args: argparse.Namespace) -> 
             if args.output_format != "markdown":
                 required.add(args.pandoc_command)
         elif kind == "docling":
-            if source.suffix.lower() in DOCLING_TEXT_FALLBACK_FORMATS and getattr(args, "document_pipeline_mode", "auto") != "docling":
-                if args.output_format != "markdown":
+            fallback_dependency = docling_fallback_dependency(source, args) if not docling_available() else None
+            if fallback_dependency:
+                if fallback_dependency == "pandoc":
                     required.add(args.pandoc_command)
+                elif fallback_dependency == "markitdown" and not markitdown_available():
+                    required.add("markitdown")
                 continue
             if not docling_available():
                 required.add("docling")
@@ -2781,6 +2800,12 @@ def run_docling_fallback_convert(
                 progress_index=progress_index,
                 progress_total=progress_total,
             )
+        finish_docling_fallback_diagnostic(fallback_diagnostic, started, "ok")
+        return
+
+    if suffix in MARKITDOWN_FORMATS and suffix not in PDF_FORMATS and markitdown_available():
+        emit_stage(progress_callback, source, progress_index, progress_total, "fallback", "MarkItDown 文档兜底")
+        run_markitdown_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         finish_docling_fallback_diagnostic(fallback_diagnostic, started, "ok")
         return
     finish_docling_fallback_diagnostic(
