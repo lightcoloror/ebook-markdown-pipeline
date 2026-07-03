@@ -10,13 +10,18 @@ from typing import Any
 DOCLING_FORMATS = {".docx", ".pptx", ".xlsx", ".html", ".htm", ".md", ".csv"}
 
 
-def docling_available() -> bool:
+def docling_health() -> dict[str, str]:
     try:
         suppress_requests_dependency_warning()
         from docling.document_converter import DocumentConverter  # noqa: F401
-    except Exception:
-        return False
-    return True
+    except Exception as exc:  # noqa: BLE001
+        detail = " ".join(str(exc).split())
+        return {"status": "missing", "detail": f"{type(exc).__name__}: {detail}"}
+    return {"status": "ok", "detail": "importable"}
+
+
+def docling_available() -> bool:
+    return docling_health()["status"] == "ok"
 
 
 def docling_supported_format(path: Path) -> bool:
@@ -28,7 +33,7 @@ def convert_with_docling(source: Path) -> dict[str, Any]:
         suppress_requests_dependency_warning()
         from docling.document_converter import DocumentConverter
     except Exception as exc:  # noqa: BLE001
-        raise RuntimeError("Docling is not installed. Install optional dependency with: pip install docling") from exc
+        raise RuntimeError(f"Docling is not available: {type(exc).__name__}: {exc}") from exc
 
     converter = DocumentConverter()
     result = converter.convert(str(source))

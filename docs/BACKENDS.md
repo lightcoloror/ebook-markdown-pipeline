@@ -6,8 +6,9 @@ The converter is local-first and tool-first. Backends are optional specialist to
 | --- | --- | --- | --- | --- |
 | Pandoc | EPUB, FB2, TXT, ODT, Markdown, HTML conversion | Recommended minimal | Low | Best first install for common ebooks and text documents. |
 | Calibre / `ebook-convert` | AZW, AZW3, MOBI, RTF conversion | Recommended for ebook collections | Medium | Used before Markdown cleanup for Kindle formats. |
+| Built-in CSV/TSV fallback | Delimited text to Markdown table | Yes for CSV/TSV | None | Does not require Docling; decodes common encodings, sniffs delimiters, and escapes Markdown table cells. |
 | PyMuPDF / PyMuPDF4LLM | PDF preflight, outlines, text-layer fast path | Yes for light PDF fallback | Low | Good for text-layer PDFs and diagnostics. |
-| Docling | Structured Office/document/PDF parsing | Optional | Medium | Useful for DOCX, PPTX, XLSX, HTML, CSV, and structure comparisons. |
+| Docling | Structured Office/document/PDF parsing | Optional | Medium | Useful for DOCX, PPTX, XLSX, HTML, and structure comparisons. CSV/TSV use the built-in delimited-text fallback by default. |
 | Apache Tika | Broad MIME/metadata/text-sample inspection | Optional explicit inspect | Medium | Use through Tika Server or a command template for unusual formats; not a main conversion route. |
 | GROBID | Academic PDF/TEI inspection | Optional explicit inspect | Heavy | Use through a configured GROBID Server for papers, DOI, authors, abstract, references, and TEI evidence; not a main conversion route. |
 | MinerU | Structured PDF parsing | Optional | Heavy | Use for complex/scanned PDFs when quality reports recommend it. |

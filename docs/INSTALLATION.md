@@ -57,6 +57,7 @@ Optional backends:
 | Backend | Best For | Notes |
 | --- | --- | --- |
 | PyMuPDF4LLM | Fast text-layer PDF baseline | Installed by `requirements.txt`. |
+| Built-in CSV/TSV fallback | Delimited text files | No extra install; converts CSV/TSV to Markdown tables. |
 | MinerU | Complex PDF structure recovery | Heavy; may need model downloads and enough RAM/GPU/CPU time. |
 | Marker | Short layout-heavy PDF parsing | Heavy; model/network setup can be slow. |
 | OCRmyPDF | Scanned PDF preprocessing into searchable PDF | Install with Tesseract; use explicitly or through recommended reruns. |
@@ -65,7 +66,7 @@ Optional backends:
 | Camelot | Text-based PDF table extraction | Optional future/advanced backend; use only for table-heavy text PDFs. |
 | Tabula / tabula-py | Text-based PDF table extraction fallback | Optional; requires Java and writes table artifacts only. |
 | Umi-OCR / PaddleOCR-json | Scanned PDF/image OCR fallback | Configure paths through environment variables. |
-| Docling | Office/document formats and optional PDF comparison | Install only when needed. |
+| Docling | Office/document formats and optional PDF comparison; CSV/TSV do not require Docling | Install only when needed. |
 | MarkItDown | Fast multi-format Markdown baseline | Install only when you need comparison evidence. |
 | Apache Tika | Broad MIME/metadata/text-sample inspection | Optional explicit inspect; use a Tika Server URL or command wrapper. |
 | GROBID | Academic PDF/TEI inspection | Optional explicit inspect; use a configured GROBID Server URL. |

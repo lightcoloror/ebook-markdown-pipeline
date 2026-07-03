@@ -50,7 +50,7 @@
 项目策略：
 
 - 已作为可选后端接入 `inspect_document` 和转换路由；未安装时 health/check 会明确提示。
-- 当前先覆盖 DOCX、PPTX、XLSX、HTML、Markdown、CSV，并允许 PDF 手动选择 `docling` 管道。
+- 当前先覆盖 DOCX、PPTX、XLSX、HTML、Markdown，并允许 PDF 手动选择 `docling` 管道；CSV/TSV 默认由内置轻量表格转换处理，避免被 Docling 依赖冲突阻断。
 - 后续再评估是否把 Docling 升为通用默认后端。
 - 保持输出 artifact schema 与现有 MCP/HTTP/CLI 一致。
 

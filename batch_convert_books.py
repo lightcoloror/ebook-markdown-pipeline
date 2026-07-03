@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import contextlib
 import hashlib
 import html
+import io
 import importlib.metadata as importlib_metadata
 import importlib.util
 import json
@@ -26,7 +28,7 @@ from typing import Iterable
 
 try:
     from ebook_markdown_pipeline.local_env import load_project_env
-    from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
+    from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available, docling_health
     from ebook_markdown_pipeline.markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ebook_markdown_pipeline.ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
     from ebook_markdown_pipeline.ocr_providers import cnocr_available, pix2text_available, rapidocr_available, rapidocr_package_name, rapidocr_runtime_info
@@ -38,7 +40,7 @@ try:
     from ebook_markdown_pipeline.tika_backend import tika_health
 except ModuleNotFoundError:  # Allows running this file directly by absolute path.
     from local_env import load_project_env
-    from docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available
+    from docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available, docling_health
     from markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
     from ocr_providers import cnocr_available, pix2text_available, rapidocr_available, rapidocr_package_name, rapidocr_runtime_info
@@ -59,8 +61,8 @@ EBOOK_DIRECT_FORMATS = PANDOC_DIRECT_FORMATS
 EBOOK_NEEDS_CALIBRE_FORMATS = CALIBRE_INTERMEDIATE_FORMATS
 PDF_FORMATS = {".pdf"}
 DOCLING_PANDOC_FALLBACK_FORMATS = {".docx", ".html", ".htm", ".md"}
-DOCLING_TEXT_FALLBACK_FORMATS = {".csv"}
-SUPPORTED_FORMATS = PANDOC_DIRECT_FORMATS | CALIBRE_INTERMEDIATE_FORMATS | PDF_FORMATS | DOCLING_FORMATS
+DOCLING_TEXT_FALLBACK_FORMATS = {".csv", ".tsv"}
+SUPPORTED_FORMATS = PANDOC_DIRECT_FORMATS | CALIBRE_INTERMEDIATE_FORMATS | PDF_FORMATS | DOCLING_FORMATS | DOCLING_TEXT_FALLBACK_FORMATS
 DOCUMENT_PIPELINE_MODES = ("auto", "docling", "markitdown")
 
 OUTPUT_FORMATS = {
@@ -734,7 +736,7 @@ def default_source_kind_for_suffix(suffix: str) -> str:
         return "calibre"
     if suffix in PDF_FORMATS:
         return "pdf"
-    if suffix in DOCLING_FORMATS:
+    if suffix in DOCLING_FORMATS or suffix in DOCLING_TEXT_FALLBACK_FORMATS:
         return "docling"
     return "unsupported"
 
@@ -921,8 +923,9 @@ def find_missing_dependencies(sources: Iterable[Path], args: argparse.Namespace)
     missing = []
     for command in sorted(required):
         if command == "docling":
-            if not docling_available():
-                missing.append("Missing optional Python dependency: docling. Install with: pip install docling")
+            health = docling_health()
+            if health["status"] != "ok":
+                missing.append(f"Missing or broken optional Python dependency: docling ({health['detail']}). Install or repair with: pip install -r requirements-docling.txt")
             continue
         if command == "markitdown":
             if not markitdown_available():
@@ -981,6 +984,10 @@ def required_dependencies(sources: Iterable[Path], args: argparse.Namespace) -> 
             if args.output_format != "markdown":
                 required.add(args.pandoc_command)
         elif kind == "docling":
+            if source.suffix.lower() in DOCLING_TEXT_FALLBACK_FORMATS and getattr(args, "document_pipeline_mode", "auto") != "docling":
+                if args.output_format != "markdown":
+                    required.add(args.pandoc_command)
+                continue
             if not docling_available():
                 required.add("docling")
             if args.output_format != "markdown":
@@ -1030,12 +1037,13 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
             "detail": "importable" if pymupdf4llm_available() else "not importable",
         }
     )
+    docling_status = docling_health()
     checks.append(
         {
             "name": "docling",
             "kind": "python",
-            "status": "ok" if docling_available() else "missing",
-            "detail": "importable" if docling_available() else "optional backend not installed",
+            "status": docling_status["status"],
+            "detail": docling_status["detail"],
         }
     )
     checks.append(
@@ -1359,6 +1367,9 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
     def check_status(name: str) -> str:
         return str(by_name.get(name.lower(), {}).get("status") or "missing")
 
+    def check_detail(name: str) -> str:
+        return str(by_name.get(name.lower(), {}).get("detail") or "")
+
     pandoc_ok = command_ok(("pandoc",))
     calibre_ok = command_ok(("ebook-convert",))
     mineru_ok = command_ok(("mineru",))
@@ -1366,6 +1377,7 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
     pymupdf_ok = check_ok("PyMuPDF")
     pymupdf4llm_ok = check_ok("pymupdf4llm")
     docling_ok = check_ok("docling")
+    docling_detail = check_detail("docling")
     markitdown_ok = check_ok("markitdown")
     tika_ok = check_ok("Apache Tika")
     grobid_ok = check_ok("GROBID")
@@ -1525,8 +1537,10 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
         capability_item(
             "docling_documents",
             "ok" if docling_ok else "missing",
-            "Docling backend is importable." if docling_ok else "Docling optional backend is not installed.",
-            "Use Docling for office-like documents and selected PDFs." if docling_ok else "Install optional Docling deps only if needed.",
+            "Docling backend is importable." if docling_ok else f"Docling optional backend is not available: {docling_detail}",
+            "Use Docling for office-like documents and selected PDFs. CSV/TSV do not need Docling."
+            if docling_ok
+            else "Repair Docling only if you need DOCX/PPTX/XLSX/HTML/Markdown Docling conversion or PDF Docling comparison.",
         )
     )
 
@@ -1932,6 +1946,89 @@ def decode_text_bytes(data: bytes) -> tuple[str, str]:
     return "utf-8-replace", data.decode("utf-8", errors="replace")
 
 
+def read_delimited_text_rows(source):
+    data = source.read_bytes()
+    encoding, text = decode_text_bytes(data)
+    suffix = source.suffix.lower()
+    if suffix == ".tsv":
+        delimiter = "\t"
+    else:
+        sample = text[:4096]
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+            delimiter = dialect.delimiter
+        except csv.Error:
+            delimiter = ","
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+    rows = [[cell.strip() for cell in row] for row in reader]
+    delimiter_name = "tab" if delimiter == "\t" else delimiter
+    return rows, encoding, delimiter_name
+
+
+def markdown_table_escape(value):
+    compact = re.sub(r"\s+", " ", str(value).replace("\r", " ").replace("\n", " ")).strip()
+    return compact.replace(chr(124), "\\" + chr(124))
+
+
+def normalize_delimited_rows(rows):
+    width = max([len(row) for row in rows] + [1])
+    return [row + [""] * (width - len(row)) for row in rows], width
+
+
+def render_delimited_text_markdown(source, rows, encoding, delimiter_name):
+    title = clean_output_stem(source.stem)
+    source_type = source.suffix.upper().lstrip(".") or "delimited text"
+    lines = [
+        f"# {title}",
+        "",
+        f"_Converted from {source_type} with the built-in delimited-text fallback; encoding: `{encoding}`; delimiter: `{delimiter_name}`._",
+        "",
+    ]
+    if not rows:
+        lines.append("_Empty delimited-text file._")
+        return "\n".join(lines).rstrip() + "\n"
+
+    table_rows, width = normalize_delimited_rows(rows)
+    header = [markdown_table_escape(cell) or f"Column {index + 1}" for index, cell in enumerate(table_rows[0])]
+    body = [[markdown_table_escape(cell) for cell in row] for row in table_rows[1:]]
+    bar = chr(124)
+    lines.append(f"{bar} " + f" {bar} ".join(header) + f" {bar}")
+    lines.append(f"{bar} " + f" {bar} ".join(["---"] * width) + f" {bar}")
+    for row in body:
+        lines.append(f"{bar} " + f" {bar} ".join(row) + f" {bar}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def run_delimited_text_convert(
+    source,
+    output_path,
+    args,
+    progress_callback=None,
+    progress_index=None,
+    progress_total=None,
+):
+    emit_stage(progress_callback, source, progress_index, progress_total, "delimited-text", "CSV/TSV 内置表格转换")
+    rows, encoding, delimiter_name = read_delimited_text_rows(source)
+    markdown = render_delimited_text_markdown(source, rows, encoding, delimiter_name)
+    if args.output_format == "markdown":
+        output_path.write_text(markdown, encoding="utf-8", newline="\n")
+        postprocess_text_output(
+            output_path,
+            args,
+            source_kind="csv-table",
+            note_source_path=source,
+            progress_callback=progress_callback,
+            progress_source=source,
+            progress_index=progress_index,
+            progress_total=progress_total,
+        )
+        return
+    with tempfile.TemporaryDirectory(prefix="delimited-text-") as tmpdir:
+        temp_md = Path(tmpdir) / f"{source.stem}.md"
+        temp_md.write_text(markdown, encoding="utf-8", newline="\n")
+        convert_markdown_file(temp_md, output_path, args, progress_callback, source, progress_index, progress_total)
+
+
 def should_try_calibre_fallback(
     source: Path,
     output_path: Path,
@@ -2070,6 +2167,13 @@ def run_docling_convert(
     progress_index: int | None = None,
     progress_total: int | None = None,
 ) -> None:
+    if source.suffix.lower() in DOCLING_TEXT_FALLBACK_FORMATS and getattr(args, "document_pipeline_mode", "auto") != "docling":
+        args._last_docling_pipeline = "csv-table"
+        if args.dry_run:
+            return
+        run_delimited_text_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        return
+
     emit_stage(progress_callback, source, progress_index, progress_total, "docling", "Docling 文档解析")
     if args.dry_run:
         return
@@ -2631,18 +2735,9 @@ def run_docling_fallback_convert(
     fallback_diagnostic = getattr(args, "_docling_diagnostics", [])[-1]
     started = time.monotonic()
     if suffix in DOCLING_TEXT_FALLBACK_FORMATS:
-        emit_stage(progress_callback, source, progress_index, progress_total, "fallback", "CSV 轻量文本兜底")
-        text = source.read_text(encoding="utf-8-sig", errors="replace")
-        if args.output_format == "markdown":
-            output_path.write_text(f"# {source.stem}\n\n```csv\n{text.rstrip()}\n```\n", encoding="utf-8", newline="\n")
-            finish_docling_fallback_diagnostic(fallback_diagnostic, started, "ok")
-            return
-        with tempfile.TemporaryDirectory(prefix="docling-fallback-") as tmpdir:
-            temp_md = Path(tmpdir) / f"{source.stem}.md"
-            temp_md.write_text(f"# {source.stem}\n\n```csv\n{text.rstrip()}\n```\n", encoding="utf-8", newline="\n")
-            convert_markdown_file(temp_md, output_path, args, progress_callback, source, progress_index, progress_total)
-            finish_docling_fallback_diagnostic(fallback_diagnostic, started, "ok")
-            return
+        run_delimited_text_convert(source, output_path, args, progress_callback, progress_index, progress_total)
+        finish_docling_fallback_diagnostic(fallback_diagnostic, started, "ok")
+        return
 
     if suffix == ".md":
         emit_stage(progress_callback, source, progress_index, progress_total, "fallback", "Markdown 轻量兜底")
