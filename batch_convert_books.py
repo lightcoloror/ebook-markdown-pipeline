@@ -31,7 +31,7 @@ try:
     from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available, docling_health
     from ebook_markdown_pipeline.markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ebook_markdown_pipeline.ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
-    from ebook_markdown_pipeline.ocr_providers import cnocr_available, pix2text_available, rapidocr_available, rapidocr_package_name, rapidocr_runtime_info
+    from ebook_markdown_pipeline.ocr_providers import cnocr_available, create_rapidocr_engine, pix2text_available, rapidocr_available, rapidocr_package_name, rapidocr_runtime_info, recognize_image_with_rapidocr
     from ebook_markdown_pipeline.grobid_backend import grobid_health
     from ebook_markdown_pipeline.olmocr_backend import olmocr_available, olmocr_health
     from ebook_markdown_pipeline.pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, camelot_available, pdfplumber_available, tabula_available
@@ -43,7 +43,7 @@ except ModuleNotFoundError:  # Allows running this file directly by absolute pat
     from docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available, docling_health
     from markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
-    from ocr_providers import cnocr_available, pix2text_available, rapidocr_available, rapidocr_package_name, rapidocr_runtime_info
+    from ocr_providers import cnocr_available, create_rapidocr_engine, pix2text_available, rapidocr_available, rapidocr_package_name, rapidocr_runtime_info, recognize_image_with_rapidocr
     from grobid_backend import grobid_health
     from olmocr_backend import olmocr_available, olmocr_health
     from pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, camelot_available, pdfplumber_available, tabula_available
@@ -60,6 +60,7 @@ CALIBRE_FALLBACK_FORMATS = {".epub", ".fb2", ".odt"}
 EBOOK_DIRECT_FORMATS = PANDOC_DIRECT_FORMATS
 EBOOK_NEEDS_CALIBRE_FORMATS = CALIBRE_INTERMEDIATE_FORMATS
 PDF_FORMATS = {".pdf"}
+EMBEDDED_IMAGE_SOURCE_FORMATS = {".docx", ".pptx", ".xlsx"}
 DOCLING_PANDOC_FALLBACK_FORMATS = {".docx", ".html", ".htm", ".md"}
 DOCLING_TEXT_FALLBACK_FORMATS = {".csv", ".tsv"}
 SUPPORTED_FORMATS = PANDOC_DIRECT_FORMATS | CALIBRE_INTERMEDIATE_FORMATS | PDF_FORMATS | DOCLING_FORMATS | DOCLING_TEXT_FALLBACK_FORMATS
@@ -393,6 +394,18 @@ def parse_args() -> argparse.Namespace:
         help="Abort MarkItDown baseline conversion after this many seconds; 0 disables isolation/timeout. Default: 45.",
     )
     parser.add_argument(
+        "--embedded-image-ocr",
+        choices=["auto", "never"],
+        default="auto",
+        help="OCR embedded images referenced from DOCX/PPTX/XLSX Markdown outputs when a lightweight OCR provider is available. Default: auto.",
+    )
+    parser.add_argument(
+        "--embedded-image-ocr-max",
+        type=int,
+        default=40,
+        help="Maximum embedded images to OCR per document; 0 disables the limit. Default: 40.",
+    )
+    parser.add_argument(
         "--ocrmypdf-command",
         default="ocrmypdf",
         help="OCRmyPDF command/path for searchable PDF preprocessing. Default: ocrmypdf.",
@@ -533,6 +546,8 @@ def default_options(**overrides) -> SimpleNamespace:
         "pdf_tool_finalize_timeout": 480.0,
         "docling_timeout": 45.0,
         "markitdown_timeout": 45.0,
+        "embedded_image_ocr": "auto",
+        "embedded_image_ocr_max": 40,
         "ocrmypdf_command": "ocrmypdf",
         "ocrmypdf_timeout": 600.0,
         "ocrmypdf_language": "chi_sim+eng",
@@ -566,6 +581,15 @@ def default_options(**overrides) -> SimpleNamespace:
     return SimpleNamespace(**base)
 
 
+def safe_print(*values: object, sep: str = " ", end: str = "\n", file=None) -> None:
+    stream = file or sys.stdout
+    text = sep.join(str(value) for value in values) + end
+    try:
+        stream.write(text)
+    except UnicodeEncodeError:
+        encoding = getattr(stream, "encoding", None) or "utf-8"
+        stream.write(text.encode(encoding, errors="replace").decode(encoding, errors="replace"))
+
 def main() -> int:
     args = parse_args()
     return run_batch(args)
@@ -585,7 +609,7 @@ def run_batch(args: argparse.Namespace) -> int:
         include_hidden=args.include_hidden,
     )
     if not sources and not getattr(args, "health_check", False):
-        print("No supported files found.", file=sys.stderr)
+        safe_print("No supported files found.", file=sys.stderr)
         return 1
 
     args.output.mkdir(parents=True, exist_ok=True)
@@ -594,21 +618,21 @@ def run_batch(args: argparse.Namespace) -> int:
 
     if getattr(args, "health_check", False):
         checks = dependency_health_report(sources, args)
-        print(format_health_report(checks))
+        safe_print(format_health_report(checks))
         return 0 if all(item["status"] != "missing" for item in checks) else 2
 
     missing = find_missing_dependencies(sources, args)
     if missing:
         for message in missing:
-            print(message, file=sys.stderr)
+            safe_print(message, file=sys.stderr)
         return 2
 
     results = convert_sources(sources, args.input, args.output, args)
 
     for result in results:
-        print(f"[{result.status}] {result.source} -> {result.output or '-'}")
+        safe_print(f"[{result.status}] {result.source} -> {result.output or '-'}")
         if result.message:
-            print(f"  {result.message}")
+            safe_print(f"  {result.message}")
 
     if args.manifest:
         args.manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -3358,6 +3382,190 @@ def convert_markdown_file(
     run_command(cmd, args.dry_run)
 
 
+def markdown_image_references(text: str) -> list[dict[str, str]]:
+    refs: list[dict[str, str]] = []
+    patterns = [
+        re.compile(r"<img\b[^>]*\bsrc=[\"']([^\"']+)[\"'][^>]*>", re.IGNORECASE),
+        re.compile(r"!\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)"),
+    ]
+    seen: set[str] = set()
+    for pattern in patterns:
+        for match in pattern.finditer(text):
+            src = html.unescape(match.group(1)).strip()
+            if not src or embedded_image_src_is_external(src):
+                continue
+            key = src.replace("\\", "/")
+            if key in seen:
+                continue
+            seen.add(key)
+            refs.append({"src": src, "normalized": key})
+    return refs
+
+
+def embedded_image_src_is_external(src: str) -> bool:
+    lowered = src.lower()
+    return lowered.startswith(("http://", "https://", "data:", "file:"))
+
+
+def source_media_prefixes(source: Path) -> list[str]:
+    suffix = source.suffix.lower()
+    if suffix == ".docx":
+        return ["word/media/"]
+    if suffix == ".pptx":
+        return ["ppt/media/"]
+    if suffix == ".xlsx":
+        return ["xl/media/"]
+    return []
+
+
+def extract_embedded_image_assets(source: Path, output_path: Path, refs: list[dict[str, str]]) -> list[dict[str, str]]:
+    if source.suffix.lower() not in EMBEDDED_IMAGE_SOURCE_FORMATS or not refs:
+        return []
+    prefixes = source_media_prefixes(source)
+    if not prefixes:
+        return []
+    extracted: list[dict[str, str]] = []
+    try:
+        archive = zipfile.ZipFile(source)
+    except Exception:
+        return []
+    with archive:
+        names = [name for name in archive.namelist() if not name.endswith("/")]
+        basename_map: dict[str, str] = {}
+        for name in names:
+            lowered = name.lower()
+            if any(lowered.startswith(prefix) for prefix in prefixes):
+                basename_map[Path(name).name.lower()] = name
+        for ref in refs:
+            src = ref["normalized"]
+            target = (output_path.parent / src).resolve()
+            try:
+                target.relative_to(output_path.parent.resolve())
+            except ValueError:
+                continue
+            member = basename_map.get(Path(src).name.lower())
+            if not member:
+                continue
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(archive.read(member))
+            extracted.append({"src": src, "path": str(target), "member": member})
+    return extracted
+
+
+def embedded_image_ocr_enabled(args: argparse.Namespace) -> bool:
+    return str(getattr(args, "embedded_image_ocr", "auto") or "auto").lower() != "never"
+
+
+def build_embedded_image_ocr_map(
+    refs: list[dict[str, str]],
+    output_path: Path,
+    args: argparse.Namespace,
+    ocr_recognizer=None,
+) -> dict[str, dict[str, object]]:
+    if not refs or not embedded_image_ocr_enabled(args):
+        return {}
+    if ocr_recognizer is None and not rapidocr_available():
+        return {}
+    limit = int(getattr(args, "embedded_image_ocr_max", 40) or 0)
+    selected = refs[:limit] if limit > 0 else refs
+    recognizer = ocr_recognizer
+    engine = None
+    if recognizer is None:
+        engine = create_rapidocr_engine()
+
+        def recognizer(image_path: Path) -> dict[str, object]:
+            return recognize_image_with_rapidocr(image_path, engine)
+
+    results: dict[str, dict[str, object]] = {}
+    for ref in selected:
+        src = ref["normalized"]
+        image_path = output_path.parent / src
+        if not image_path.exists() or not image_path.is_file():
+            continue
+        try:
+            result = recognizer(image_path)
+        except Exception as exc:  # noqa: BLE001
+            results[src] = {"status": "failed", "error": str(exc), "text": ""}
+            continue
+        text = str(result.get("text") or "").strip() if isinstance(result, dict) else ""
+        if text:
+            results[src] = {
+                "status": "ok",
+                "provider": str(result.get("provider") or "rapidocr") if isinstance(result, dict) else "rapidocr",
+                "text": text,
+                "block_count": len(result.get("blocks") or []) if isinstance(result, dict) else 0,
+            }
+    return results
+
+
+def render_embedded_image_ocr_block(src: str, result: dict[str, object]) -> str:
+    text = str(result.get("text") or "").strip()
+    if not text:
+        return ""
+    provider = str(result.get("provider") or "ocr")
+    lines = [f"<!-- embedded-image-ocr: {src} -->", f"> **图片OCR / Image OCR ({provider})**"]
+    for line in text.splitlines():
+        clean = line.strip()
+        if clean:
+            lines.append(f"> {clean}")
+    return "\n".join(lines)
+
+
+def inject_embedded_image_ocr_blocks(text: str, ocr_results: dict[str, dict[str, object]]) -> str:
+    if not ocr_results or "embedded-image-ocr:" in text:
+        return text
+    image_pattern = re.compile(r"(<img\b[^>]*\bsrc=[\"']([^\"']+)[\"'][^>]*>|!\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\))", re.IGNORECASE)
+
+    def replace(match: re.Match[str]) -> str:
+        src = html.unescape(match.group(2) or match.group(3) or "").strip().replace("\\", "/")
+        block = render_embedded_image_ocr_block(src, ocr_results.get(src) or {})
+        if not block:
+            return match.group(1)
+        return f"{match.group(1)}\n\n{block}"
+
+    return image_pattern.sub(replace, text)
+
+
+def enhance_embedded_images_in_markdown(
+    text: str,
+    source: Path | None,
+    output_path: Path,
+    args: argparse.Namespace,
+    progress_callback=None,
+    progress_source: Path | None = None,
+    progress_index: int | None = None,
+    progress_total: int | None = None,
+    ocr_recognizer=None,
+) -> str:
+    if source is None or source.suffix.lower() not in EMBEDDED_IMAGE_SOURCE_FORMATS:
+        return text
+    refs = markdown_image_references(text)
+    if not refs:
+        return text
+    stage_source = progress_source or source
+    emit_stage(progress_callback, stage_source, progress_index, progress_total, "embedded_images", f"提取嵌入图片 {len(refs)} 张")
+    extracted = extract_embedded_image_assets(source, output_path, refs)
+    if not extracted:
+        return text
+    ocr_results = build_embedded_image_ocr_map(refs, output_path, args, ocr_recognizer=ocr_recognizer)
+    reports = getattr(args, "_embedded_image_ocr_reports", None)
+    if reports is None:
+        reports = {}
+        setattr(args, "_embedded_image_ocr_reports", reports)
+    reports[str(output_path)] = {
+        "source": str(source),
+        "output": str(output_path),
+        "image_count": len(refs),
+        "extracted_count": len(extracted),
+        "ocr_count": sum(1 for item in ocr_results.values() if item.get("status") == "ok"),
+        "images": extracted,
+        "ocr": ocr_results,
+    }
+    if ocr_results:
+        emit_stage(progress_callback, stage_source, progress_index, progress_total, "embedded_image_ocr", f"图片 OCR 完成 {sum(1 for item in ocr_results.values() if item.get('status') == 'ok')}/{len(refs)}")
+    return inject_embedded_image_ocr_blocks(text, ocr_results)
+
 def postprocess_text_output(
     output_path: Path,
     args: argparse.Namespace,
@@ -3402,6 +3610,16 @@ def postprocess_text_output(
             reports[str(output_path)] = repair.report()
         if source_kind == "umi_pdf":
             text = clean_umi_ocr_markdown(text)
+    text = enhance_embedded_images_in_markdown(
+        text,
+        note_source_path,
+        output_path,
+        args,
+        progress_callback=progress_callback,
+        progress_source=progress_source,
+        progress_index=progress_index,
+        progress_total=progress_total,
+    )
     output_path.write_text(text, encoding="utf-8")
 
 
@@ -4468,6 +4686,10 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
         structure_report = structure_reports.get(str(Path(result.output)))
         if structure_report:
             payload["structure_repair"] = structure_report
+        embedded_reports = getattr(args, "_embedded_image_ocr_reports", {})
+        embedded_report = embedded_reports.get(str(Path(result.output)))
+        if embedded_report:
+            payload["embedded_image_ocr"] = embedded_report
     if Path(result.source).suffix.lower() == ".pdf":
         payload["pdf_preflight"] = asdict(pdf_preflight(Path(result.source), args))
         payload["pdf_outline"] = extract_pdf_outline(Path(result.source))
@@ -5146,7 +5368,7 @@ def run_command(
     capture_output: bool = True,
 ) -> None:
     if dry_run:
-        print("DRY RUN:", format_cmd(cmd))
+        safe_print("DRY RUN:", format_cmd(cmd))
         return
     kwargs = {
         "check": True,
@@ -5175,7 +5397,7 @@ def run_pdf_tool_command(
     env: dict[str, str] | None = None,
 ) -> None:
     if args.dry_run:
-        print("DRY RUN:", format_cmd(cmd))
+        safe_print("DRY RUN:", format_cmd(cmd))
         return
 
     page_count = max(pdf_preflight(source, args).page_count, 0)

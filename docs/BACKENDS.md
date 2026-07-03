@@ -20,7 +20,7 @@ The converter is local-first and tool-first. Backends are optional specialist to
 | Camelot | Text-based PDF table extraction | Optional diagnostics | Medium | Runs only for suspected table pages when installed. |
 | Tabula / tabula-py | Text-based PDF table extraction fallback | Optional diagnostics | Medium | Runs only for suspected table pages when installed; requires Java. |
 | Umi-OCR / PaddleOCR-json | Local OCR for scanned pages and images | Optional | Medium | Strong practical OCR backend for local Windows workflows. |
-| RapidOCR | Python-native OCR fallback and benchmark provider | Optional | Low/Medium | Easier for scripts/agents; outputs the same OCR block schema. |
+| RapidOCR | Python-native OCR fallback, embedded Office-image OCR, and benchmark provider | Optional | Low/Medium | Easier for scripts/agents; outputs the same OCR block schema and can insert OCR text under DOCX/PPTX/XLSX image references. |
 | CnOCR | Chinese/English OCR benchmark and fallback experiment | Optional | Low/Medium | Use for Chinese OCR provider comparison before promoting it to a default route. |
 | Pix2Text | Chinese screenshots, formulas, and image-page Markdown enhancement | Optional | Medium/Heavy | First optional layout-heavy enhancement attempt when installed; not required for minimal conversion. |
 | Surya | OCR, layout, reading-order, and table enhancement | Optional | Heavy | Explicit image/layout experiment backend; may start a VLM inference server. Code and model weights are licensed separately; review model/commercial-use terms before redistribution. |

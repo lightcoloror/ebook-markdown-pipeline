@@ -53,6 +53,7 @@ For a concise repository overview that can be shared with new users or agents, s
 - Converts `EPUB / AZW3 / MOBI / FB2 / TXT / RTF / ODT / PDF / DOCX / PPTX / XLSX / HTML / CSV / TSV / images` to Markdown-oriented outputs.
 - Routes work across existing tools instead of reinventing parsers: Pandoc, Calibre, PyMuPDF4LLM, MinerU, Marker, Docling, Umi-OCR, PaddleOCR-VL, and Qwen-VL wrappers.
 - Detects long PDFs, scanned PDFs, complex layouts, PPT-exported slide PDFs, and weak text layers before choosing a pipeline.
+- Extracts embedded DOCX/PPTX/XLSX images beside Markdown outputs and can insert lightweight RapidOCR text blocks under referenced images.
 - Builds quality reports under `.reports/`, including summary, review checklist, PDF tool logs, fallback diagnostics, and structure repair evidence.
 - Explains structure repair decisions with action, confidence, reason, signals, and inferred outline in per-book reports.
 - Rebuilds screenshot/image books from unordered, duplicate, or partially overlapping screenshots.
@@ -440,6 +441,7 @@ python scripts\compare_pipelines.py `
 输出的 `pipeline-comparison.md` 会对比各管道的耗时、标题数量、正文长度、表格迹象、页码噪声和人工评分入口。`--pipeline-timeout` 会限制单条管道耗时，并在每条管道结束后写出 `pipeline-comparison.partial.json/md`，避免 MinerU、Marker、Docling PDF OCR 等慢管道拖死整次对比。桌面 UI 里选中 PDF 后也可以点 `PDF对比 / Compare` 生成同类报告；如果填写 `对比页码 / Pages`，UI 会传入 `--page-ranges` 只比较指定页；选中失败或待复查条目后，`推荐重跑 / Rerun Rec` 会按报告里的推荐管道重新执行该文件。
 
 Agent/批量场景下可用 `--docling-timeout <秒>` 控制 Docling 文档后端的最长运行时间；`--no-docling-fallback` 可关闭 DOCX/HTML/Markdown 的自动轻量兜底；CSV/TSV 默认走内置 Markdown 表格兜底。HTTP `/call` 的 `start_conversion` / `process_material` 也支持 `docling_timeout` 和 `docling_fallback_to_pandoc` 参数。
+`--embedded-image-ocr auto|never` 控制 DOCX/PPTX/XLSX 输出中的嵌入图片 OCR，默认 `auto`；`--embedded-image-ocr-max` 控制每个文档最多 OCR 的图片数，默认 40。
 
 需要轻量 baseline 对照时，可安装 `requirements-markitdown.txt`，然后显式传入 `--document-pipeline-mode markitdown` 或 `--pdf-pipeline-mode markitdown`。默认转换仍走现有推荐逻辑；MarkItDown 主要用于快速观察“另一个成熟工具会怎么转”，方便发现 Pandoc/Docling/PDF 管道的结构差异。
 
