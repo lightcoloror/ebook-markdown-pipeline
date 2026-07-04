@@ -1184,20 +1184,47 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
         }
     )
     rapidocr_runtime = rapidocr_runtime_info()
-    runtime_detail = (
-        f"requested_device={rapidocr_runtime.get('requested_device')}; "
-        f"onnxruntime={rapidocr_runtime.get('onnxruntime_version') or 'missing'}; "
-        f"providers={rapidocr_runtime.get('available_providers') or []}"
-    )
+    if rapidocr_runtime.get("execution_mode") == "external":
+        runtime_detail_parts = [
+            "execution_mode=external",
+            f"requested_device={rapidocr_runtime.get('requested_device')}",
+            f"selected_device={rapidocr_runtime.get('selected_device')}",
+            f"external_python={rapidocr_runtime.get('external_python')}",
+            f"worker_timeout_seconds={rapidocr_runtime.get('worker_timeout_seconds')}",
+            "worker_protocol=utf8-json-lines",
+        ]
+    else:
+        runtime_detail_parts = [
+            f"execution_mode={rapidocr_runtime.get('execution_mode') or 'in_process'}",
+            f"requested_device={rapidocr_runtime.get('requested_device')}",
+            f"selected_device={rapidocr_runtime.get('selected_device')}",
+            f"onnxruntime={rapidocr_runtime.get('onnxruntime_version') or 'missing'}",
+            f"ort_cpu_pkg={rapidocr_runtime.get('onnxruntime_cpu_package_version') or 'missing'}",
+            f"ort_gpu_pkg={rapidocr_runtime.get('onnxruntime_gpu_package_version') or 'missing'}",
+            f"cuda_build={rapidocr_runtime.get('cuda_build_version') or 'unknown'}",
+            f"cuda_dependency_status={rapidocr_runtime.get('cuda_dependency_status') or 'unknown'}",
+            f"providers={rapidocr_runtime.get('available_providers') or []}",
+        ]
+        if rapidocr_runtime.get("missing_cuda_dependencies"):
+            runtime_detail_parts.append(f"missing_cuda_dependencies={rapidocr_runtime.get('missing_cuda_dependencies')}")
+        if rapidocr_runtime.get("multiple_onnxruntime_packages"):
+            runtime_detail_parts.append("multiple_onnxruntime_packages=true")
+        if rapidocr_runtime.get("recommended_action"):
+            runtime_detail_parts.append(str(rapidocr_runtime.get("recommended_action")))
+    runtime_detail = "; ".join(runtime_detail_parts)
+    runtime_status = "missing"
+    if rapidocr_available():
+        if rapidocr_runtime.get("cuda_requested_but_unavailable"):
+            runtime_status = "blocked"
+        elif rapidocr_runtime.get("cuda_provider_fallback_suppressed"):
+            runtime_status = "warning"
+        else:
+            runtime_status = "ok"
     checks.append(
         {
             "name": "RapidOCR runtime",
             "kind": "gpu",
-            "status": "missing"
-            if not rapidocr_available()
-            else "blocked"
-            if rapidocr_runtime.get("cuda_requested_but_unavailable")
-            else "ok",
+            "status": runtime_status,
             "detail": runtime_detail,
         }
     )

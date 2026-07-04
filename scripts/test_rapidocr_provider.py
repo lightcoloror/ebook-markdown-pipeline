@@ -8,7 +8,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR.parent))
 
 from ebook_markdown_pipeline.batch_convert_books import default_options, dependency_health_report, environment_capability_summary  # noqa: E402
-from ebook_markdown_pipeline.ocr_providers import normalize_ocr_box, normalize_rapidocr_blocks, rapidocr_default_params, rapidocr_model_root_dir, rapidocr_runtime_info, recognize_image_with_rapidocr, rows_from_parallel_values  # noqa: E402
+from ebook_markdown_pipeline.ocr_providers import choose_rapidocr_device, normalize_ocr_box, normalize_rapidocr_blocks, rapidocr_default_params, rapidocr_model_root_dir, rapidocr_runtime_info, recognize_image_with_rapidocr, rows_from_parallel_values  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book_from_sources  # noqa: E402
 import ebook_markdown_pipeline.image_book_rebuilder as rebuilder  # noqa: E402
 
@@ -77,6 +77,15 @@ def main() -> int:
     if normalize_ocr_box(ArrayLike([[5, 6], [12, 6], [12, 14], [5, 14]])) != [5.0, 6.0, 12.0, 14.0]:
         raise AssertionError("Array-like OCR boxes should normalize through tolist().")
 
+    if choose_rapidocr_device("auto", cuda_provider_available=True, cuda_dependencies_ok=False) != "cpu":
+        raise AssertionError("RapidOCR auto mode should use CPU when CUDA dependencies are missing.")
+    if choose_rapidocr_device("cuda", cuda_provider_available=True, cuda_dependencies_ok=False) != "cpu":
+        raise AssertionError("RapidOCR explicit CUDA should be blocked when dependencies are missing by default.")
+    if choose_rapidocr_device("cuda", cuda_provider_available=True, cuda_dependencies_ok=False, allow_unstable_cuda=True) != "cuda":
+        raise AssertionError("RapidOCR unstable CUDA override should preserve the old manual experiment path.")
+    if choose_rapidocr_device("auto", cuda_provider_available=True, cuda_dependencies_ok=True) != "cuda":
+        raise AssertionError("RapidOCR auto mode should use CUDA when provider and dependencies are healthy.")
+
     with tempfile.TemporaryDirectory(prefix="rapidocr-provider-") as tmp:
         root = Path(tmp)
         model_root = root / "models"
@@ -86,25 +95,34 @@ def main() -> int:
         old_device = os.environ.get("EBOOK_CONVERTER_RAPIDOCR_DEVICE")
         old_device_id = os.environ.get("EBOOK_CONVERTER_RAPIDOCR_CUDA_DEVICE_ID")
         os.environ["EBOOK_CONVERTER_RAPIDOCR_MODEL_DIR"] = str(model_root)
-        os.environ.pop("EBOOK_CONVERTER_RAPIDOCR_DEVICE", None)
+        os.environ["EBOOK_CONVERTER_RAPIDOCR_DEVICE"] = "cpu"
         os.environ.pop("EBOOK_CONVERTER_RAPIDOCR_CUDA_DEVICE_ID", None)
         try:
             if rapidocr_model_root_dir() != model_root.resolve():
                 raise AssertionError("RapidOCR model root should follow EBOOK_CONVERTER_RAPIDOCR_MODEL_DIR")
             params = rapidocr_default_params()
-            if params != {"Global.model_root_dir": str(model_root.resolve())}:
-                raise AssertionError(f"Default RapidOCR params should stay CPU/auto unless explicitly configured: {params}")
+            expected_cpu_params = {
+                "Global.model_root_dir": str(model_root.resolve()),
+                "EngineConfig.onnxruntime.use_cuda": False,
+                "EngineConfig.paddle.use_cuda": False,
+                "EngineConfig.torch.use_cuda": False,
+            }
+            if params != expected_cpu_params:
+                raise AssertionError(f"CPU RapidOCR params should explicitly avoid CUDA provider fallback noise: {params}")
 
             os.environ["EBOOK_CONVERTER_RAPIDOCR_DEVICE"] = "cuda"
             os.environ["EBOOK_CONVERTER_RAPIDOCR_CUDA_DEVICE_ID"] = "1"
-            cuda_params = rapidocr_default_params()
-            if cuda_params.get("EngineConfig.onnxruntime.use_cuda") is not True:
-                raise AssertionError(f"CUDA RapidOCR params should request ONNXRuntime CUDA: {cuda_params}")
-            if cuda_params.get("EngineConfig.onnxruntime.cuda_ep_cfg.device_id") != 1:
-                raise AssertionError(f"CUDA RapidOCR params should preserve device id: {cuda_params}")
             runtime = rapidocr_runtime_info()
             if runtime.get("requested_device") != "cuda":
                 raise AssertionError(f"RapidOCR runtime info should report requested CUDA: {runtime}")
+            cuda_params = rapidocr_default_params()
+            if runtime.get("selected_device") == "cuda":
+                if cuda_params.get("EngineConfig.onnxruntime.use_cuda") is not True:
+                    raise AssertionError(f"Healthy CUDA RapidOCR params should request ONNXRuntime CUDA: {cuda_params}")
+                if cuda_params.get("EngineConfig.onnxruntime.cuda_ep_cfg.device_id") != 1:
+                    raise AssertionError(f"CUDA RapidOCR params should preserve device id: {cuda_params}")
+            elif cuda_params.get("EngineConfig.onnxruntime.use_cuda") is not False:
+                raise AssertionError(f"Unhealthy CUDA should be suppressed to CPU params: runtime={runtime} params={cuda_params}")
         finally:
             if old_model_root is None:
                 os.environ.pop("EBOOK_CONVERTER_RAPIDOCR_MODEL_DIR", None)

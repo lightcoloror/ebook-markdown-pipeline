@@ -1,7 +1,17 @@
 from __future__ import annotations
 
 import importlib.util
+import importlib.metadata as importlib_metadata
+import contextlib
+import io
+import json
 import os
+import queue
+import re
+import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -14,14 +24,32 @@ PROJECT_DIR = Path(__file__).resolve().parent
 
 
 def rapidocr_available() -> bool:
-    return any(importlib.util.find_spec(name) is not None for name in RAPIDOCR_PACKAGES)
+    return bool(rapidocr_external_python()) or any(importlib.util.find_spec(name) is not None for name in RAPIDOCR_PACKAGES)
 
 
 def rapidocr_package_name() -> str:
+    external = rapidocr_external_python()
+    if external:
+        return f"external:{external}"
     for name in RAPIDOCR_PACKAGES:
         if importlib.util.find_spec(name) is not None:
             return name
     return ""
+
+
+def rapidocr_external_python() -> str:
+    value = os.environ.get("EBOOK_CONVERTER_RAPIDOCR_PYTHON", "").strip().strip('\"')
+    if not value:
+        return ""
+    path = Path(value).expanduser()
+    if not path.exists():
+        return ""
+    try:
+        if path.resolve() == Path(sys.executable).resolve():
+            return ""
+    except OSError:
+        pass
+    return str(path)
 
 
 def pix2text_available() -> bool:
@@ -33,6 +61,9 @@ def cnocr_available() -> bool:
 
 
 def create_rapidocr_engine():
+    external_python = rapidocr_external_python()
+    if external_python:
+        return ExternalRapidOCREngine(external_python)
     params = rapidocr_default_params()
     package_name = rapidocr_package_name()
     if package_name == "rapidocr_onnxruntime":
@@ -50,6 +81,132 @@ def create_rapidocr_engine():
         except TypeError:
             return RapidOCR()
     raise FileNotFoundError("RapidOCR is not installed. Install rapidocr_onnxruntime or rapidocr to enable this provider.")
+
+
+class ExternalRapidOCREngine:
+    def __init__(self, python_executable: str):
+        self.python_executable = python_executable
+        self.process: subprocess.Popen[str] | None = None
+        self.stdout_lines: queue.Queue[str] = queue.Queue(maxsize=200)
+        self.stderr_tail: queue.Queue[str] = queue.Queue(maxsize=200)
+        self.timeout_seconds = rapidocr_worker_timeout_seconds()
+
+    def __call__(self, image_path: str):
+        process = self._ensure_process()
+        request = json.dumps({"image": str(image_path)}, ensure_ascii=False)
+        if process.stdin is None or process.stdout is None:
+            raise RuntimeError("External RapidOCR worker is not connected.")
+        process.stdin.write(request + "\n")
+        process.stdin.flush()
+        while True:
+            response = self._read_json_payload(process, context="ocr")
+            if not response.get("ok"):
+                raise RuntimeError(f"External RapidOCR worker failed: {response.get('error')}; stderr_tail={self._stderr_tail()}")
+            if response.get("event"):
+                continue
+            return response.get("result") or {}
+
+    def close(self) -> None:
+        process = self.process
+        self.process = None
+        if not process:
+            return
+        try:
+            if process.stdin:
+                process.stdin.write(json.dumps({"command": "shutdown"}) + "\n")
+                process.stdin.flush()
+        except Exception:
+            pass
+        try:
+            process.terminate()
+        except Exception:
+            pass
+
+    def _ensure_process(self) -> subprocess.Popen[str]:
+        if self.process and self.process.poll() is None:
+            return self.process
+        worker = PROJECT_DIR / "scripts" / "rapidocr_worker.py"
+        env = os.environ.copy()
+        env.setdefault("PYTHONIOENCODING", "utf-8")
+        env.setdefault("EBOOK_CONVERTER_RAPIDOCR_MODEL_DIR", str(rapidocr_model_root_dir()))
+        env.setdefault("EBOOK_CONVERTER_RAPIDOCR_DEVICE", rapidocr_requested_device())
+        process = subprocess.Popen(
+            [self.python_executable, str(worker)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+        )
+        self.process = process
+        if process.stdout is not None:
+            threading.Thread(target=self._drain_stdout, args=(process.stdout,), daemon=True).start()
+        if process.stderr is not None:
+            threading.Thread(target=self._drain_stderr, args=(process.stderr,), daemon=True).start()
+        self._wait_until_ready(process)
+        return process
+
+    def _wait_until_ready(self, process: subprocess.Popen[str]) -> None:
+        while True:
+            payload = self._read_json_payload(process, context="init")
+            if payload.get("event") == "ready" and payload.get("ok"):
+                return
+            if not payload.get("ok"):
+                raise RuntimeError(f"External RapidOCR worker init failed: {payload.get('error')}; stderr_tail={self._stderr_tail()}")
+
+    def _read_json_payload(self, process: subprocess.Popen[str], *, context: str) -> dict[str, Any]:
+        deadline = time.monotonic() + self.timeout_seconds
+        while True:
+            remaining = max(0.1, deadline - time.monotonic())
+            if remaining <= 0.1 and time.monotonic() >= deadline:
+                raise RuntimeError(f"External RapidOCR worker {context} timed out after {self.timeout_seconds:.1f}s. stderr_tail={self._stderr_tail()}")
+            try:
+                line = self.stdout_lines.get(timeout=remaining)
+            except queue.Empty as exc:
+                if process.poll() is not None:
+                    raise RuntimeError(f"External RapidOCR worker exited during {context} with code {process.returncode}. stderr_tail={self._stderr_tail()}") from exc
+                raise RuntimeError(f"External RapidOCR worker {context} timed out after {self.timeout_seconds:.1f}s. stderr_tail={self._stderr_tail()}") from exc
+            line = line.strip()
+            if not line:
+                continue
+            if not line.startswith("{"):
+                self._push_stderr_tail(f"stdout-noise: {line}")
+                continue
+            return json.loads(line)
+
+    def _drain_stdout(self, stream) -> None:
+        for line in stream:
+            self._push_stdout_line(line.rstrip())
+
+    def _drain_stderr(self, stream) -> None:
+        for line in stream:
+            self._push_stderr_tail(line.rstrip())
+
+    def _push_stdout_line(self, line: str) -> None:
+        if self.stdout_lines.full():
+            try:
+                self.stdout_lines.get_nowait()
+            except queue.Empty:
+                pass
+        self.stdout_lines.put_nowait(line)
+
+    def _push_stderr_tail(self, line: str) -> None:
+        if not line:
+            return
+        if self.stderr_tail.full():
+            try:
+                self.stderr_tail.get_nowait()
+            except queue.Empty:
+                pass
+        self.stderr_tail.put_nowait(line)
+
+    def _stderr_tail(self) -> list[str]:
+        return list(self.stderr_tail.queue)[-20:]
+
+    def __del__(self):
+        self.close()
 
 
 def create_cnocr_engine():
@@ -91,7 +248,7 @@ def rapidocr_model_root_dir() -> Path:
 
 def rapidocr_default_params() -> dict[str, Any]:
     params: dict[str, Any] = {"Global.model_root_dir": str(rapidocr_model_root_dir())}
-    device = rapidocr_requested_device()
+    device = rapidocr_selected_device()
     if device == "cuda":
         params["EngineConfig.onnxruntime.use_cuda"] = True
         params["EngineConfig.paddle.use_cuda"] = True
@@ -123,25 +280,195 @@ def rapidocr_cuda_device_id() -> int:
         return 0
 
 
+def rapidocr_allow_unstable_cuda() -> bool:
+    value = os.environ.get("EBOOK_CONVERTER_RAPIDOCR_ALLOW_UNSTABLE_CUDA", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def rapidocr_worker_timeout_seconds() -> float:
+    raw = os.environ.get("EBOOK_CONVERTER_RAPIDOCR_WORKER_TIMEOUT", "180").strip()
+    try:
+        return max(5.0, float(raw))
+    except ValueError:
+        return 180.0
+
+
+def rapidocr_selected_device() -> str:
+    info = rapidocr_runtime_info()
+    return str(info.get("selected_device") or "cpu")
+
+
+def choose_rapidocr_device(
+    requested_device: str,
+    *,
+    cuda_provider_available: bool,
+    cuda_dependencies_ok: bool,
+    allow_unstable_cuda: bool = False,
+) -> str:
+    requested_device = requested_device if requested_device in {"auto", "cuda", "cpu"} else "auto"
+    if requested_device == "cpu":
+        return "cpu"
+    if cuda_provider_available and (cuda_dependencies_ok or allow_unstable_cuda):
+        return "cuda"
+    return "cpu"
+
+
+def onnxruntime_debug_info_text() -> str:
+    try:
+        import onnxruntime as ort  # type: ignore
+
+        if not hasattr(ort, "print_debug_info"):
+            return ""
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            ort.print_debug_info()
+        return f"{stdout.getvalue()}\n{stderr.getvalue()}".strip()
+    except Exception as exc:
+        return f"onnxruntime debug info unavailable: {exc}"
+
+
+def package_version(name: str) -> str:
+    try:
+        return importlib_metadata.version(name)
+    except importlib_metadata.PackageNotFoundError:
+        return ""
+    except Exception:
+        return ""
+
+
+def parse_onnxruntime_cuda_build_version(debug_text: str) -> str:
+    match = re.search(r"CUDA version used in build:\s*([0-9]+(?:\.[0-9]+)?)", debug_text or "")
+    return match.group(1) if match else ""
+
+
+def find_dll_on_path(name: str) -> str:
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        if not entry:
+            continue
+        try:
+            candidate = Path(entry) / name
+            if candidate.exists():
+                return str(candidate)
+        except OSError:
+            continue
+    return ""
+
+
+def cuda_dependency_probe(available_providers: list[str], debug_text: str) -> dict[str, Any]:
+    if "CUDAExecutionProvider" not in available_providers:
+        return {
+            "status": "unavailable",
+            "cuda_build_version": "",
+            "required_dlls": [],
+            "missing_dlls": [],
+            "detail": "CUDAExecutionProvider is not listed by onnxruntime.",
+        }
+
+    cuda_build_version = parse_onnxruntime_cuda_build_version(debug_text)
+    cuda_major = cuda_build_version.split(".", 1)[0] if cuda_build_version else ""
+    if not cuda_major:
+        return {
+            "status": "unknown",
+            "cuda_build_version": "",
+            "required_dlls": [],
+            "missing_dlls": [],
+            "detail": "Could not determine the CUDA version used by the installed onnxruntime-gpu build.",
+        }
+
+    required_dlls = [f"cublasLt64_{cuda_major}.dll"]
+    if cuda_major in {"12", "13"}:
+        required_dlls.append("cudnn64_9.dll")
+
+    found_dlls = {dll: find_dll_on_path(dll) for dll in required_dlls}
+    missing_dlls = [dll for dll, dll_path in found_dlls.items() if not dll_path]
+    nvidia_packages = {
+        f"nvidia-cublas-cu{cuda_major}": package_version(f"nvidia-cublas-cu{cuda_major}"),
+        f"nvidia-cudnn-cu{cuda_major}": package_version(f"nvidia-cudnn-cu{cuda_major}"),
+    }
+    missing_packages = [name for name, version in nvidia_packages.items() if not version]
+    package_backed = not missing_packages
+
+    if not missing_dlls or package_backed:
+        status = "ok"
+        detail = f"ONNX Runtime GPU build targets CUDA {cuda_build_version}; required DLLs are available via PATH or NVIDIA Python wheels."
+    else:
+        status = "missing_dependencies"
+        detail = (
+            f"ONNX Runtime GPU build targets CUDA {cuda_build_version}, but required runtime files are missing: "
+            f"{', '.join(missing_dlls)}."
+        )
+    return {
+        "status": status,
+        "cuda_build_version": cuda_build_version,
+        "required_dlls": required_dlls,
+        "found_dlls": found_dlls,
+        "missing_dlls": missing_dlls,
+        "nvidia_packages": nvidia_packages,
+        "missing_nvidia_packages": missing_packages,
+        "detail": detail,
+    }
+
+
 def rapidocr_runtime_info() -> dict[str, Any]:
     available_providers: list[str] = []
     onnxruntime_version = ""
+    debug_text = ""
     try:
         import onnxruntime as ort  # type: ignore
 
         onnxruntime_version = str(getattr(ort, "__version__", ""))
         available_providers = [str(provider) for provider in ort.get_available_providers()]
+        debug_text = onnxruntime_debug_info_text()
     except Exception:
         pass
     requested_device = rapidocr_requested_device()
+    external_python = rapidocr_external_python()
+    dependency_probe = cuda_dependency_probe(available_providers, debug_text)
+    allow_unstable = rapidocr_allow_unstable_cuda()
+    selected_device = choose_rapidocr_device(
+        requested_device,
+        cuda_provider_available="CUDAExecutionProvider" in available_providers,
+        cuda_dependencies_ok=dependency_probe.get("status") == "ok",
+        allow_unstable_cuda=allow_unstable,
+    )
+    cuda_unusable = "CUDAExecutionProvider" in available_providers and dependency_probe.get("status") != "ok"
+    final_selected_device = requested_device if external_python and requested_device != "auto" else selected_device
+    external_mode = bool(external_python)
+    recommended_action = ""
+    if cuda_unusable and not external_mode:
+        build = dependency_probe.get("cuda_build_version") or "unknown"
+        missing = ", ".join(dependency_probe.get("missing_dlls") or dependency_probe.get("missing_nvidia_packages") or [])
+        recommended_action = (
+            f"RapidOCR is using CPU because onnxruntime-gpu {onnxruntime_version or 'unknown'} targets CUDA {build} "
+            f"and required dependencies are missing ({missing or dependency_probe.get('status')}). "
+            "Install the matching CUDA/cuDNN runtime or downgrade onnxruntime-gpu to a CUDA stack that matches this machine. "
+            "Set EBOOK_CONVERTER_RAPIDOCR_ALLOW_UNSTABLE_CUDA=1 only for manual experiments."
+        )
     return {
         "package": rapidocr_package_name(),
+        "execution_mode": "external" if external_python else "in_process",
+        "external_python": external_python,
+        "worker_timeout_seconds": rapidocr_worker_timeout_seconds() if external_python else 0,
         "requested_device": requested_device,
+        "selected_device": final_selected_device,
         "cuda_device_id": rapidocr_cuda_device_id(),
+        "python_executable": sys.executable,
         "onnxruntime_version": onnxruntime_version,
+        "onnxruntime_cpu_package_version": package_version("onnxruntime"),
+        "onnxruntime_gpu_package_version": package_version("onnxruntime-gpu"),
+        "multiple_onnxruntime_packages": bool(package_version("onnxruntime") and package_version("onnxruntime-gpu")),
         "available_providers": available_providers,
         "cuda_provider_available": "CUDAExecutionProvider" in available_providers,
-        "cuda_requested_but_unavailable": requested_device == "cuda" and "CUDAExecutionProvider" not in available_providers,
+        "cuda_dependency_status": dependency_probe.get("status"),
+        "cuda_build_version": dependency_probe.get("cuda_build_version", ""),
+        "cuda_dependency_detail": dependency_probe.get("detail", ""),
+        "missing_cuda_dependencies": dependency_probe.get("missing_dlls", []),
+        "missing_nvidia_cuda_packages": dependency_probe.get("missing_nvidia_packages", []),
+        "cuda_requested_but_unavailable": requested_device == "cuda" and final_selected_device != "cuda",
+        "cuda_provider_fallback_suppressed": (not external_mode) and selected_device == "cpu" and cuda_unusable,
+        "allow_unstable_cuda": allow_unstable,
+        "recommended_action": recommended_action,
     }
 
 
@@ -149,7 +476,7 @@ def recognize_image_with_rapidocr(image_path: Path, engine=None) -> dict[str, An
     ocr_engine = engine or create_rapidocr_engine()
     raw = ocr_engine(str(image_path))
     blocks = normalize_rapidocr_blocks(raw)
-    return {
+    result = {
         "schema_version": OCR_BLOCK_SCHEMA_VERSION,
         "provider": "rapidocr",
         "source": str(image_path),
@@ -157,6 +484,9 @@ def recognize_image_with_rapidocr(image_path: Path, engine=None) -> dict[str, An
         "blocks": blocks,
         "raw_shape": describe_raw_shape(raw),
     }
+    if isinstance(raw, dict) and raw.get("provider_runtime"):
+        result["provider_runtime"] = str(raw.get("provider_runtime"))
+    return result
 
 
 def recognize_image_with_cnocr(image_path: Path, engine=None) -> dict[str, Any]:

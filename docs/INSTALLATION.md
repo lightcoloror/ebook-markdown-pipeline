@@ -160,6 +160,18 @@ python image_book_rebuilder.py build .\screenshots .\screenshots-out --ocr-provi
 
 Use RapidOCR for lightweight fallback or benchmark runs; keep Umi-OCR as the preferred local OCR path when it is already configured and producing better results.
 
+RapidOCR GPU note: `EBOOK_CONVERTER_RAPIDOCR_DEVICE=auto` uses CUDA only when ONNX Runtime reports a compatible CUDA provider and the matching CUDA/cuDNN runtime files are available. If `onnxruntime-gpu` lists CUDA but its DLL dependencies are missing, the converter selects CPU and records the reason in `--health-check` instead of letting repeated provider fallback logs pollute upstream batch runs. To repair GPU mode, keep only one ONNX Runtime package in the environment and install a CUDA/cuDNN stack that matches the ONNX Runtime GPU build, or downgrade `onnxruntime-gpu` to the CUDA major version already present on the machine. Use `EBOOK_CONVERTER_RAPIDOCR_ALLOW_UNSTABLE_CUDA=1` only for manual experiments.
+
+For the safest GPU setup, create an isolated RapidOCR venv and point the project at it instead of changing the main project Python:
+
+```powershell
+$env:EBOOK_CONVERTER_RAPIDOCR_PYTHON = "C:\path\to\rapidocr-gpu-venv\Scripts\python.exe"
+$env:EBOOK_CONVERTER_RAPIDOCR_DEVICE = "cuda"
+python image_book_rebuilder.py build .\screenshots .\screenshots-out --ocr-provider rapidocr
+```
+
+The external worker preloads NVIDIA DLL directories from that venv and communicates with the main pipeline over UTF-8 JSON lines, so CLI/UI/MCP callers can keep using the normal RapidOCR provider.
+
 CnOCR is an optional Chinese/English OCR comparison provider. Install it only when you want to benchmark Chinese image OCR against Umi-OCR/RapidOCR before changing defaults:
 
 ```powershell
