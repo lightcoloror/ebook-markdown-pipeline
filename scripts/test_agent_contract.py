@@ -67,6 +67,9 @@ HEALTH_FIELDS = {
     "capabilities",
     "online_provider_health",
     "provider_status",
+    "candidate_backend_registry",
+    "candidate_artifact_schemas",
+    "diagnostic_artifact_schemas",
     "backend_status",
     "capability_status",
     "ok",
@@ -78,7 +81,7 @@ HEALTH_FIELDS = {
     "degraded_capabilities",
     "missing_capabilities",
 }
-INSPECTION_FIELDS = {"status", "input", "kind", "recommendation", "structure_strategy", "online_enhancement", "next_actions", "warnings"}
+INSPECTION_FIELDS = {"status", "input", "kind", "recommendation", "structure_strategy", "online_enhancement", "baseline_recommendations", "candidate_enhancements", "next_actions", "warnings"}
 JOB_FIELDS = {
     "job_id",
     "kind",
@@ -159,6 +162,19 @@ def main() -> int:
         online_health = health.get("online_provider_health") or {}
         if online_health.get("schema_version") != "online-model-providers-v1":
             raise AssertionError(f"health_check must expose online provider config health: {health}")
+        assert_candidate_backend_registry(health.get("candidate_backend_registry") or {})
+        assert_candidate_artifact_schemas(health.get("candidate_artifact_schemas") or {})
+        assert_diagnostic_artifact_schemas(health.get("diagnostic_artifact_schemas") or {})
+        contract = call_tool("get_agent_contract", {})
+        assert_candidate_backend_registry(contract.get("candidate_backend_registry") or {})
+        assert_candidate_artifact_schemas(contract.get("candidate_artifact_schemas") or {})
+        assert_diagnostic_artifact_schemas(contract.get("diagnostic_artifact_schemas") or {})
+        operating_registry = ((contract.get("operating_context") or {}).get("candidate_backend_registry") or {})
+        assert_candidate_backend_registry(operating_registry)
+        operating_schemas = ((contract.get("operating_context") or {}).get("candidate_artifact_schemas") or {})
+        assert_candidate_artifact_schemas(operating_schemas)
+        operating_diagnostic_schemas = ((contract.get("operating_context") or {}).get("diagnostic_artifact_schemas") or {})
+        assert_diagnostic_artifact_schemas(operating_diagnostic_schemas)
         assert_environment_report_tool(image_dir, tmpdir / "environment-report")
 
         inspection = call_tool("inspect_document", {"input": str(image_dir), "recursive": False})
@@ -187,6 +203,52 @@ def main() -> int:
     print("Agent contract test passed.")
     return 0
 
+
+
+def assert_candidate_backend_registry(registry: dict[str, Any]) -> None:
+    if registry.get("schema_version") != "candidate-backend-registry-v1":
+        raise AssertionError(f"Expected candidate backend registry schema: {registry}")
+    if registry.get("remote_call_enabled") or registry.get("model_install_enabled"):
+        raise AssertionError(f"Candidate registry must stay non-executing: {registry}")
+    if registry.get("run_preview_schema_version") != "candidate-run-preview-v1":
+        raise AssertionError(f"Expected candidate run preview schema in registry: {registry}")
+    backends = {item.get("display_name"): item for item in registry.get("backends") or [] if isinstance(item, dict)}
+    expected = {"MonkeyOCR", "dots.mocr", "DocLayout-YOLO", "pdf_table"}
+    if not expected.issubset(backends):
+        raise AssertionError(f"Expected all candidate wrapper profiles: {registry}")
+    monkey = backends["MonkeyOCR"]
+    if monkey.get("key") != "monkeyocr" or "layout_review_pdf" not in (monkey.get("artifact_contract") or []):
+        raise AssertionError(f"Expected canonical MonkeyOCR artifact contract: {registry}")
+    monkey_preview = monkey.get("run_preview") or {}
+    if monkey_preview.get("schema_version") != "candidate-run-preview-v1" or monkey_preview.get("model_install_enabled"):
+        raise AssertionError(f"Expected non-executing MonkeyOCR run preview: {monkey}")
+    if "layout_review_pdf" not in (monkey_preview.get("expected_artifacts") or []):
+        raise AssertionError(f"Expected run preview artifact contract: {monkey}")
+    table = backends["pdf_table"]
+    if "never whole-book default" not in str(table.get("default_policy") or ""):
+        raise AssertionError(f"Expected pdf_table default policy to stay table-page only: {registry}")
+
+
+def assert_candidate_artifact_schemas(registry: dict[str, Any]) -> None:
+    if registry.get("schema_version") != "candidate-artifact-schemas-v1":
+        raise AssertionError(f"Expected candidate artifact schema registry: {registry}")
+    if registry.get("remote_call_enabled") or registry.get("model_install_enabled"):
+        raise AssertionError(f"Candidate artifact schemas must stay non-executing: {registry}")
+    artifact_types = {item.get("artifact_type") for item in registry.get("schemas") or [] if isinstance(item, dict)}
+    expected = {"layout_candidates_json", "table_candidates_json", "formula_candidates_json", "document_vlm_result_json"}
+    if not expected.issubset(artifact_types):
+        raise AssertionError(f"Expected candidate artifact schemas: {registry}")
+
+
+def assert_diagnostic_artifact_schemas(registry: dict[str, Any]) -> None:
+    if registry.get("schema_version") != "diagnostic-artifact-schemas-v1":
+        raise AssertionError(f"Expected diagnostic artifact schema registry: {registry}")
+    if registry.get("remote_call_enabled") or registry.get("model_install_enabled"):
+        raise AssertionError(f"Diagnostic artifact schemas must stay non-executing: {registry}")
+    artifact_types = {item.get("artifact_type") for item in registry.get("schemas") or [] if isinstance(item, dict)}
+    expected = {"pdf_metadata_json", "pdf_outline_json", "pdf_layout_evidence_json", "ocr_blocks_jsonl"}
+    if not expected.issubset(artifact_types):
+        raise AssertionError(f"Expected diagnostic artifact schemas: {registry}")
 
 def assert_tools() -> None:
     names = {tool["name"] for tool in tool_schemas()}
@@ -622,8 +684,11 @@ def assert_web_archive_route(tmpdir: Path) -> None:
     if not visual_check.exists():
         raise AssertionError(f"Expected visual_check_result.json under archive: {routed}")
     readable = call_tool("read_artifact", {"path": str(visual_check), "artifact_type": "visual_check_json"})
-    if (readable.get("json") or {}).get("schema_version") != 1:
+    if (readable.get("json") or {}).get("schema_version") not in {1, "web-archive-visual-check-v1"}:
         raise AssertionError(f"Expected parsed visual_check_json artifact: {readable}")
+    summary = readable.get("summary") or {}
+    if summary and summary.get("kind") != "web_archive_visual_check":
+        raise AssertionError(f"Expected visual_check_json summary contract: {readable}")
 
 
 def assert_online_enhancement_tool(tmpdir: Path) -> None:
@@ -764,6 +829,17 @@ def assert_http_contract(input_path: Path, output_path: Path) -> None:
         health = http_json(base + "/health")
         if not health.get("supports_async_jobs") or not health.get("supports_artifacts"):
             raise AssertionError(f"HTTP health missing capability flags: {health}")
+        assert_candidate_backend_registry(health.get("candidate_backend_registry") or {})
+        assert_candidate_artifact_schemas(health.get("candidate_artifact_schemas") or {})
+        assert_diagnostic_artifact_schemas(health.get("diagnostic_artifact_schemas") or {})
+        capabilities = http_json(base + "/capabilities")
+        assert_candidate_backend_registry(capabilities.get("candidate_backend_registry") or {})
+        assert_candidate_artifact_schemas(capabilities.get("candidate_artifact_schemas") or {})
+        assert_diagnostic_artifact_schemas(capabilities.get("diagnostic_artifact_schemas") or {})
+        contract = http_json(base + "/contract")
+        assert_candidate_backend_registry(contract.get("candidate_backend_registry") or {})
+        assert_candidate_artifact_schemas(contract.get("candidate_artifact_schemas") or {})
+        assert_diagnostic_artifact_schemas(contract.get("diagnostic_artifact_schemas") or {})
 
         ok = http_json(
             base + "/call",

@@ -10,6 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 from pprint import pformat
+from typing import Any
 
 
 TOOL_CACHE = Path(
@@ -47,6 +48,9 @@ def main() -> int:
     configure_surya_cache(env, create_dirs=not args.dry_run)
     if args.dry_run:
         print(subprocess.list2cmdline(cmd))
+        sidecar = candidate_sidecar_path(raw_dir, args.mode)
+        if sidecar:
+            print(f"{sidecar.stem.replace('-', '_')}={sidecar}")
         return 0
 
     executable = shutil.which(command) or (command if Path(command).exists() else "")
@@ -67,8 +71,10 @@ def main() -> int:
         check=False,
     )
     results_json = pick_results_json(raw_dir, source)
+    data = None
     if results_json and results_json.exists():
-        markdown = results_to_markdown(json.loads(results_json.read_text(encoding="utf-8")), args.mode)
+        data = json.loads(results_json.read_text(encoding="utf-8"))
+        markdown = results_to_markdown(data, args.mode)
     else:
         markdown = (
             "# Surya output unavailable\n\n"
@@ -78,6 +84,8 @@ def main() -> int:
             "```\n"
         )
     output.write_text(markdown.rstrip() + "\n", encoding="utf-8", newline="\n")
+    if isinstance(data, dict):
+        write_surya_candidate_sidecars(raw_dir, source, output, args.mode, data)
     if completed.returncode != 0:
         print((completed.stdout or "")[-4000:], file=sys.stderr)
         return completed.returncode
@@ -112,6 +120,195 @@ def pick_results_json(raw_dir: Path, source: Path) -> Path | None:
     matches = sorted(raw_dir.rglob("results.json"))
     return matches[0] if matches else None
 
+
+def candidate_sidecar_path(raw_dir: Path, mode: str) -> Path | None:
+    if mode == "layout":
+        return raw_dir / "layout-candidates.json"
+    if mode == "table":
+        return raw_dir / "table-candidates.json"
+    return None
+
+
+def write_surya_candidate_sidecars(raw_dir: Path, source: Path, output: Path, mode: str, data: dict[str, Any]) -> list[Path]:
+    sidecar = candidate_sidecar_path(raw_dir, mode)
+    if sidecar is None:
+        return []
+    if mode == "layout":
+        payload = build_layout_candidates_payload(source, output, data)
+    elif mode == "table":
+        payload = build_table_candidates_payload(source, output, data)
+    else:
+        return []
+    sidecar.parent.mkdir(parents=True, exist_ok=True)
+    sidecar.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+    return [sidecar]
+
+
+def build_layout_candidates_payload(source: Path, output: Path, data: dict[str, Any]) -> dict[str, Any]:
+    pages = []
+    warnings = []
+    for name, index, page in iter_surya_pages(data):
+        blocks = layout_blocks_from_page(page)
+        if not blocks:
+            warnings.append(f"no layout blocks on {name} page {index}")
+        pages.append({"page": page_number_from(page, index), "source": str(name), "blocks": blocks})
+    return {
+        "schema_version": "layout-candidates-v1",
+        "backend": "surya",
+        "status": "review",
+        "mode": "layout",
+        "input": str(source),
+        "markdown": str(output),
+        "pages": pages,
+        "artifacts": [{"type": "markdown", "path": str(output)}],
+        "warnings": warnings[:20],
+    }
+
+
+def build_table_candidates_payload(source: Path, output: Path, data: dict[str, Any]) -> dict[str, Any]:
+    pages = []
+    warnings = []
+    for name, index, page in iter_surya_pages(data):
+        tables = table_candidates_from_page(page)
+        if not tables:
+            warnings.append(f"no table candidates on {name} page {index}")
+        pages.append({"page": page_number_from(page, index), "source": str(name), "tables": tables})
+    return {
+        "schema_version": "table-candidates-v1",
+        "backend": "surya",
+        "status": "review",
+        "mode": "table",
+        "input": str(source),
+        "markdown": str(output),
+        "pages": pages,
+        "artifacts": [{"type": "markdown", "path": str(output)}],
+        "warnings": warnings[:20],
+    }
+
+
+def iter_surya_pages(data: Any):
+    if isinstance(data, dict):
+        for name, pages in data.items():
+            if isinstance(pages, list):
+                for index, page in enumerate(pages, start=1):
+                    yield name, index, page
+            else:
+                yield name, 1, pages
+    elif isinstance(data, list):
+        for index, page in enumerate(data, start=1):
+            yield "surya", index, page
+
+
+def page_number_from(page: Any, default: int) -> int:
+    if isinstance(page, dict):
+        for key in ("page", "page_number", "page_idx", "page_index"):
+            value = page.get(key)
+            number = int_or_none(value)
+            if number is not None:
+                return number + 1 if str(value).isdigit() and int(value) == 0 else number
+    return default
+
+
+def layout_blocks_from_page(page: Any) -> list[dict[str, Any]]:
+    if not isinstance(page, dict):
+        return []
+    raw_blocks = first_list(page, "bboxes", "blocks", "layout", "predictions")
+    blocks: list[dict[str, Any]] = []
+    for position, block in enumerate(raw_blocks, start=1):
+        if not isinstance(block, dict):
+            continue
+        candidate = common_candidate_fields(block, position=position, default_label="block")
+        text = block.get("text") or block.get("html")
+        if text:
+            candidate["text"] = html_fragment_to_markdown(str(text)) or str(text)
+        blocks.append(candidate)
+    return blocks
+
+
+def table_candidates_from_page(page: Any) -> list[dict[str, Any]]:
+    if isinstance(page, list):
+        raw_tables = page
+    elif isinstance(page, dict):
+        raw_tables = first_list(page, "tables", "table", "bboxes")
+        if not raw_tables and isinstance(page.get("cells"), list):
+            raw_tables = [{"cells": page.get("cells"), "bbox": page.get("bbox")}]
+    else:
+        return []
+    tables: list[dict[str, Any]] = []
+    for position, table in enumerate(raw_tables, start=1):
+        if not isinstance(table, dict):
+            continue
+        candidate = common_candidate_fields(table, position=position, default_label="table")
+        for key in ("html", "markdown", "text", "cells", "rows", "cols", "row_count", "col_count", "mode"):
+            if key in table:
+                candidate[key] = jsonable(table.get(key))
+        tables.append(candidate)
+    return tables
+
+
+def first_list(value: dict[str, Any], *keys: str) -> list[Any]:
+    for key in keys:
+        item = value.get(key)
+        if isinstance(item, list):
+            return item
+        if isinstance(item, dict):
+            return [item]
+    return []
+
+
+def common_candidate_fields(item: dict[str, Any], *, position: int, default_label: str) -> dict[str, Any]:
+    candidate: dict[str, Any] = {
+        "label": str(item.get("label") or item.get("class_name") or item.get("type") or default_label),
+        "position": int_or_none(item.get("position")) or position,
+    }
+    bbox = normalize_bbox(item.get("bbox") or item.get("box") or item.get("polygon") or item.get("poly"))
+    if bbox is not None:
+        candidate["bbox"] = bbox
+    confidence = float_or_none(item.get("confidence") or item.get("score") or item.get("probability"))
+    if confidence is not None:
+        candidate["confidence"] = confidence
+    reading_order = int_or_none(item.get("reading_order") or item.get("order"))
+    if reading_order is not None:
+        candidate["reading_order"] = reading_order
+    return candidate
+
+
+def normalize_bbox(value: Any) -> Any | None:
+    if value is None:
+        return None
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    return jsonable(value)
+
+
+def jsonable(value: Any) -> Any:
+    if hasattr(value, "tolist"):
+        return value.tolist()
+    if isinstance(value, dict):
+        return {str(key): jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [jsonable(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def int_or_none(value: Any) -> int | None:
+    try:
+        if value is None or value == "":
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def float_or_none(value: Any) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 def results_to_markdown(data, mode: str) -> str:
     lines = [f"# Surya {mode} result", ""]

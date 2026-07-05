@@ -18,7 +18,7 @@ Run the default lightweight gate:
 python scripts\run_quality_gate.py
 ```
 
-The default `minimal` profile covers `TXT`, `EPUB`, an `AZW3 substitute` sample, text-layer PDF, two-column PDF, and PPT-exported slide-like PDF. It is intended for ordinary development before/after checks.
+The default `minimal` profile covers `TXT`, `EPUB`, an `AZW3 substitute` sample, text-layer PDF, two-column PDF, Chinese contract/insurance hierarchy, and PPT-exported slide-like PDF. It is intended for ordinary development before/after checks.
 
 Use the full profile when you intentionally want OCR/image-heavy coverage:
 
@@ -64,6 +64,33 @@ Each run writes:
 Use `--sample-timeout` to mark one stuck sample as `timeout` and continue the rest of the run. On Windows, the runner terminates the timed-out process tree so MinerU/Marker children do not linger as orphan processes.
 
 Use `--pdf-mode-for-benchmark fast` to route PDFs through `PyMuPDF4LLM` during broad sample-set runs. This gives a stable baseline for 20-50 samples; use `compare_pipelines.py` for slower high-quality PDF pipeline comparisons.
+
+## Candidate Backend Evaluation Plan
+
+Before promoting optional OCR/VLM/layout/table backends, normalize samples into a shared candidate plan:
+
+```powershell
+python scripts\build_candidate_benchmark_manifest.py `
+  --manifest benchmarks\samples.local.json `
+  --output benchmarks\candidate-benchmark-plan.local.json
+```
+
+The plan is offline only. It records sample classes, candidate backends, expected artifacts, review questions, promotion gates, and `candidate_backend_previews` with `candidate-run-preview-v1` non-executing run previews. It does not install models, start services, or run converters.
+
+After running fake/plan wrappers or collecting layout/table/formula candidate JSON, build a review bundle:
+
+```powershell
+python scripts\build_layout_table_review_bundle.py `
+  --output benchmarks\runs\layout-table-review-current `
+  --artifact path\to\layout-candidates.json `
+  --artifact path\to\table-candidates.json `
+  --external-wrapper-root benchmarks\runs\external-wrapper-plans `
+  --scorecard benchmarks\runs\backend-scorecard\backend-scorecard.json `
+  --candidate-plan benchmarks\candidate-benchmark-plan.local.json `
+  --sample-id sample-id-from-plan
+```
+
+The bundle writes `layout-table-review-bundle.json/md` so agents and humans can review layout boxes, table candidates, formula candidates, external wrapper evidence, per-page `review_pages`, same-page `table_review_matrix`, same-page `formula_review_matrix`, and optional scorecard `promotion_reviews` before changing default routes. `review_pages` is an offline index over already-collected original/source references, layout/table overlays, OCR/table artifact refs, and inline Markdown excerpts; `table_review_matrix` groups table evidence by page/backend and flags missing HTML/Markdown/cells/overlay evidence plus card-layout false-positive checks. `formula_review_matrix` groups formula evidence by page/backend and flags missing LaTeX/Markdown, bbox, source/crop, and confidence evidence before formula-retention promotion. None of these indexes render pages or run models. When `--scorecard` is provided, `promotion_gate` decisions are folded into next actions such as `plan_environment_or_model_fix`, `gather_shared_sample_evidence`, and `compare_on_shared_manifest`. Feed the bundle back into `generate_backend_scorecard.py --review-bundle layout-table-review-bundle.json` to turn `table_review_matrix` rows into `quality_signals` such as `table_evidence_completeness`, `has_table_overlay`, and `needs_card_layout_false_positive_review`. When `--candidate-plan` is provided, matching samples add `benchmark_context`, sample-class review questions, expected artifacts, `candidate_backend_previews`, and `expected_artifact_coverage` to the bundle so missing evidence can be collected before promotion.
 
 Compare PDF pipelines:
 

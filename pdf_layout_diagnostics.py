@@ -119,33 +119,192 @@ def analyze_pdf_layout_with_pdfplumber(
         for text, count in header_footer_candidates.most_common(10)
         if count >= 2 and len(text) >= 2
     ]
+    summary = {
+        "table_pages": table_pages,
+        "two_column_pages": two_column_pages,
+        "image_heavy_pages": image_heavy_pages,
+        "repeated_header_footer_candidates": repeated_noise,
+        "table_artifact_count": len(table_artifacts),
+        "camelot_table_artifact_count": len(camelot_diagnostics.get("table_artifacts") or []),
+        "camelot_available": camelot_available(),
+        "camelot_status": camelot_diagnostics.get("status"),
+        "tabula_table_artifact_count": len(tabula_diagnostics.get("table_artifacts") or []),
+        "tabula_available": tabula_available(),
+        "tabula_status": tabula_diagnostics.get("status"),
+    }
+    layout_evidence = build_pdf_layout_evidence(source=source, pages=pages, summary=summary, status="ok")
+    table_candidates = build_table_candidates(
+        source=source,
+        table_artifacts=table_artifacts,
+        camelot_diagnostics=camelot_diagnostics,
+        tabula_diagnostics=tabula_diagnostics,
+    )
     payload = {
         "status": "ok",
         "tool": "pdfplumber",
         "source": str(source),
         "sampled_pages": len(pages),
         "pages": pages,
-        "summary": {
-            "table_pages": table_pages,
-            "two_column_pages": two_column_pages,
-            "image_heavy_pages": image_heavy_pages,
-            "repeated_header_footer_candidates": repeated_noise,
-            "table_artifact_count": len(table_artifacts),
-            "camelot_table_artifact_count": len(camelot_diagnostics.get("table_artifacts") or []),
-            "camelot_available": camelot_available(),
-            "camelot_status": camelot_diagnostics.get("status"),
-            "tabula_table_artifact_count": len(tabula_diagnostics.get("table_artifacts") or []),
-            "tabula_available": tabula_available(),
-            "tabula_status": tabula_diagnostics.get("status"),
-        },
+        "summary": summary,
+        "pdf_layout_evidence": evidence_summary(layout_evidence),
+        "table_candidates": table_candidates_summary(table_candidates),
         "table_artifacts": table_artifacts,
         "camelot_diagnostics": camelot_diagnostics,
         "tabula_diagnostics": tabula_diagnostics,
     }
     if output_dir:
+        evidence_path = output_dir / "pdf-layout-evidence.json"
+        evidence_path.write_text(json.dumps(layout_evidence, ensure_ascii=False, indent=2), encoding="utf-8")
+        payload["pdf_layout_evidence_artifact"] = str(evidence_path)
+        table_candidates_path = output_dir / "table-candidates.json"
+        table_candidates_path.write_text(json.dumps(table_candidates, ensure_ascii=False, indent=2), encoding="utf-8")
+        payload["table_candidates_artifact"] = str(table_candidates_path)
         (output_dir / "table-diagnostics.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return payload
 
+
+
+def build_pdf_layout_evidence(*, source: Path, pages: list[dict[str, Any]], summary: dict[str, Any], status: str) -> dict[str, Any]:
+    page_evidence = [pdfplumber_page_to_layout_evidence(page) for page in pages]
+    text_char_count = sum(int(page.get("text_chars") or 0) for page in page_evidence)
+    line_count = sum(int(page.get("line_count") or 0) for page in page_evidence)
+    table_count = sum(int(page.get("table_count") or 0) for page in page_evidence)
+    image_count = sum(int(page.get("image_count") or 0) for page in page_evidence)
+    rect_count = sum(int(page.get("rect_count") or 0) for page in page_evidence)
+    curve_count = sum(int(page.get("curve_count") or 0) for page in page_evidence)
+    page_count = len(page_evidence)
+    avg_chars = round(text_char_count / page_count, 2) if page_count else 0
+    repeated_noise = list(summary.get("repeated_header_footer_candidates") or [])
+    flags = {
+        "text_layer_present": text_char_count > 0,
+        "low_text_density": avg_chars < 80,
+        "layout_heavy_suspected": bool(summary.get("two_column_pages") or summary.get("image_heavy_pages") or repeated_noise),
+        "table_heavy_suspected": bool(summary.get("table_pages") or table_count > 0),
+        "image_heavy_suspected": bool(summary.get("image_heavy_pages")),
+        "two_column_suspected": bool(summary.get("two_column_pages")),
+        "repeated_header_footer_suspected": bool(repeated_noise),
+    }
+    return {
+        "schema_version": "pdf-layout-evidence-v1",
+        "backend": "pdfplumber",
+        "status": status,
+        "source": str(source),
+        "page_count": page_count,
+        "sampled_pages": page_count,
+        "text_char_count": text_char_count,
+        "line_count": line_count,
+        "table_count": table_count,
+        "image_count": image_count,
+        "rect_count": rect_count,
+        "curve_count": curve_count,
+        "flags": flags,
+        "summary": {
+            "table_pages": list(summary.get("table_pages") or []),
+            "two_column_pages": list(summary.get("two_column_pages") or []),
+            "image_heavy_pages": list(summary.get("image_heavy_pages") or []),
+            "repeated_header_footer_candidates": repeated_noise[:10],
+        },
+        "pages": page_evidence,
+    }
+
+
+def pdfplumber_page_to_layout_evidence(page: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "page": page.get("page"),
+        "width": page.get("width"),
+        "height": page.get("height"),
+        "text_chars": int(page.get("text_chars") or 0),
+        "line_count": int(page.get("line_count") or 0),
+        "char_count": int(page.get("char_count") or 0),
+        "word_count": int(page.get("word_count") or 0),
+        "rect_count": int(page.get("rect_count") or 0),
+        "curve_count": int(page.get("curve_count") or 0),
+        "image_count": int(page.get("image_count") or 0),
+        "table_count": int(page.get("table_count") or 0),
+        "two_column_likely": bool(page.get("two_column_likely")),
+        "header_footer_candidates": list(page.get("header_footer_candidates") or [])[:6],
+    }
+
+
+def evidence_summary(evidence: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": evidence.get("schema_version"),
+        "backend": evidence.get("backend"),
+        "page_count": evidence.get("page_count"),
+        "text_char_count": evidence.get("text_char_count"),
+        "line_count": evidence.get("line_count"),
+        "table_count": evidence.get("table_count"),
+        "image_count": evidence.get("image_count"),
+        "flags": evidence.get("flags") or {},
+    }
+
+
+def build_table_candidates(
+    *,
+    source: Path,
+    table_artifacts: list[dict[str, Any]],
+    camelot_diagnostics: dict[str, Any],
+    tabula_diagnostics: dict[str, Any],
+) -> dict[str, Any]:
+    pages: dict[int, dict[str, Any]] = {}
+    artifacts: list[dict[str, Any]] = []
+    for backend, items in [
+        ("pdfplumber", table_artifacts),
+        ("camelot", [item for item in camelot_diagnostics.get("table_artifacts") or [] if isinstance(item, dict)]),
+        ("tabula", [item for item in tabula_diagnostics.get("table_artifacts") or [] if isinstance(item, dict)]),
+    ]:
+        for item in items:
+            table = table_artifact_to_candidate(item, backend=backend)
+            page_number = int(table.get("page") or 0)
+            page_payload = pages.setdefault(page_number, {"page": page_number, "tables": []})
+            page_payload["tables"].append(table)
+            for artifact_type in ("csv", "markdown", "html", "json"):
+                path = item.get(artifact_type)
+                if path:
+                    artifacts.append({"type": artifact_type, "path": str(path), "backend": backend, "page": page_number})
+    ordered_pages = [pages[key] for key in sorted(pages)]
+    return {
+        "schema_version": "table-candidates-v1",
+        "backend": "pdf_layout_diagnostics",
+        "status": "review" if ordered_pages else "empty",
+        "source": str(source),
+        "pages": ordered_pages,
+        "artifacts": artifacts,
+        "warnings": [
+            "table candidates are side evidence only; compare against final Markdown before promotion",
+        ],
+    }
+
+
+def table_artifact_to_candidate(item: dict[str, Any], *, backend: str) -> dict[str, Any]:
+    page_number = int(item.get("page") or 0)
+    table = {
+        "backend": backend,
+        "page": page_number,
+        "table_number": int(item.get("table_number") or 0),
+        "row_count": int(item.get("rows") or 0),
+        "csv": item.get("csv"),
+        "markdown": item.get("markdown"),
+    }
+    for key in ("accuracy", "whitespace"):
+        if item.get(key) is not None:
+            table[key] = item.get(key)
+    return table
+
+
+def table_candidates_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    pages = [page for page in payload.get("pages") or [] if isinstance(page, dict)]
+    table_count = sum(len(page.get("tables") or []) for page in pages)
+    backends = sorted({str(table.get("backend")) for page in pages for table in page.get("tables") or [] if table.get("backend")})
+    return {
+        "schema_version": payload.get("schema_version"),
+        "backend": payload.get("backend"),
+        "status": payload.get("status"),
+        "page_count": len(pages),
+        "table_count": table_count,
+        "backends": backends,
+        "artifact_count": len(payload.get("artifacts") or []),
+    }
 
 def extract_tables_with_camelot(
     source: Path,

@@ -112,7 +112,7 @@ After startup, verify:
 Invoke-WebRequest -UseBasicParsing http://127.0.0.1:<EBOOK_CONVERTER_HTTP_PORT>/health
 ```
 
-The health payload includes `http_config`, `config_sources`, `pipeline_capabilities`, `minimal_ok`, `optional_missing_is_ok`, and route defaults. Agents should inspect those fields before choosing heavy OCR/PDF/VLM routes.
+The health payload includes `http_config`, `config_sources`, `pipeline_capabilities`, `candidate_backend_registry`, `candidate_artifact_schemas`, `diagnostic_artifact_schemas`, `minimal_ok`, `optional_missing_is_ok`, and route defaults. Agents should inspect those fields, call `list_candidate_backends` through HTTP `/call`, or run `python scripts\list_candidate_backends.py --backend dots_mocr` without starting HTTP before choosing heavy OCR/PDF/VLM routes. Candidate discovery is non-executing and must not start services, install models, or make remote calls.
 
 ## Failure And Fallback Semantics
 

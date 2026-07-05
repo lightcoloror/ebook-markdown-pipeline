@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import tempfile
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from ebook_converter_mcp import read_artifact
 
 
 def load_wrapper_module():
@@ -39,6 +46,15 @@ def main() -> int:
         rendered = output.read_text(encoding="utf-8")
         if "真实表格" not in rendered or "| A | B |" not in rendered:
             raise RuntimeError(f"Expected JSON table block to be appended: {rendered}")
+        sidecars = wrapper.write_paddleocr_vl_sidecars(root, root / "sample.png", output, rendered, ["paddleocr", "doc_parser"], status="review")
+        if {path.name for path in sidecars} != {"document-vlm-result.json", "table-candidates.json"}:
+            raise RuntimeError(f"Unexpected PaddleOCR-VL sidecars: {sidecars}")
+        document_summary = read_artifact({"path": str(root / "document-vlm-result.json"), "artifact_type": "document_vlm_result_json"}).get("summary") or {}
+        if not document_summary.get("schema_valid") or document_summary.get("block_count") != 2 or document_summary.get("table_count") != 1:
+            raise RuntimeError(f"Unexpected PaddleOCR-VL document sidecar summary: {document_summary}")
+        table_summary = read_artifact({"path": str(root / "table-candidates.json"), "artifact_type": "table_candidates_json"}).get("summary") or {}
+        if not table_summary.get("schema_valid") or table_summary.get("table_count") != 1:
+            raise RuntimeError(f"Unexpected PaddleOCR-VL table sidecar summary: {table_summary}")
 
     try:
         from docx import Document

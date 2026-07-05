@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from document_vlm_artifact_utils import write_document_vlm_result
+
 
 DEFAULT_PYTHON = os.environ.get("DEEPSEEK_OCR_PYTHON", sys.executable)
 DEFAULT_MODEL = os.environ.get("DEEPSEEK_OCR_MODEL", "deepseek-ai/DeepSeek-OCR")
@@ -53,6 +55,7 @@ def main() -> int:
     configure_cache(env, create_dirs=not args.dry_run)
     if args.dry_run:
         print(subprocess.list2cmdline(command))
+        print(f"document_vlm_result={raw_dir / 'document-vlm-result.json'}")
         return 0
 
     validate_runtime(args, source)
@@ -71,6 +74,17 @@ def main() -> int:
     )
     markdown = stdout_to_markdown(completed.stdout or "", source=source, raw_dir=raw_dir, mode=args.prompt_mode)
     output.write_text(markdown.rstrip() + "\n", encoding="utf-8", newline="\n")
+    write_document_vlm_result(
+        raw_dir / "document-vlm-result.json",
+        backend="deepseek_ocr",
+        source=source,
+        markdown_path=output,
+        markdown=markdown,
+        mode=args.prompt_mode,
+        raw_dir=raw_dir,
+        command=command,
+        status="review" if completed.returncode == 0 else "failed",
+    )
     if completed.returncode != 0:
         print((completed.stdout or "")[-4000:], file=sys.stderr)
         return completed.returncode

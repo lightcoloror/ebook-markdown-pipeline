@@ -28,6 +28,10 @@ The converter is local-first and tool-first. Backends are optional specialist to
 | DeepSeek-OCR | CUDA/Transformers VLM OCR experiment wrapper | Optional explicit only | Heavy | Wrapper for explicit image-to-Markdown OCR experiments; not part of auto routing. |
 | olmOCR | VLM PDF/image OCR to Markdown benchmark | Optional explicit only | Heavy | Use as a GPU/remote-inference comparison backend for complex scanned PDFs; not part of auto routing. |
 | PaddleOCR-VL / Qwen-VL / MinerU VLM | Layout-heavy image/infographic enhancement fallback | Optional heavy | Heavy | Explicit enhancement only; not required for minimal conversion. |
+| MonkeyOCR | External document VLM worker plan for complex PDFs/images | Candidate only | Heavy | Plan/fake/execute wrapper only. Do not install models or route by default; use scorecards before promotion. |
+| dots.mocr | External HTTP/GPU document VLM provider plan | Candidate only | Heavy | Prefer remote/vLLM/OpenAI-compatible provider shape. Service/model startup is manual and never automatic. |
+| DocLayout-YOLO | Layout detector baseline for bbox/overlay evidence | Candidate only | Medium/Heavy | Layout evidence only, not Markdown conversion. Use for selected pages in inspect/benchmark flows. |
+| pdf_table | External table-page worker plan | Candidate only | Heavy | Table pages only. Compare with Camelot/Tabula/pdfplumber before using as a recommendation. |
 | Unlimited-OCR | Long-horizon VLM OCR candidate for multi-page images/PDF pages | Not integrated; candidate only | Heavy | Do not install or route by default. Consider only if fixture/real-sample scorecards prove a clear quality gain and it can replace an existing heavy VLM/OCR module rather than add another large model. |
 
 ## Routing Defaults

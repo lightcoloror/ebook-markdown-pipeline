@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from document_vlm_artifact_utils import write_document_vlm_result
+
 
 DEFAULT_PYTHON = os.environ.get("GOT_OCR_PYTHON", sys.executable)
 DEFAULT_SCRIPT = os.environ.get("GOT_OCR_SCRIPT", "")
@@ -24,6 +26,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run GOT-OCR 2.0 demo scripts on one image/folder and normalize stdout to Markdown.")
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--script", default=DEFAULT_SCRIPT, help="Path to GOT/demo/run_ocr_2.0.py.")
     parser.add_argument("--crop-script", default=DEFAULT_CROP_SCRIPT, help="Path to GOT/demo/run_ocr_2.0_crop.py for crop/multi-page mode.")
     parser.add_argument("--python", default=DEFAULT_PYTHON)
@@ -40,15 +43,18 @@ def main() -> int:
 
     source = args.input.resolve()
     output = args.output.resolve()
+    raw_dir = (args.output_dir or output.parent / "got_ocr_raw").resolve()
     command = build_got_command(args, source)
     env = os.environ.copy()
     configure_cache(env, create_dirs=not args.dry_run)
     if args.dry_run:
         print(subprocess.list2cmdline(command))
+        print(f"document_vlm_result={raw_dir / 'document-vlm-result.json'}")
         return 0
 
     validate_runtime(args)
     output.parent.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
     completed = subprocess.run(
         command,
         env=env,
@@ -60,8 +66,20 @@ def main() -> int:
         timeout=args.timeout if args.timeout > 0 else None,
         check=False,
     )
-    markdown = stdout_to_markdown(completed.stdout or "", source=source, mode="crop" if args.crop else args.type)
+    mode = "crop" if args.crop else args.type
+    markdown = stdout_to_markdown(completed.stdout or "", source=source, mode=mode)
     output.write_text(markdown.rstrip() + "\n", encoding="utf-8", newline="\n")
+    write_document_vlm_result(
+        raw_dir / "document-vlm-result.json",
+        backend="got_ocr",
+        source=source,
+        markdown_path=output,
+        markdown=markdown,
+        mode=mode,
+        raw_dir=raw_dir,
+        command=command,
+        status="review" if completed.returncode == 0 else "failed",
+    )
     if completed.returncode != 0:
         print((completed.stdout or "")[-4000:], file=sys.stderr)
         return completed.returncode

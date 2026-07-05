@@ -117,6 +117,21 @@ def main() -> int:
         if online.get("remote_call_enabled") is not False:
             raise AssertionError(f"Inspection must not call remote providers: {wide_inspection}")
 
+        candidate_list = call_tool("list_candidate_backends", {"sample_class": "scanned_pdf"})
+        if candidate_list.get("schema_version") != "candidate-backend-list-v1" or candidate_list.get("model_install_enabled"):
+            raise AssertionError(f"Candidate backend listing must be non-executing: {candidate_list}")
+        scanned_candidates = {item.get("display_name") for item in candidate_list.get("backends") or []}
+        if not {"MonkeyOCR", "dots.mocr"}.issubset(scanned_candidates):
+            raise AssertionError(f"Expected scanned PDF candidate discovery: {candidate_list}")
+        dots_candidate = call_tool("list_candidate_backends", {"backend": "dots_mocr"})
+        dots_backends = dots_candidate.get("backends") or []
+        dots_readiness = (dots_backends[0].get("readiness_contract") if dots_backends else {}) or {}
+        if dots_candidate.get("count") != 1 or "needs_server" not in dots_readiness.get("missing_states", []):
+            raise AssertionError(f"Expected dots.mocr manual service readiness: {dots_candidate}")
+        layout_candidates = call_tool("list_candidate_backends", {"artifact_type": "layout_candidates_json"})
+        if "DocLayout-YOLO" not in {item.get("display_name") for item in layout_candidates.get("backends") or []}:
+            raise AssertionError(f"Expected layout artifact candidate discovery: {layout_candidates}")
+
         readable = next(item for item in job["artifacts"] if item["type"] == "markdown")
         artifact = call_tool("read_artifact", {"path": readable["path"], "artifact_type": readable["type"]})
         if artifact.get("artifact_type") != "markdown" or "text" not in artifact:

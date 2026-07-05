@@ -1237,6 +1237,7 @@ def dependency_health_report(sources: Iterable[Path], args: argparse.Namespace, 
         }
     )
     checks.extend(vlm_image_backend_health())
+    checks.extend(external_candidate_wrapper_health())
     checks.append(ffmpeg_avconv_health())
     checks.append(requests_dependency_health(fast=fast))
     cache_status, cache_detail = mineru_model_cache_status(fast=fast)
@@ -1407,6 +1408,85 @@ def vlm_image_backend_health() -> list[dict[str, str]]:
     return checks
 
 
+def external_candidate_wrapper_health() -> list[dict[str, str]]:
+    root = Path(__file__).resolve().parent
+    scripts = root / "scripts"
+    monkey_wrapper = scripts / "monkeyocr_worker.py"
+    dots_wrapper = scripts / "dots_mocr_worker.py"
+    doclayout_wrapper = scripts / "doclayout_yolo_worker.py"
+    pdf_table_wrapper = scripts / "pdf_table_worker.py"
+    pypdf_wrapper = scripts / "pypdf_diagnostics_worker.py"
+    pdfminer_wrapper = scripts / "pdfminer_text_worker.py"
+    tesseract_wrapper = scripts / "tesseract_ocr_worker.py"
+    doctr_wrapper = scripts / "doctr_ocr_worker.py"
+
+    monkey_root = env_path("EBOOK_CONVERTER_MONKEYOCR_ROOT")
+    dots_root = env_path("EBOOK_CONVERTER_DOTS_MOCR_ROOT")
+    dots_server = os.environ.get("EBOOK_CONVERTER_DOTS_MOCR_SERVER_URL", "").strip()
+    doclayout_model = os.environ.get("EBOOK_CONVERTER_DOCLAYOUT_YOLO_MODEL", "").strip()
+    pdftable_command = os.environ.get("EBOOK_CONVERTER_PDFTABLE_COMMAND", "pdftable")
+    pdftable_resolved = resolve_command_path(pdftable_command)
+    tesseract_command = os.environ.get("EBOOK_CONVERTER_TESSERACT_COMMAND", "tesseract")
+    tesseract_resolved = resolve_command_path(tesseract_command)
+    pypdf_available = importlib.util.find_spec("pypdf") is not None
+    pdfminer_available = importlib.util.find_spec("pdfminer") is not None
+    doctr_available = importlib.util.find_spec("doctr") is not None
+
+    monkey_status = "missing"
+    monkey_detail = f"wrapper={monkey_wrapper}"
+    if monkey_wrapper.exists():
+        if monkey_root and (monkey_root / "parse.py").exists() and (monkey_root / "model_weight").exists():
+            monkey_status = "ok"
+        elif monkey_root and (monkey_root / "parse.py").exists():
+            monkey_status = "needs_model"
+        elif monkey_root:
+            monkey_status = "needs_env"
+        else:
+            monkey_status = "planned_only"
+        monkey_detail = f"wrapper={monkey_wrapper}; root={monkey_root or 'not configured'}"
+
+    dots_status = "missing"
+    dots_detail = f"wrapper={dots_wrapper}"
+    if dots_wrapper.exists():
+        if dots_server:
+            dots_status = "needs_server"
+        elif dots_root and (dots_root / "dots_ocr" / "parser.py").exists():
+            dots_status = "needs_server"
+        elif dots_root:
+            dots_status = "needs_env"
+        else:
+            dots_status = "planned_only"
+        dots_detail = f"wrapper={dots_wrapper}; root={dots_root or 'not configured'}; server={dots_server or 'not configured'}; server_check=not_performed"
+
+    doclayout_status = "missing"
+    doclayout_detail = f"wrapper={doclayout_wrapper}"
+    if doclayout_wrapper.exists():
+        if doclayout_model and Path(doclayout_model).expanduser().exists():
+            doclayout_status = "ok"
+        elif doclayout_model:
+            doclayout_status = "needs_model"
+        else:
+            doclayout_status = "planned_only"
+        doclayout_detail = f"wrapper={doclayout_wrapper}; model={doclayout_model or 'not configured'}"
+
+    pdf_table_status = "missing"
+    pdf_table_detail = f"wrapper={pdf_table_wrapper}"
+    if pdf_table_wrapper.exists():
+        pdf_table_status = "ok" if pdftable_resolved else "planned_only"
+        pdf_table_detail = f"wrapper={pdf_table_wrapper}; pdftable={pdftable_resolved or pdftable_command}"
+
+    return [
+        {"name": "pypdf diagnostics worker", "kind": "external-wrapper", "status": "ok" if pypdf_wrapper.exists() and pypdf_available else "planned_only" if pypdf_wrapper.exists() else "missing", "detail": f"wrapper={pypdf_wrapper}; importable={pypdf_available}"},
+        {"name": "pdfminer.six text worker", "kind": "external-wrapper", "status": "ok" if pdfminer_wrapper.exists() and pdfminer_available else "planned_only" if pdfminer_wrapper.exists() else "missing", "detail": f"wrapper={pdfminer_wrapper}; importable={pdfminer_available}"},
+        {"name": "Tesseract OCR worker", "kind": "external-wrapper", "status": "ok" if tesseract_wrapper.exists() and tesseract_resolved else "planned_only" if tesseract_wrapper.exists() else "missing", "detail": f"wrapper={tesseract_wrapper}; tesseract={tesseract_resolved or tesseract_command}"},
+        {"name": "docTR OCR worker", "kind": "external-wrapper", "status": "needs_model" if doctr_wrapper.exists() and doctr_available else "planned_only" if doctr_wrapper.exists() else "missing", "detail": f"wrapper={doctr_wrapper}; importable={doctr_available}; model_check=not_performed"},
+        {"name": "MonkeyOCR worker", "kind": "external-wrapper", "status": monkey_status, "detail": monkey_detail},
+        {"name": "dots.mocr provider", "kind": "external-wrapper", "status": dots_status, "detail": dots_detail},
+        {"name": "DocLayout-YOLO baseline", "kind": "external-wrapper", "status": doclayout_status, "detail": doclayout_detail},
+        {"name": "pdf_table worker", "kind": "external-wrapper", "status": pdf_table_status, "detail": pdf_table_detail},
+    ]
+
+
 def format_health_report(checks: list[dict[str, str]]) -> str:
     lines = ["Dependency health check:"]
     for item in checks:
@@ -1466,6 +1546,14 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
     deepseek_ocr_ok = check_ok("DeepSeek-OCR wrapper")
     paddle_vl_ok = check_ok("PaddleOCR-VL wrapper")
     qwen_vl_ok = check_ok("Qwen-VL wrapper")
+    pypdf_worker_status = check_status("pypdf diagnostics worker")
+    pdfminer_worker_status = check_status("pdfminer.six text worker")
+    tesseract_worker_status = check_status("Tesseract OCR worker")
+    doctr_worker_status = check_status("docTR OCR worker")
+    monkeyocr_status = check_status("MonkeyOCR worker")
+    dots_mocr_status = check_status("dots.mocr provider")
+    doclayout_yolo_status = check_status("DocLayout-YOLO baseline")
+    pdf_table_worker_status = check_status("pdf_table worker")
     media_helper_ok = check_ok("FFmpeg/avconv")
     requests_stack_ok = check_ok("Python requests stack")
     mineru_cache = check_status("MinerU model cache")
@@ -1600,6 +1688,79 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
             "Use scripts/deepseek_ocr_image_to_md.py only for explicit CUDA/Transformers DeepSeek-OCR experiments."
             if deepseek_ocr_ok
             else "Set DEEPSEEK_OCR_PYTHON and DEEPSEEK_OCR_MODEL only if you need DeepSeek-OCR experiments.",
+        )
+    )
+
+
+
+
+    pdf_lightweight_status = "ok" if pypdf_worker_status == "ok" or pdfminer_worker_status == "ok" else "degraded" if pypdf_worker_status != "missing" or pdfminer_worker_status != "missing" else "missing"
+    capabilities.append(
+        capability_item(
+            "pdf_lightweight_fallbacks",
+            pdf_lightweight_status,
+            "pypdf/pdfminer.six diagnostic workers are available for metadata/outline/text-layer fallback evidence."
+            if pdf_lightweight_status != "missing"
+            else "pypdf/pdfminer.six diagnostic workers are not available.",
+            "Use pypdf/pdfminer workers for metadata, outline, and text-layer debugging, not final Markdown conversion."
+            if pdf_lightweight_status != "missing"
+            else "Keep using PyMuPDF/PyMuPDF4LLM unless lightweight PDF utility evidence is needed.",
+        )
+    )
+
+    ocr_candidate_status = "ok" if tesseract_worker_status == "ok" else "degraded" if tesseract_worker_status != "missing" or doctr_worker_status != "missing" else "missing"
+    capabilities.append(
+        capability_item(
+            "ocr_candidate_workers",
+            ocr_candidate_status,
+            "Tesseract/docTR candidate OCR workers are present for plan/fake comparison."
+            if ocr_candidate_status != "missing"
+            else "Tesseract/docTR OCR worker plans are not available.",
+            "Use Tesseract/docTR only as explicit OCR comparison candidates; keep OCRmyPDF/Umi/RapidOCR as safer routes."
+            if ocr_candidate_status != "missing"
+            else "Add worker plans only if OCR benchmark expansion is needed.",
+        )
+    )
+
+    external_document_vlm_status = "ok" if monkeyocr_status == "ok" or dots_mocr_status == "ok" else "degraded" if monkeyocr_status != "missing" or dots_mocr_status != "missing" else "missing"
+    capabilities.append(
+        capability_item(
+            "external_document_vlm_wrappers",
+            external_document_vlm_status,
+            "MonkeyOCR/dots.mocr wrapper plans are present; real model/server readiness is reported separately."
+            if external_document_vlm_status != "missing"
+            else "MonkeyOCR/dots.mocr wrapper plans are not installed.",
+            "Use scripts/monkeyocr_worker.py or scripts/dots_mocr_worker.py in plan/fake mode before any real model run."
+            if external_document_vlm_status != "missing"
+            else "Add wrapper scripts only if you need explicit document VLM experiments.",
+        )
+    )
+
+    layout_baseline_status = "ok" if doclayout_yolo_status == "ok" else "degraded" if doclayout_yolo_status != "missing" else "missing"
+    capabilities.append(
+        capability_item(
+            "layout_detector_baseline",
+            layout_baseline_status,
+            "DocLayout-YOLO wrapper plan is present for layout bbox review evidence."
+            if layout_baseline_status != "missing"
+            else "DocLayout-YOLO wrapper plan is not installed.",
+            "Use scripts/doclayout_yolo_worker.py for selected-page bbox/overlay experiments."
+            if layout_baseline_status != "missing"
+            else "Keep using Docling/MinerU/Marker or add the wrapper plan if layout-only evidence is needed.",
+        )
+    )
+
+    table_worker_status = "ok" if pdf_table_worker_status == "ok" else "degraded" if pdf_table_worker_status != "missing" else "missing"
+    capabilities.append(
+        capability_item(
+            "external_table_worker",
+            table_worker_status,
+            "pdf_table worker plan is present for table-page experiments."
+            if table_worker_status != "missing"
+            else "pdf_table worker plan is not installed.",
+            "Use scripts/pdf_table_worker.py only on detected table-heavy pages and compare with Camelot/Tabula/pdfplumber."
+            if table_worker_status != "missing"
+            else "Use Camelot/Tabula/pdfplumber for text-based table extraction unless you add the external worker.",
         )
     )
 

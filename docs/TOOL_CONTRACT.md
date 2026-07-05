@@ -21,7 +21,7 @@ Agents should not directly parse PDFs, images, temporary directories, SQLite fil
 
 Agents should also not call online model providers directly for document recognition. Online API support must remain behind this project's provider abstraction so that privacy, cost, retry, fallback, artifact schema, and report logging stay consistent.
 
-`get_agent_contract` and `health_check` expose `online_provider_health` when `config/online_providers.example.json`, legacy `config/online_models.example.json`, `EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG`, or legacy `EBOOK_CONVERTER_ONLINE_MODELS_CONFIG` is readable. This is configuration health only: it reports provider names, types, models, configured base URLs, key environment variable names, and missing-key status without making remote API calls.
+`get_agent_contract` and `health_check` expose `online_provider_health` when `config/online_providers.example.json`, legacy `config/online_models.example.json`, `EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG`, or legacy `EBOOK_CONVERTER_ONLINE_MODELS_CONFIG` is readable. `get_agent_contract`, `health_check`, `list_candidate_backends`, and `scripts/list_candidate_backends.py` expose `candidate_backend_registry` so agents can discover MonkeyOCR, dots.mocr, DocLayout-YOLO, and pdf_table candidate-only wrapper plans without parsing prose. Candidate JSON artifacts are described by `candidate_artifact_schemas` with `schema_version=candidate-artifact-schemas-v1`. `list_candidate_backends` returns `schema_version=candidate-backend-list-v1`, filterable candidate-only backend rows, `run_preview`, `readiness_contract`, supported artifacts, sample classes, and safe `next_actions` without starting services or installing models. Lightweight diagnostic artifacts are described by `diagnostic_artifact_schemas` with `schema_version=diagnostic-artifact-schemas-v1`, including pypdf metadata/outline evidence, pdfminer/PDF text-layout evidence, and normalized OCR block JSONL. This is configuration health only: it reports provider names, types, models, configured base URLs, key environment variable names, and missing-key status without making remote API calls.
 
 ## Main Router: `process_material`
 
@@ -107,22 +107,34 @@ OCRmyPDF preprocessing:
 - GOT-OCR is exposed only through `scripts/got_ocr_image_to_md.py` for manual CUDA image OCR experiments.
 - It is never selected by default, not part of PDF auto routing, and not part of the automatic image-book enhancement order.
 - Agents should use it only when health/capability reports show `got_ocr_experiment` is configured or when the caller explicitly provides `GOT_OCR_SCRIPT` and `GOT_OCR_MODEL`.
-- The wrapper supports dry-run command inspection, single-image OCR/format mode, crop/multi-page mode, cache environment setup, and stdout cleanup into Markdown.
+- The wrapper supports dry-run command inspection, single-image OCR/format mode, crop/multi-page mode, cache environment setup, stdout cleanup into Markdown, and `document-vlm-result.json` (`schema_version=document-vlm-result-v1`) side evidence under its output directory.
 - The GOT-OCR model path, demo script path, and runtime environment stay outside this repository; reports and docs must not contain API keys or model cache contents.
 
+### PaddleOCR-VL explicit document VLM wrapper
+
+- PaddleOCR-VL is exposed only through `scripts/paddleocr_vl_image_to_md.py` for manual layout-heavy image/page, infographic, table, formula, and multilingual document experiments.
+- It is never selected by default, not part of PDF auto routing, and not part of the automatic image-book enhancement order.
+- The wrapper supports dry-run command inspection, local cache isolation, PaddleOCR `doc_parser` invocation, Markdown normalization, table extraction from Paddle raw JSON/DOCX outputs, `document-vlm-result.json` (`schema_version=document-vlm-result-v1`), and `table-candidates.json` (`schema_version=table-candidates-v1`) side evidence under its output directory.
+- Agents should use these artifacts for review bundles and scorecards before considering whether PaddleOCR-VL can replace another explicit heavy VLM route.
+### Qwen-VL explicit document VLM wrapper
+
+- Qwen-VL is exposed through `scripts/qwen_vl_image_to_md.py` for manual heavyweight visual-language experiments on difficult images/pages, and through `VlmLayoutProvider` only when the caller explicitly chooses online/hybrid provider execution.
+- It is never selected by default and must not be used as a replacement for cheap text-layer, OCR, or layout baselines.
+- The local wrapper supports dry-run model/input/output inspection, local cache isolation, configurable raw output directory, Markdown output, and `document-vlm-result.json` (`schema_version=document-vlm-result-v1`) side evidence under its output directory.
+- Agents should prefer PaddleOCR-VL/Surya/Pix2Text evidence first for local experiments, and use Qwen-VL only as a heavier comparison or remote `VlmLayoutProvider` candidate.
 ### DeepSeek-OCR explicit VLM OCR wrapper
 
 - DeepSeek-OCR is exposed only through `scripts/deepseek_ocr_image_to_md.py` for manual CUDA/Transformers image OCR experiments.
 - It is never selected by default, not part of PDF auto routing, and not part of the automatic image-book enhancement order.
 - Agents should use it only when health/capability reports show `deepseek_ocr_experiment` is configured or when the caller explicitly provides `DEEPSEEK_OCR_PYTHON` and `DEEPSEEK_OCR_MODEL`.
-- The wrapper supports dry-run command inspection, prompt presets, crop toggles, cache environment setup, and stdout/output-file cleanup into Markdown.
+- The wrapper supports dry-run command inspection, prompt presets, crop toggles, cache environment setup, stdout/output-file cleanup into Markdown, and `document-vlm-result.json` (`schema_version=document-vlm-result-v1`) side evidence under its output directory.
 - The DeepSeek-OCR model path and runtime environment stay outside this repository; reports and docs must not contain API keys or model cache contents.
 
 PDF layout/table diagnostics:
 
 - When pdfplumber is installed, PDF reports may include `pdf_layout_diagnostics`.
-- The diagnostics are explanatory artifacts for table pages, image-heavy pages, two-column pages, and repeated header/footer candidates.
-- Candidate table artifacts are written under `.reports/tables/<source>/` as `table-diagnostics.json`, CSV, and Markdown when extractable.
+- The diagnostics are explanatory artifacts for table pages, image-heavy pages, two-column pages, and repeated header/footer candidates. They also write `pdf-layout-evidence.json` with `schema_version=pdf-layout-evidence-v1` for agent-readable page density and layout/table/image flags.
+- Candidate table artifacts are written under `.reports/tables/<source>/` as `table-diagnostics.json`, `table-candidates.json` (`schema_version=table-candidates-v1`), CSV, and Markdown when extractable.
 - When Camelot is installed and pdfplumber finds suspected table pages, diagnostics may include `camelot_diagnostics`, `camelot_status`, and `camelot_table_artifact_count`; these are table-only extraction hints, not a main conversion route.
 - When Tabula/tabula-py is installed and pdfplumber finds suspected table pages, diagnostics may include `tabula_diagnostics`, `tabula_status`, and `tabula_table_artifact_count`; this is an alternate text-based table fallback and requires Java.
 - pdfplumber, Camelot, and Tabula are not main PDF-to-Markdown routes; agents should use them to decide whether a table-focused rerun or manual review is needed.
@@ -414,6 +426,25 @@ Use `risk_status` as a quick preflight:
     }
   ],
   "provider_status": {},
+  "candidate_backend_registry": {
+    "schema_version": "candidate-backend-registry-v1",
+    "execution_policy": "candidate_only_plan_or_fake_first",
+    "remote_call_enabled": false,
+    "model_install_enabled": false,
+    "run_preview_schema_version": "candidate-run-preview-v1",
+    "readiness_contract_schema_version": "candidate-readiness-contract-v1",
+    "backends": []
+  },
+  "candidate_artifact_schemas": {
+    "schema_version": "candidate-artifact-schemas-v1",
+    "execution_policy": "schema_only_no_model_execution",
+    "schemas": []
+  },
+  "diagnostic_artifact_schemas": {
+    "schema_version": "diagnostic-artifact-schemas-v1",
+    "execution_policy": "schema_only_no_model_execution",
+    "schemas": []
+  },
   "backend_status": {
     "ready": ["structured_ebooks", "pdf_fast_text"],
     "degraded": ["gpu_acceleration"],
@@ -432,7 +463,7 @@ Use `risk_status` as a quick preflight:
 
 Agents should use `capabilities` before choosing heavy PDF/OCR routes. For example, if `pdf_structure_recovery` is missing, prefer `pdf_fast_text`, `local_ocr`, or a user-visible health fix instead of blindly launching MinerU.
 
-`get_agent_contract`, HTTP `/contract`, HTTP `/health`, and HTTP `/capabilities` also expose the same operating context fields: `pipeline_capabilities`, `risk_status`, `config_sources`, `local_env_exists`, `local_env_loaded_keys`, `route_defaults`, provider/backend status, `minimal_ok`, `optional_missing_is_ok`, and `long_task_guidance`. Agents should use these fields instead of guessing ports, assuming every optional backend is installed, or launching heavy whole-document OCR/VLM jobs synchronously. `local_env_loaded_keys` lists environment variable names only and must not contain secret values. Missing optional OCR/VLM backends are expected on a minimal install and are not a reason to skip local conversion when `minimal_ok=true`. Soft risks such as `media_helper` and `python_dependency_consistency` are warnings for optional media/provider/model-download workflows, not blockers for the minimal local path.
+`get_agent_contract`, HTTP `/contract`, HTTP `/health`, and HTTP `/capabilities` also expose the same operating context fields: `pipeline_capabilities`, `candidate_backend_registry`, `candidate_artifact_schemas`, `diagnostic_artifact_schemas`, `risk_status`, `config_sources`, `local_env_exists`, `local_env_loaded_keys`, `route_defaults`, provider/backend status, `minimal_ok`, `optional_missing_is_ok`, and `long_task_guidance`. Agents should use these fields instead of guessing ports, assuming every optional backend is installed, or launching heavy whole-document OCR/VLM jobs synchronously. `local_env_loaded_keys` lists environment variable names only and must not contain secret values. Missing optional OCR/VLM backends are expected on a minimal install and are not a reason to skip local conversion when `minimal_ok=true`. Soft risks such as `media_helper` and `python_dependency_consistency` are warnings for optional media/provider/model-download workflows, not blockers for the minimal local path.
 
 Use `show_latest_quality_gate` when an agent needs the most recent local release quality-gate handoff summary without shell access. It reads `benchmarks/runs/latest/release-index.json` first, falls back to the newest `benchmarks/runs/quality-gate/*/release-summary.json`, and returns `status=missing` with a safe manual command if no summary exists. When the index exists but referenced output/report paths have been deleted, it returns `status=stale`, `artifact_status=stale`, and `missing_artifacts`; agents should treat that as a request to run or ask for a fresh release gate rather than trusting the old summary.
 
@@ -464,6 +495,27 @@ Use `compare_environment_lock` with a prior `environment-lock.json` to detect dr
     "privacy_risk": "high",
     "reason": "complex layout/tables/multicolumn signals may need layout-aware enhancement"
   },
+  "candidate_enhancements": {
+    "schema_version": "candidate-enhancements-v1",
+    "recommended": true,
+    "execution_policy": "candidate_only_plan_or_fake_first",
+    "remote_call_enabled": false,
+    "model_install_enabled": false,
+    "candidates": [
+      {
+        "backend": "DocLayout-YOLO",
+        "capability": "layout_detector_baseline",
+        "mode": "plan_or_fake_first",
+        "artifact_contract": ["layout_candidates_json", "layout_overlay_image"],
+        "run_preview": {
+          "schema_version": "candidate-run-preview-v1",
+          "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+          "expected_artifacts": ["layout_candidates_json", "layout_overlay_image"],
+          "will_not": ["install models", "start services", "make remote calls", "promote default routing"]
+        }
+      }
+    ]
+  },
   "next_actions": [
     {
       "tool": "start_conversion",
@@ -476,11 +528,23 @@ Use `compare_environment_lock` with a prior `environment-lock.json` to detect dr
 
 Use this when deciding whether to convert, build a location index, rebuild an image book, export a review pack, or compare PDF pipelines.
 
+`baseline_recommendations` is also local and non-executing. It uses `schema_version=baseline-recommendations-v1` to tell agents which cheap local baselines to compare before heavy routes: Pandoc/Calibre for ebooks and text-like formats, Docling/MarkItDown for Office/HTML/PDF comparison, PyMuPDF4LLM for fast PDF text-layer output, and OCRmyPDF for scanned-PDF preprocessing. Optional missing baselines are review guidance, not permission to install dependencies automatically.
+
+`candidate_enhancements` is local and non-executing. It reuses `candidate_backend_registry.py` for canonical candidate backend keys, modules, command hints, default policies, and artifact contracts, including lightweight pypdf/pdfminer.six diagnostics and Tesseract/docTR OCR comparison worker plans. `diagnostic_artifact_schemas` defines the stable side-evidence outputs for `pdf_metadata_json`, `pdf_outline_json`, `pdf_layout_evidence_json`, and `ocr_blocks_jsonl`. `table-candidates.json` folds pdfplumber, Camelot, Tabula, and pdf_table worker artifacts into the shared `table-candidates-v1` candidate schema. `read_artifact` validates layout/table/formula/document-VLM candidate JSON against `candidate_artifact_schema.py`, summarizes diagnostic artifacts through `diagnostic_artifact_schema.py`, and reports schema warnings/errors in the artifact summary. It turns preflight signals such as scanned pages, complex layout, table-heavy samples, wide/large images, and web-archive screenshots into candidate-only wrapper/provider suggestions. Agents may use its `command_hint`, `readiness_contract` (`schema_version=candidate-readiness-contract-v1`), and `run_preview` (`schema_version=candidate-run-preview-v1`) values to draft a plan or run a fake wrapper result, but they must not install models, start VLM/table services, make remote calls, or promote a backend based on these fields alone. Readiness contracts expose `needs_env`, `needs_model`, `needs_server`, manual-start hints, model-cache hints, and supported artifact lists as machine-readable planning data. Use `scripts/generate_backend_scorecard.py --external-wrapper-result ...`, `--external-wrapper-root ...`, `--candidate-artifact ...`, `--candidate-artifact-root ...`, `--review-bundle ...`, or `--review-bundle-root ...` to fold wrapper, candidate sidecar, and `table_review_matrix` evidence back into scorecards before promotion. Scorecard backend rows include `quality_signals` for comparable evidence such as page/block/table/formula counts, bbox and reading-order evidence, Markdown character counts, warnings, runtime/cache hints, fallback paths, layout/table/formula sidecar completeness (`layout_label_count`, `layout_overlay_count`, `table_html_count`, `table_markdown_count`, `table_cells_json_count`, `formula_latex_count`, `formula_bbox_count`, `formula_source_ref_count`, `formula_evidence_completeness`, `needs_formula_retention_review`), table matrix completeness (`table_review_matrix_count`, `table_evidence_completeness`, `table_evidence_completeness_score`, `table_missing_evidence_count`, `table_conflict_count`, `has_table_overlay`, `has_table_cells_json`, `needs_card_layout_false_positive_review`), and whether document-VLM/table/formula evidence exists. Rows also include `promotion_gate` with `decision`, `status`, `reasons`, `evidence_count`, and `required_evidence`; agents must not promote or replace a route from README metrics, command hints, a single private sample, or model availability alone. Use `scripts/build_candidate_benchmark_manifest.py` to attach `candidate_backend_previews` to shared sample classes before any model experiment. Use `scripts/build_layout_table_review_bundle.py --candidate-plan candidate-benchmark-plan.json --scorecard backend-scorecard.json` to merge `benchmark_context`, `expected_artifact_coverage`, candidate run previews, per-page `review_pages`, same-page `table_review_matrix`, same-page `formula_review_matrix`, and scorecard gates into `promotion_reviews` and next actions before manual/default-route decisions. `review_pages` uses `schema_version=layout-table-review-page-v1` and indexes already-collected source/original refs, overlay refs, OCR/table refs, candidate counts, and inline Markdown excerpts without rendering pages or running models. `table_review_matrix` uses `schema_version=table-review-matrix-v1` to group table evidence by page/backend, record whether HTML/Markdown/cells/overlay outputs exist, calculate per-backend `evidence_completeness_score` plus `missing_evidence`, attach `comparison_summary` (`schema_version=table-review-comparison-summary-v1`) for same-page table-count disagreement and missing overlay/cells/readable evidence, and flag `check_card_layout_false_positive` before promotion. `formula_review_matrix` uses `schema_version=formula-review-matrix-v1` to group formula evidence by page/backend, record whether LaTeX/Markdown, bbox, source/crop, and confidence evidence exists, and flag `check_formula_retention` before promotion.
+
+Use pypdf/pdfminer.six worker plans only for metadata, outline, or text-layer debugging. Use pdf_table worker plans only for detected/explicit table pages, and consume their `table-candidates.json` as side evidence. Use Tesseract/docTR worker plans only for OCR comparison evidence. These workers emit `external-wrapper-result.json` and do not change default Markdown routing. Tesseract fake/execute adapters should prefer standards outputs such as TSV/hOCR plus normalized `ocr-blocks-v1` rows before any promotion decision.
+
+Pix2Text image/formula runs write Markdown as the primary output and `formula-candidates.json` (`schema_version=formula-candidates-v1`) under the wrapper output directory as review-only side evidence. Agents should read this artifact for LaTeX/bbox/confidence candidates when checking formula retention, but must not promote or rewrite final Markdown solely from it.
+
+Surya layout/table runs write Markdown as the primary output plus review-only side evidence under the wrapper output directory: `layout-candidates.json` (`schema_version=layout-candidates-v1`) for layout mode and `table-candidates.json` (`schema_version=table-candidates-v1`) for table mode. Agents should read these artifacts for bbox, confidence, reading-order, HTML, and cell evidence when comparing layout/table retention, but must not install models or promote Surya results into default Markdown routing without an explicit benchmark decision.
+
 ## Online Enhancement
 
 `run_online_enhancement` is the explicit provider-backed entry point for optional online/fake enhancement. It does not run during default conversion.
 
 When `output` is provided, the tool persists a reviewable `online-enhancement-<task>.json` and `online-enhancement-<task>.md` pair and returns them as standard `artifacts` with `next_actions`. When `output` is omitted, it returns the result inline only.
+
+For `vlm_layout` and `ocr_layout`, `output` also writes `document-vlm-result.json` (`schema_version=document-vlm-result-v1`) as review-only side evidence. For `vlm_layout`, `ocr_layout`, and `table_repair` responses that include tables, `output` also writes `table-candidates.json` (`schema_version=table-candidates-v1`). These sidecars are available for review bundles and scorecards only; they do not bypass `allow_remote=true` or promote online results into default routing.
 
 Supported tasks:
 
@@ -576,12 +640,23 @@ The tool writes visual evidence files only. It does not replace the source Markd
 Returned artifacts:
 
 - `visual_check_json`: `visual_check_result.json`, including status, warnings, counts, and next step.
+  - Stable schema: `web-archive-visual-check-v1`.
+  - `read_artifact` summarizes it as `kind=web_archive_visual_check` with archive/output paths, OCR status, OCR character count, visual block count, table candidate count, image-position count, warning preview, and `execution_policy=consume_existing_archive_only_no_crawling_no_browser_login`.
 - `markdown`: `layout_ocr.md`, screenshot OCR Markdown or a pending placeholder.
 - `visual_blocks_json`: OCR/layout block candidates.
 - `table_candidates_json`: Markdown/OCR table candidates.
 - `image_positions_json`: DOM image positions and screenshot visual-region candidates.
 
 When no screenshot or OCR engine is available, `status` is usually `pending_visual_engine`; agents should read `warnings` and avoid treating `layout_ocr.md` as recognized evidence.
+
+
+Sidecar planning artifacts:
+
+- `build_review_lifecycle` consumes an existing queue, agent batch, handoff bundle, layout/table review bundle, scorecard, or generic JSON and writes `review-lifecycle.json/md` with `schema_version=review-lifecycle-v1`. It is metadata-only, blocks DMS import/source moves/publish-sync-upload, includes `do_not_import_into_document_management_system`, and keeps archive acceptance manual.
+- `build_chunk_map` consumes an existing Markdown output and optional structure JSON and writes `chunk-map.json/md` with `schema_version=chunk-map-v1`. It follows `metadata_only_no_platform_import`, stores line ranges and short previews by default, and does not mutate final Markdown.
+- `build_academic_evidence` consumes existing GROBID/formula candidate JSON sidecars and writes `academic-evidence.json/md` with `schema_version=academic-evidence-v1`. It is `side_evidence_only_no_default_route_change` and performs no GROBID, scholarly API, Mathpix, or model call.
+- `build_format_baseline_matrix` consumes existing conversion/inspect reports and writes `format-baseline-matrix.json/md` with `schema_version=format-baseline-matrix-v1`. It is `inspect_only_side_evidence`, compares MarkItDown/Docling/Pandoc/Tika/Mammoth/kreuzberg-style baseline rows, and does not run converters.
+- `build_document_intelligence_blocks` consumes existing layout/table/formula/OCR sidecars and writes `document-intelligence-blocks.json/md` with `schema_version=document-intelligence-blocks-v1`. It normalizes local block/relationship evidence and marks cloud/provider work as `not_performed_by_this_builder`.
 
 ## Artifacts
 
@@ -628,6 +703,13 @@ Common artifact types:
 - `image_positions_json`
 - `requirements_lock`
 - `tool_log`
+- `pdf_metadata_json`
+- `pdf_outline_json`
+- `pdf_layout_evidence_json`
+- `ocr_blocks_jsonl`
+- `ocr_provider_comparison_json`
+- `hocr`
+- `tsv`
 
 ## Reading Artifacts
 
@@ -637,7 +719,7 @@ Use it for:
 
 - Markdown.
 - JSON.
-- JSONL previews.
+- JSON and JSONL previews, including `pdf_layout_evidence_json` page density summaries, `ocr_blocks_jsonl` summaries with provider/status/block/bbox/text-character counts, `ocr_provider_comparison_json` summaries with provider/registry/category metrics, and high-level candidate review summaries for `layout_table_review_bundle_json`, `optional_backend_scorecard_json`, and `candidate_benchmark_plan_json`.
 - Review reports.
 - Order reports.
 - Logs.
@@ -669,7 +751,7 @@ Image OCR provider options for `rebuild_image_book`, `start_image_book_rebuild`,
 - `ocr_provider=umi`: use the configured Umi-OCR/PaddleOCR-json backend.
 - `ocr_provider=rapidocr`: use the optional Python-native RapidOCR backend. The output still uses the same `pages_jsonl` and OCR block schema.
 - `CnOCR` is exposed through `scripts/compare_ocr_providers.py` for Chinese/English OCR comparison and health/capability reporting. It is not a default image-book route.
-- OCR provider comparison writes `ocr-provider-comparison.json/md` plus `ocr-blocks.jsonl`; agents should read the JSONL artifact when they need per-image OCR text blocks, bbox coverage, or RapidOCR-vs-CnOCR-vs-Umi block-level differences.
+- OCR provider comparison writes `ocr-provider-comparison.json/md` plus `ocr-blocks.jsonl`; agents should read the JSONL artifact when they need per-image OCR text blocks, bbox coverage, or RapidOCR-vs-CnOCR-vs-Umi block-level differences. The comparison payload also includes `ocr-provider-registry-v1`, where docTR, Tesseract, Surya OCR, and Pix2Text text-only are planned-only candidates until an adapter can emit `ocr-blocks-v1` without installing models by surprise.
 
 ## Failure Handling
 

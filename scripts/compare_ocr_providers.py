@@ -20,6 +20,12 @@ from ebook_markdown_pipeline.batch_convert_books import (  # noqa: E402
 )
 from ebook_markdown_pipeline.document_locator import IMAGE_EXTENSIONS  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import umi_ocr_image_with_blocks  # noqa: E402
+from ebook_markdown_pipeline.ocr_provider_registry import (  # noqa: E402
+    OCR_PROVIDERS as OCR_PROVIDER_REGISTRY,
+    executable_ocr_provider_keys,
+    ocr_provider_for_key,
+    ocr_provider_registry_payload,
+)
 from ebook_markdown_pipeline.ocr_providers import (  # noqa: E402
     OCR_BLOCK_SCHEMA_VERSION,
     cnocr_available,
@@ -32,20 +38,25 @@ from ebook_markdown_pipeline.ocr_providers import (  # noqa: E402
 )
 
 
-PROVIDERS = ("rapidocr", "cnocr", "umi")
+PROVIDERS = tuple(profile.key for profile in OCR_PROVIDER_REGISTRY)
 REPORT_SCHEMA_VERSION = "ocr-provider-comparison-v1"
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Compare lightweight OCR providers on small image samples.")
-    parser.add_argument("inputs", nargs="+", type=Path, help="Image files or folders.")
+    parser.add_argument("inputs", nargs="*", type=Path, help="Image files or folders.")
     parser.add_argument("--output", type=Path, default=PROJECT_DIR / "benchmarks" / "runs" / "ocr-provider-comparison" / time.strftime("%Y%m%d-%H%M%S"))
-    parser.add_argument("--providers", nargs="+", choices=PROVIDERS, default=list(PROVIDERS))
+    parser.add_argument("--providers", nargs="+", choices=PROVIDERS, default=list(executable_ocr_provider_keys()))
+    parser.add_argument("--list-providers", action="store_true", help="Print the OCR provider registry without running OCR.")
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--umi-paddle-exe", default=suggested_umi_paddle_exe())
     parser.add_argument("--umi-paddle-module", default=suggested_umi_paddle_module())
     args = parser.parse_args()
+
+    if args.list_providers:
+        print(json.dumps(ocr_provider_registry_payload(), ensure_ascii=False, indent=2))
+        return 0
 
     images = collect_images(args.inputs, recursive=args.recursive)
     if args.limit:
@@ -107,6 +118,7 @@ def compare_ocr_providers(
         "output": str(output_dir),
         "image_count": len(images),
         "images": [{"path": str(path), "category": infer_image_category(path)} for path in images],
+        "provider_registry": ocr_provider_registry_payload(),
         "providers": provider_results,
     }
     blocks_path = output_dir / "ocr-blocks.jsonl"
@@ -139,7 +151,13 @@ def run_provider(
     status = "ok"
     message = ""
     try:
-        if provider == "rapidocr":
+        profile = ocr_provider_for_key(provider)
+        if profile is None:
+            raise ValueError(f"Unsupported OCR provider: {provider}")
+        if not profile.executable:
+            status = profile.default_status
+            message = profile.default_policy
+        elif provider == "rapidocr":
             if rapidocr_engine_factory is None and not rapidocr_available():
                 raise FileNotFoundError("RapidOCR is not installed.")
             engine = rapidocr_engine_factory() if rapidocr_engine_factory else create_rapidocr_engine()
@@ -174,6 +192,8 @@ def run_provider(
         message = "No image samples."
     return {
         "provider": provider,
+        "display_name": (ocr_provider_for_key(provider).display_name if ocr_provider_for_key(provider) else provider),
+        "executable": bool(ocr_provider_for_key(provider).executable) if ocr_provider_for_key(provider) else False,
         "status": status,
         "message": message,
         "duration_seconds": duration,
@@ -337,7 +357,8 @@ def summarize_items_by_category(items: list[dict[str, Any]]) -> dict[str, dict[s
 
 def summarize_provider_results(provider_results: list[dict[str, Any]], *, image_count: int) -> dict[str, Any]:
     ok = [item for item in provider_results if item.get("status") in {"ok", "partial", "skipped"}]
-    missing = [item for item in provider_results if item.get("status") == "missing"]
+    missing_statuses = {"missing", "planned_only", "needs_env", "needs_model", "needs_server"}
+    missing = [item for item in provider_results if item.get("status") in missing_statuses]
     failed = [item for item in provider_results if item.get("status") == "failed"]
     if not image_count:
         status = "skipped"
@@ -374,6 +395,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
         f"- Images: {payload.get('image_count')}",
         f"- JSON: `{payload.get('json_report', 'ocr-provider-comparison.json')}`",
         f"- OCR blocks JSONL: `{payload.get('ocr_blocks_jsonl', 'ocr-blocks.jsonl')}`",
+        f"- Provider registry: `{(payload.get('provider_registry') or {}).get('schema_version', 'missing')}`",
         "",
         "| Provider | Status | Samples | Empty | Chars | Blocks | BBox coverage | Avg sec | Message |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
@@ -381,7 +403,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
     for provider in payload.get("providers") or []:
         metrics = provider.get("metrics") or {}
         lines.append(
-            f"| {provider.get('provider')} | {provider.get('status')} | "
+            f"| {provider.get('display_name') or provider.get('provider')} | {provider.get('status')} | "
             f"{metrics.get('sample_count', 0)} | {metrics.get('empty_count', 0)} | "
             f"{metrics.get('total_char_count', 0)} | {metrics.get('total_block_count', 0)} | "
             f"{metrics.get('bbox_coverage', 0)} | {metrics.get('avg_duration_seconds', 0)} | "
@@ -410,7 +432,7 @@ def render_markdown(payload: dict[str, Any]) -> str:
     lines.append("## Per Image")
     lines.append("")
     for provider in payload.get("providers") or []:
-        lines.append(f"### {provider.get('provider')} ({provider.get('status')})")
+        lines.append(f"### {provider.get('display_name') or provider.get('provider')} ({provider.get('status')})")
         lines.append("")
         lines.append("| Image | Status | Chars | Blocks | BBox | Sec | Preview |")
         lines.append("| --- | --- | ---: | ---: | ---: | ---: | --- |")

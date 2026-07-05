@@ -97,8 +97,9 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"HTTP contract has wrong display name: {contract}")
     if contract.get("entrypoints")[:3] != ["process_material", "get_job_status", "read_artifact"]:
         raise RuntimeError(f"HTTP contract entrypoints are wrong: {contract}")
-    if "show_latest_quality_gate" not in contract.get("specialist_tools", []):
-        raise RuntimeError(f"HTTP contract should list show_latest_quality_gate as a specialist tool: {contract}")
+    specialist_tools = set(contract.get("specialist_tools") or [])
+    if not {"show_latest_quality_gate", "list_candidate_backends"}.issubset(specialist_tools):
+        raise RuntimeError(f"HTTP contract should list candidate discovery and quality-gate tools as specialist tools: {contract}")
     pm_contract = contract.get("process_material_contract") or {}
     if pm_contract.get("schema_version") != "process-material-v2" or "recommended_followup" not in pm_contract.get("required_fields", []):
         raise RuntimeError(f"HTTP contract missing process_material v2 schema: {contract}")
@@ -122,7 +123,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     if not contract.get("long_task_guidance", {}).get("poll_tool"):
         raise RuntimeError(f"HTTP contract missing long task guidance: {contract}")
     contract_tool_names = {item.get("name") for item in contract.get("tools") or []}
-    if not {"get_agent_contract", "process_material", "read_artifact", "show_latest_quality_gate", "build_agent_handoff_bundle"}.issubset(contract_tool_names):
+    if not {"get_agent_contract", "process_material", "read_artifact", "show_latest_quality_gate", "list_candidate_backends", "build_agent_handoff_bundle"}.issubset(contract_tool_names):
         raise RuntimeError(f"HTTP contract missing key tools: {contract}")
     docs = contract.get("docs") or {}
     if not docs.get("tool_contract") or not docs.get("agent_integration"):
@@ -137,6 +138,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         "get_agent_contract",
         "scan_books",
         "show_latest_quality_gate",
+        "list_candidate_backends",
         "inspect_document",
         "process_material",
         "process_web_archive",
@@ -162,6 +164,19 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     )
     if latest_quality.get("error") or latest_quality.get("status") not in {"ok", "missing", "stale"}:
         raise RuntimeError(f"Latest quality gate tool returned unexpected payload: {latest_quality}")
+
+    candidate_backends = request_json(
+        f"{url.rstrip('/')}/call",
+        method="POST",
+        headers=headers,
+        payload={"name": "list_candidate_backends", "arguments": {"backend": "dots_mocr"}},
+    )
+    if candidate_backends.get("schema_version") != "candidate-backend-list-v1" or candidate_backends.get("remote_call_enabled"):
+        raise RuntimeError(f"Candidate backend HTTP listing must be non-executing: {candidate_backends}")
+    candidate_rows = candidate_backends.get("backends") or []
+    candidate_readiness = (candidate_rows[0].get("readiness_contract") if candidate_rows else {}) or {}
+    if candidate_backends.get("count") != 1 or "needs_server" not in candidate_readiness.get("missing_states", []):
+        raise RuntimeError(f"Candidate backend HTTP listing should expose dots.mocr manual readiness: {candidate_backends}")
 
     scan = request_json(
         f"{url.rstrip('/')}/call",

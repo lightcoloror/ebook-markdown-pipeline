@@ -11,6 +11,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ebook_markdown_pipeline import default_options, normalize_command_options  # noqa: E402
+from ebook_markdown_pipeline.candidate_backend_registry import candidate_backend_for_display  # noqa: E402
 from ebook_markdown_pipeline.batch_convert_books import (  # noqa: E402
     CALIBRE_INTERMEDIATE_FORMATS,
     PANDOC_DIRECT_FORMATS,
@@ -20,6 +21,7 @@ from ebook_markdown_pipeline.batch_convert_books import (  # noqa: E402
     inspect_pdf_preflight,
 )
 from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, docling_available  # noqa: E402
+from ebook_markdown_pipeline.markitdown_backend import MARKITDOWN_FORMATS, markitdown_available  # noqa: E402
 from ebook_markdown_pipeline.document_locator import IMAGE_EXTENSIONS  # noqa: E402
 from ebook_markdown_pipeline.grobid_backend import grobid_available, inspect_with_grobid  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import collect_image_sources, image_metadata  # noqa: E402
@@ -69,6 +71,11 @@ def inspect_document(
             "input": str(input_path),
             "kind": "missing",
             "recommendation": "check_path",
+            "structure_strategy": {"mode": "none", "confidence": "low", "reason": "Input path is missing."},
+            "online_enhancement": online_enhancement_base(model_mode="local", recommended=False, routes=[], reason="input path is missing"),
+            "baseline_recommendations": no_baseline_recommendations(),
+            "candidate_enhancements": no_candidate_enhancements(),
+            "next_actions": [],
             "warnings": [f"Input does not exist: {input_path}"],
         }
     return inspect_file(input_path, sample_pages=sample_pages, model_mode=model_mode, use_tika=use_tika, use_grobid=use_grobid)
@@ -118,9 +125,12 @@ def inspect_web_content_archive(input_path: Path, *, model_mode: str = "local") 
             "reason": "Use web-content-fetcher as the source-of-truth archive and add visual OCR/layout/table/image-position evidence under visual_check/.",
         },
         "online_enhancement": online_enhancement_for_web_archive(has_screenshot=bool(screenshot), model_mode=model_mode),
+        "baseline_recommendations": no_baseline_recommendations(reason="web archives are handled by process_web_archive using existing source HTML/Markdown/screenshots"),
+        "candidate_enhancements": candidate_enhancements_for_web_archive(has_screenshot=bool(screenshot)),
         "next_actions": [
             {"tool": "process_web_archive", "why": "prepare visual_check artifacts for archive rebuild"},
             {"tool": "read_artifact", "artifact_type": "visual_check_json", "why": "inspect warnings and generated visual-check artifact paths"},
+            *candidate_next_actions(candidate_enhancements_for_web_archive(has_screenshot=bool(screenshot))),
         ],
         "warnings": warnings,
     }
@@ -167,7 +177,22 @@ def inspect_directory(
             image_count=len(image_sources),
             model_mode=model_mode,
         ),
-        "next_actions": directory_next_actions(recommendation, structure_strategy),
+        "baseline_recommendations": baseline_recommendations_for_directory(sample_files, document_count=len(document_sources), image_count=len(image_sources)),
+        "candidate_enhancements": candidate_enhancements_for_directory(
+            sample_files,
+            document_count=len(document_sources),
+            image_count=len(image_sources),
+        ),
+        "next_actions": [
+            *directory_next_actions(recommendation, structure_strategy),
+            *candidate_next_actions(
+                candidate_enhancements_for_directory(
+                    sample_files,
+                    document_count=len(document_sources),
+                    image_count=len(image_sources),
+                )
+            ),
+        ],
         "warnings": warnings,
         "sample_files": sample_files,
     }
@@ -196,6 +221,8 @@ def inspect_file(input_path: Path, *, sample_pages: int, model_mode: str = "loca
                 "reason": "Apache Tika extracted metadata/text for an otherwise unsupported extension; use it as inspect evidence, not a main Markdown conversion route.",
             },
             "tika": tika_payload,
+            "baseline_recommendations": no_baseline_recommendations(reason="Tika inspect is side evidence for an unsupported extension, not a Markdown baseline"),
+            "candidate_enhancements": no_candidate_enhancements(),
             "next_actions": [
                 {"tool": "inspect_document", "use_tika": "true", "why": "review Tika metadata/text sample before deciding whether to add a dedicated converter"},
             ],
@@ -207,6 +234,11 @@ def inspect_file(input_path: Path, *, sample_pages: int, model_mode: str = "loca
         "kind": "unsupported",
         "extension": suffix,
         "recommendation": "unsupported",
+        "structure_strategy": {"mode": "unsupported", "confidence": "low", "reason": "No supported local converter or candidate wrapper is known for this extension."},
+        "online_enhancement": online_enhancement_base(model_mode="local", recommended=False, routes=[], reason="unsupported extension"),
+        "baseline_recommendations": no_baseline_recommendations(reason="unsupported extension"),
+        "candidate_enhancements": no_candidate_enhancements(),
+        "next_actions": [],
         "warnings": [f"Unsupported file extension: {suffix}"],
     }
     if tika_payload:
@@ -239,7 +271,13 @@ def inspect_pdf(input_path: Path, *, sample_pages: int, model_mode: str = "local
         "recommendation": recommend_pdf_tool(preflight),
         "structure_strategy": structure_strategy,
         "online_enhancement": online_enhancement_for_pdf(preflight, model_mode=model_mode),
-        "next_actions": pdf_next_actions(preflight, structure_strategy),
+        "baseline_recommendations": baseline_recommendations_for_pdf(preflight, structure_strategy),
+        "candidate_enhancements": candidate_enhancements_for_pdf(preflight, structure_strategy),
+        "next_actions": [
+            *pdf_next_actions(preflight, structure_strategy),
+            *baseline_next_actions(baseline_recommendations_for_pdf(preflight, structure_strategy)),
+            *candidate_next_actions(candidate_enhancements_for_pdf(preflight, structure_strategy)),
+        ],
         "warnings": warnings,
     }
     if use_grobid:
@@ -301,9 +339,12 @@ def inspect_image(input_path: Path, *, model_mode: str = "local") -> dict[str, A
             "reason": "Default recognition should produce Markdown/review artifacts; use location indexing only when a query asks where information appears.",
         },
         "online_enhancement": online_enhancement_for_image(width=width, height=height, model_mode=model_mode),
+        "baseline_recommendations": no_baseline_recommendations(reason="single images use OCR/image-book recognition baselines, not document conversion baselines"),
+        "candidate_enhancements": candidate_enhancements_for_image(width=width, height=height),
         "next_actions": [
             {"tool": "start_image_book_rebuild", "why": "recognize the image into Markdown and review artifacts"},
             {"tool": "start_location_index", "why": "only use when the task is page/image-level keyword location"},
+            *candidate_next_actions(candidate_enhancements_for_image(width=width, height=height)),
         ],
         "warnings": warnings,
     }
@@ -332,7 +373,9 @@ def inspect_supported_document(input_path: Path, *, model_mode: str = "local", u
         "recommendation": recommendation,
         "structure_strategy": supported_document_structure_strategy(suffix),
         "online_enhancement": online_enhancement_for_document(suffix, model_mode=model_mode),
-        "next_actions": supported_document_next_actions(suffix, recommendation),
+        "baseline_recommendations": baseline_recommendations_for_document(suffix, recommendation),
+        "candidate_enhancements": no_candidate_enhancements(),
+        "next_actions": [*supported_document_next_actions(suffix, recommendation), *baseline_next_actions(baseline_recommendations_for_document(suffix, recommendation))],
         "warnings": warnings,
     }
     if use_tika:
@@ -482,6 +525,387 @@ def supported_document_next_actions(suffix: str, recommendation: str) -> list[di
     else:
         actions.append({"tool": "start_conversion", "why": "run normal conversion and inspect review checklist"})
     return actions
+
+
+def no_baseline_recommendations(reason: str = "") -> dict[str, Any]:
+    return baseline_recommendations_base([], reason=reason)
+
+
+def baseline_recommendations_base(items: list[dict[str, Any]], *, reason: str) -> dict[str, Any]:
+    return {
+        "schema_version": "baseline-recommendations-v1",
+        "recommended": bool(items),
+        "execution_policy": "cheap_local_first_no_model_install",
+        "remote_call_enabled": False,
+        "model_install_enabled": False,
+        "reason": reason if items else (reason or "No document conversion baseline is recommended for this input."),
+        "items": items,
+    }
+
+
+def baseline_item(
+    *,
+    backend: str,
+    role: str,
+    pipeline_mode: str,
+    status: str,
+    why: str,
+    artifact_contract: list[str] | None = None,
+    before_heavy: bool = True,
+) -> dict[str, Any]:
+    return {
+        "backend": backend,
+        "role": role,
+        "pipeline_mode": pipeline_mode,
+        "status": status,
+        "why": why,
+        "artifact_contract": artifact_contract or ["markdown", "review_report", "quality_summary"],
+        "before_heavy": before_heavy,
+    }
+
+
+def baseline_recommendations_for_document(suffix: str, recommendation: str) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    suffix = str(suffix or "").lower()
+    if suffix in PANDOC_DIRECT_FORMATS:
+        items.append(
+            baseline_item(
+                backend="Pandoc",
+                role="primary_fast_baseline",
+                pipeline_mode="auto",
+                status="external_command_configured_by_runtime",
+                why="Pandoc is the normal cheap local route for this format; inspect review artifacts before trying heavier parsers.",
+            )
+        )
+    if suffix in CALIBRE_INTERMEDIATE_FORMATS:
+        items.append(
+            baseline_item(
+                backend="Calibre+Pandoc",
+                role="primary_normalization_baseline",
+                pipeline_mode="auto",
+                status="external_command_configured_by_runtime",
+                why="Kindle-like formats should be normalized by ebook-convert before Markdown cleanup.",
+            )
+        )
+    if suffix in DOCLING_FORMATS:
+        items.append(
+            baseline_item(
+                backend="Docling",
+                role="structured_document_baseline",
+                pipeline_mode="docling",
+                status="ok" if docling_available() else "optional_missing",
+                why="Docling is the structured baseline for Office/HTML/CSV/Markdown documents when installed.",
+            )
+        )
+    if suffix in MARKITDOWN_FORMATS and suffix not in PDF_FORMATS:
+        role = "fallback_when_docling_missing" if suffix in DOCLING_FORMATS and not docling_available() else "comparison_baseline"
+        items.append(
+            baseline_item(
+                backend="MarkItDown",
+                role=role,
+                pipeline_mode="markitdown",
+                status="ok" if markitdown_available() else "optional_missing",
+                why="MarkItDown is a fast LLM-friendly comparison baseline; use it to compare output quality, not to replace the normal route by default.",
+            )
+        )
+    return baseline_recommendations_base(dedupe_baseline_items(items), reason=f"cheap local baselines for {suffix or 'document'} before optional heavy routes")
+
+
+def baseline_recommendations_for_pdf(preflight, strategy: dict[str, Any]) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    mode = str(strategy.get("mode") or "")
+    if getattr(preflight, "scanned_likely", False):
+        items.append(
+            baseline_item(
+                backend="OCRmyPDF",
+                role="searchable_pdf_preprocess_baseline",
+                pipeline_mode="ocrmypdf",
+                status="optional_preprocessor",
+                why="For scanned PDFs, create a searchable-PDF baseline before escalating to document VLM parsers.",
+                artifact_contract=["searchable_pdf", "markdown", "review_report"],
+            )
+        )
+    items.append(
+        baseline_item(
+            backend="PyMuPDF4LLM",
+            role="fast_text_layer_baseline",
+            pipeline_mode="pymupdf4llm",
+            status="local_fast_path",
+            why="Use a fast text-layer Markdown baseline for comparison whenever the PDF has usable text.",
+        )
+    )
+    if mode in {"layout_aware_structure_recovery", "presentation_pdf_slide_recovery", "bookmark_guided_structure_recovery"}:
+        items.append(
+            baseline_item(
+                backend="Docling",
+                role="structured_pdf_comparison",
+                pipeline_mode="docling",
+                status="ok" if docling_available() else "optional_missing",
+                why="Docling can provide a structured comparison for layout-heavy, outlined, or presentation-like PDFs.",
+            )
+        )
+    items.append(
+        baseline_item(
+            backend="MarkItDown",
+            role="explicit_pdf_comparison",
+            pipeline_mode="markitdown",
+            status="ok" if markitdown_available() else "optional_missing",
+            why="MarkItDown is a quick PDF comparison baseline; keep it explicit and compare against review reports.",
+        )
+    )
+    return baseline_recommendations_base(dedupe_baseline_items(items), reason="cheap PDF baselines must be reviewed before heavy parser/VLM promotion")
+
+
+def baseline_recommendations_for_directory(sample_files: list[dict[str, Any]], *, document_count: int, image_count: int) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for sample in sample_files:
+        baseline = sample.get("baseline_recommendations") or {}
+        items.extend(item for item in baseline.get("items") or [] if isinstance(item, dict))
+    reason = "aggregate cheap baselines from sampled files before running folder-level heavy candidates"
+    if image_count and not document_count:
+        reason = "image-only folders use image-book OCR baselines rather than document conversion baselines"
+    return baseline_recommendations_base(dedupe_baseline_items(items), reason=reason)
+
+
+def baseline_next_actions(baseline: dict[str, Any]) -> list[dict[str, str]]:
+    actions: list[dict[str, str]] = []
+    for item in (baseline.get("items") or [])[:4]:
+        backend = str(item.get("backend") or "")
+        pipeline_mode = str(item.get("pipeline_mode") or "")
+        if backend == "MarkItDown" and pipeline_mode == "markitdown":
+            actions.append({"tool": "start_conversion", "pdf_pipeline_mode": "markitdown", "document_pipeline_mode": "markitdown", "why": str(item.get("why") or "run MarkItDown comparison baseline")})
+        elif backend == "Docling" and pipeline_mode == "docling":
+            actions.append({"tool": "start_conversion", "pdf_pipeline_mode": "docling", "document_pipeline_mode": "docling", "why": str(item.get("why") or "run Docling structured baseline")})
+        elif backend == "OCRmyPDF" and pipeline_mode == "ocrmypdf":
+            actions.append({"tool": "start_conversion", "pdf_pipeline_mode": "ocrmypdf", "why": str(item.get("why") or "create searchable-PDF baseline")})
+    return actions
+
+
+def dedupe_baseline_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    result: list[dict[str, Any]] = []
+    for item in items:
+        key = f"{item.get('backend')}::{item.get('role')}::{item.get('pipeline_mode')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+def no_candidate_enhancements() -> dict[str, Any]:
+    return candidate_enhancement_base([], reason="")
+
+
+def candidate_enhancement_base(candidates: list[dict[str, Any]], *, reason: str) -> dict[str, Any]:
+    return {
+        "schema_version": "candidate-enhancements-v1",
+        "recommended": bool(candidates),
+        "execution_policy": "candidate_only_plan_or_fake_first",
+        "remote_call_enabled": False,
+        "model_install_enabled": False,
+        "reason": reason if candidates else "No external candidate wrapper is recommended before local-first conversion/review.",
+        "candidates": candidates,
+    }
+
+
+def candidate_item(
+    *,
+    backend: str,
+    capability: str,
+    trigger: str,
+    command_hint: str,
+    artifact_contract: list[str],
+    risk: str,
+) -> dict[str, Any]:
+    profile = candidate_backend_for_display(backend)
+    canonical_artifacts = list(profile.artifact_contract) if profile else []
+    payload = {
+        "backend": backend,
+        "capability": capability,
+        "trigger": trigger,
+        "mode": "plan_or_fake_first",
+        "status": "candidate_only",
+        "command_hint": command_hint,
+        "artifact_contract": unique_strings([*artifact_contract, *canonical_artifacts]),
+        "risk": risk,
+    }
+    if profile:
+        payload.update(
+            {
+                "registry_key": profile.key,
+                "module": profile.module,
+                "default_policy": profile.default_policy,
+                "canonical_command_hint": profile.command_hint,
+                "canonical_artifact_contract": canonical_artifacts,
+                "run_preview": profile.run_preview(capability=capability, trigger=trigger),
+            }
+        )
+    return payload
+
+
+def candidate_enhancements_for_pdf(preflight, strategy: dict[str, Any]) -> dict[str, Any]:
+    candidates: list[dict[str, Any]] = []
+    triggers: list[str] = []
+    if getattr(preflight, "scanned_likely", False) or getattr(preflight, "complex_layout_likely", False) or getattr(preflight, "presentation_like", False):
+        trigger = "scanned/complex/presentation PDF needs document-VLM evidence only after cheap local routes are compared"
+        triggers.append(trigger)
+        candidates.append(
+            candidate_item(
+                backend="MonkeyOCR",
+                capability="document_vlm_parse",
+                trigger=trigger,
+                command_hint="python scripts/monkeyocr_worker.py --input <pdf> --output <run-dir> --mode plan",
+                artifact_contract=["markdown", "middle_json", "content_list_json", "layout_review_pdf", "span_review_pdf", "model_debug_pdf"],
+                risk="heavy model/runtime; explicit only",
+            )
+        )
+        candidates.append(
+            candidate_item(
+                backend="dots.mocr",
+                capability="vlm_layout_provider",
+                trigger=trigger,
+                command_hint="python scripts/dots_mocr_worker.py --input <pdf> --output <run-dir> --mode plan",
+                artifact_contract=["layout_blocks_json", "markdown", "markdown_no_header_footer", "layout_overlay_image", "page_index_jsonl"],
+                risk="requires manually managed vLLM/OpenAI-compatible service or local HF weights",
+            )
+        )
+    if getattr(preflight, "complex_layout_likely", False) or getattr(preflight, "two_column_like_pages", 0) or getattr(preflight, "presentation_like", False):
+        trigger = "layout-heavy PDF can benefit from bbox/overlay review before changing Markdown"
+        triggers.append(trigger)
+        candidates.append(
+            candidate_item(
+                backend="DocLayout-YOLO",
+                capability="layout_detector_baseline",
+                trigger=trigger,
+                command_hint="python scripts/doclayout_yolo_worker.py --input <pdf> --output <run-dir> --pages 1-3 --mode plan",
+                artifact_contract=["layout_candidates_json", "layout_overlay_image", "layout_summary"],
+                risk="layout evidence only; never final Markdown",
+            )
+        )
+    if int(getattr(preflight, "table_like_pages", 0) or 0) > 0:
+        trigger = "sampled PDF pages look table-heavy; compare table-specific output before promoting a backend"
+        triggers.append(trigger)
+        candidates.append(
+            candidate_item(
+                backend="pdf_table",
+                capability="table_worker",
+                trigger=trigger,
+                command_hint="python scripts/pdf_table_worker.py --input <pdf> --output <run-dir> --pages <table-pages> --mode plan",
+                artifact_contract=["table_markdown", "table_html", "table_cells_json", "table_overlay_image", "table_comparison_summary"],
+                risk="table pages only; compare against Camelot/Tabula/pdfplumber",
+            )
+        )
+    return candidate_enhancement_base(dedupe_candidates(candidates), reason="; ".join(unique_strings(triggers)))
+
+
+def candidate_enhancements_for_image(*, width: int, height: int) -> dict[str, Any]:
+    pixels = max(0, width) * max(0, height)
+    wide = bool(width and height and max(width, height) / max(1, min(width, height)) >= 1.8)
+    layout_heavy = pixels >= 1_800_000 or wide
+    candidates: list[dict[str, Any]] = []
+    if layout_heavy:
+        trigger = "large or wide image may be infographic/layout-heavy OCR material"
+        candidates.append(
+            candidate_item(
+                backend="dots.mocr",
+                capability="image_vlm_layout_provider",
+                trigger=trigger,
+                command_hint="python scripts/dots_mocr_worker.py --input <image> --output <run-dir> --mode plan",
+                artifact_contract=["layout_blocks_json", "markdown", "markdown_no_header_footer", "layout_overlay_image"],
+                risk="candidate-only heavy VLM/provider path",
+            )
+        )
+        candidates.append(
+            candidate_item(
+                backend="MonkeyOCR",
+                capability="image_document_vlm_parse",
+                trigger=trigger,
+                command_hint="python scripts/monkeyocr_worker.py --input <image> --output <run-dir> --mode plan",
+                artifact_contract=["markdown", "middle_json", "layout_review_pdf", "span_review_pdf"],
+                risk="candidate-only heavy model/runtime path",
+            )
+        )
+    return candidate_enhancement_base(dedupe_candidates(candidates), reason="large/wide image candidate wrapper review" if candidates else "")
+
+
+def candidate_enhancements_for_web_archive(*, has_screenshot: bool) -> dict[str, Any]:
+    if not has_screenshot:
+        return candidate_enhancement_base([], reason="")
+    trigger = "web archive screenshot can use candidate layout/table evidence after process_web_archive visual_check"
+    candidates = [
+        candidate_item(
+            backend="DocLayout-YOLO",
+            capability="screenshot_layout_detector_baseline",
+            trigger=trigger,
+            command_hint="python scripts/doclayout_yolo_worker.py --input <screenshot> --output <run-dir> --mode plan",
+            artifact_contract=["layout_candidates_json", "layout_overlay_image"],
+            risk="review evidence only; web fetching remains outside this project",
+        ),
+        candidate_item(
+            backend="dots.mocr",
+            capability="screenshot_vlm_layout_provider",
+            trigger=trigger,
+            command_hint="python scripts/dots_mocr_worker.py --input <screenshot> --output <run-dir> --mode plan",
+            artifact_contract=["layout_blocks_json", "markdown", "layout_overlay_image"],
+            risk="candidate-only provider; no automatic remote call",
+        ),
+    ]
+    return candidate_enhancement_base(candidates, reason=trigger)
+
+
+def candidate_enhancements_for_directory(sample_files: list[dict[str, Any]], *, document_count: int, image_count: int) -> dict[str, Any]:
+    candidates: list[dict[str, Any]] = []
+    for item in sample_files:
+        enhancement = item.get("candidate_enhancements") or {}
+        candidates.extend(candidate for candidate in enhancement.get("candidates") or [] if isinstance(candidate, dict))
+    if image_count >= 8 and not document_count:
+        candidates.append(
+            candidate_item(
+                backend="MonkeyOCR",
+                capability="image_folder_document_vlm_parse",
+                trigger="image-only folder may be a screenshot book; use only after local image_book_rebuilder review",
+                command_hint="python scripts/monkeyocr_worker.py --input <folder> --output <run-dir> --mode plan",
+                artifact_contract=["markdown", "middle_json", "content_list_json", "layout_review_pdf"],
+                risk="folder-level heavy model path; explicit only",
+            )
+        )
+    candidates = dedupe_candidates(candidates)
+    return candidate_enhancement_base(candidates, reason="sampled files expose candidate-only external wrapper opportunities" if candidates else "")
+
+
+def candidate_next_actions(enhancement: dict[str, Any]) -> list[dict[str, str]]:
+    if not enhancement.get("recommended"):
+        return []
+    actions = [
+        {
+            "tool": "generate_backend_scorecard",
+            "why": "score optional/candidate backends before installing models or promoting any route",
+        }
+    ]
+    for candidate in (enhancement.get("candidates") or [])[:3]:
+        backend = str(candidate.get("backend") or "candidate")
+        actions.append(
+            {
+                "tool": "external_wrapper_plan",
+                "backend": backend,
+                "mode": "plan_or_fake_first",
+                "why": str(candidate.get("trigger") or "candidate wrapper must be planned/faked before real execution"),
+                "command_hint": str(candidate.get("command_hint") or ""),
+            }
+        )
+    return actions
+
+
+def dedupe_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    result: list[dict[str, Any]] = []
+    for item in candidates:
+        key = f"{item.get('backend')}::{item.get('capability')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
 
 
 def online_enhancement_base(

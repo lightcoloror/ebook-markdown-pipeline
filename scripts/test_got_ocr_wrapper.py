@@ -12,7 +12,9 @@ if str(ROOT.parent) not in sys.path:
     sys.path.insert(0, str(ROOT.parent))
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from document_vlm_artifact_utils import write_document_vlm_result  # noqa: E402
 from ebook_markdown_pipeline.batch_convert_books import default_options, dependency_health_report, environment_capability_summary  # noqa: E402
+from ebook_markdown_pipeline.ebook_converter_mcp import read_artifact  # noqa: E402
 from got_ocr_image_to_md import build_got_command, clean_stdout, stdout_to_markdown  # noqa: E402
 
 
@@ -47,6 +49,7 @@ def main() -> int:
             raise AssertionError(f"Unexpected GOT-OCR markdown cleanup: {markdown}")
         if clean_stdout("CUDA ready\n正文") != "正文":
             raise AssertionError("Expected runtime noise to be removed from GOT-OCR stdout.")
+        assert_document_vlm_artifact(root, image, output, markdown, backend="got_ocr")
 
         completed = subprocess.run(
             [
@@ -69,7 +72,7 @@ def main() -> int:
             errors="replace",
             check=False,
         )
-        if completed.returncode != 0 or "run_ocr_2.0.py" not in completed.stdout:
+        if completed.returncode != 0 or "run_ocr_2.0.py" not in completed.stdout or "document-vlm-result.json" not in completed.stdout:
             raise AssertionError(f"Expected GOT-OCR dry-run command: {completed.returncode}\n{completed.stdout}")
 
     checks = dependency_health_report([], default_options(), fast=True)
@@ -81,6 +84,23 @@ def main() -> int:
 
     print("GOT-OCR wrapper contract test passed.")
     return 0
+
+
+def assert_document_vlm_artifact(root: Path, image: Path, output: Path, markdown: str, *, backend: str) -> None:
+    artifact = write_document_vlm_result(
+        root / "document-vlm-result.json",
+        backend=backend,
+        source=image,
+        markdown_path=output,
+        markdown=markdown,
+        mode="format",
+        raw_dir=root / "raw",
+        command=["fake"],
+    )
+    readable = read_artifact({"path": str(artifact), "artifact_type": "document_vlm_result_json"})
+    summary = readable.get("summary") or {}
+    if summary.get("kind") != "document_vlm_result_json" or summary.get("block_count") != 1 or summary.get("candidate_schema_known") is not True:
+        raise AssertionError(f"Expected readable GOT-OCR document VLM summary: {readable}")
 
 
 if __name__ == "__main__":

@@ -66,6 +66,9 @@ def main() -> int:
         )
         if payload.get("status") != "ok":
             raise AssertionError(f"Expected comparison status ok: {payload}")
+        registry = payload.get("provider_registry") or {}
+        if registry.get("schema_version") != "ocr-provider-registry-v1":
+            raise AssertionError(f"Expected OCR provider registry in comparison payload: {payload}")
         if not Path(payload["json_report"]).exists() or not Path(payload["markdown_report"]).exists():
             raise AssertionError(f"Expected comparison reports: {payload}")
         blocks_path = Path(payload["ocr_blocks_jsonl"])
@@ -114,6 +117,18 @@ def main() -> int:
             raise AssertionError(f"Expected missing CnOCR dependency to be recorded: {missing_cnocr}")
         if missing_cnocr["status"] != "skipped":
             raise AssertionError(f"Expected missing CnOCR-only comparison to skip instead of fail: {missing_cnocr}")
+
+        planned = compare_ocr_providers(
+            [first],
+            output_dir=root / "planned",
+            providers=["doctr", "tesseract", "surya_ocr", "pix2text_text"],
+        )
+        planned_statuses = {item.get("provider"): item.get("status") for item in planned.get("providers") or []}
+        if set(planned_statuses.values()) != {"planned_only"} or planned.get("status") != "skipped":
+            raise AssertionError(f"Expected planned-only OCR providers to be listed without execution: {planned}")
+        planned_md = Path(planned["markdown_report"]).read_text(encoding="utf-8")
+        if "docTR" not in planned_md or "Pix2Text text-only" not in planned_md:
+            raise AssertionError(f"Expected planned provider names in Markdown: {planned_md}")
 
     print("OCR provider comparison test passed.")
     return 0

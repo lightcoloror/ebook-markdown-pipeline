@@ -363,7 +363,10 @@ def process_web_archive(archive_path: str, output_dir: str = "") -> dict[str, An
     _write_json(image_positions_path, image_positions)
 
     result = {
-        "schema_version": 1,
+        "schema_version": "web-archive-visual-check-v1",
+        "legacy_schema_version": 1,
+        "source_contract": "web-content-fetcher-archive",
+        "execution_policy": "consume_existing_archive_only_no_crawling_no_browser_login",
         "status": status,
         "created_at": _now_iso(),
         "archive_path": str(archive_root),

@@ -10,7 +10,8 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR.parent))
 
 import ebook_markdown_pipeline.pdf_layout_diagnostics as diagnostics  # noqa: E402
-from ebook_markdown_pipeline.pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, extract_tables_with_camelot, extract_tables_with_tabula, pdfplumber_available  # noqa: E402
+from ebook_markdown_pipeline.ebook_converter_mcp import read_artifact  # noqa: E402
+from ebook_markdown_pipeline.pdf_layout_diagnostics import analyze_pdf_layout_with_pdfplumber, build_pdf_layout_evidence, build_table_candidates, extract_tables_with_camelot, extract_tables_with_tabula, pdfplumber_available  # noqa: E402
 
 
 def make_text_pdf(path: Path) -> None:
@@ -47,9 +48,42 @@ def main() -> int:
         diagnostics_json = out / "table-diagnostics.json"
         if not diagnostics_json.exists():
             raise AssertionError("Expected table-diagnostics.json artifact.")
+        evidence_json = out / "pdf-layout-evidence.json"
+        if not evidence_json.exists():
+            raise AssertionError("Expected pdf-layout-evidence.json artifact.")
+        table_candidates_json = out / "table-candidates.json"
+        if not table_candidates_json.exists():
+            raise AssertionError("Expected table-candidates.json artifact.")
         persisted = json.loads(diagnostics_json.read_text(encoding="utf-8"))
         if persisted.get("status") != "ok" or "summary" not in persisted:
             raise AssertionError(f"Unexpected persisted diagnostics: {persisted}")
+        if not persisted.get("pdf_layout_evidence_artifact") or persisted.get("pdf_layout_evidence", {}).get("schema_version") != "pdf-layout-evidence-v1":
+            raise AssertionError(f"Expected diagnostics to reference layout evidence: {persisted}")
+        if not persisted.get("table_candidates_artifact") or persisted.get("table_candidates", {}).get("schema_version") != "table-candidates-v1":
+            raise AssertionError(f"Expected diagnostics to reference table candidates: {persisted}")
+        evidence = json.loads(evidence_json.read_text(encoding="utf-8"))
+        if evidence.get("schema_version") != "pdf-layout-evidence-v1" or evidence.get("backend") != "pdfplumber":
+            raise AssertionError(f"Unexpected layout evidence payload: {evidence}")
+        readable_evidence = read_artifact({"path": str(evidence_json)})
+        evidence_summary = readable_evidence.get("summary") or {}
+        if evidence_summary.get("kind") != "pdf_layout_evidence" or evidence_summary.get("backend") != "pdfplumber":
+            raise AssertionError(f"Expected read_artifact layout evidence summary: {readable_evidence}")
+        table_candidates = json.loads(table_candidates_json.read_text(encoding="utf-8"))
+        if table_candidates.get("schema_version") != "table-candidates-v1" or table_candidates.get("backend") != "pdf_layout_diagnostics":
+            raise AssertionError(f"Unexpected table candidates payload: {table_candidates}")
+        readable_tables = read_artifact({"path": str(table_candidates_json)})
+        table_summary = readable_tables.get("summary") or {}
+        if table_summary.get("kind") != "table_candidates_json" or table_summary.get("candidate_schema_known") is not True:
+            raise AssertionError(f"Expected read_artifact table candidates summary: {readable_tables}")
+        synthetic_evidence = build_pdf_layout_evidence(
+            source=pdf,
+            status="ok",
+            pages=[{"page": 1, "text_chars": 30, "line_count": 2, "table_count": 1, "image_count": 1, "two_column_likely": True}],
+            summary={"table_pages": [1], "two_column_pages": [1], "image_heavy_pages": [1], "repeated_header_footer_candidates": [{"text": "Header", "count": 2}]},
+        )
+        flags = synthetic_evidence.get("flags") or {}
+        if not flags.get("table_heavy_suspected") or not flags.get("layout_heavy_suspected") or not flags.get("repeated_header_footer_suspected"):
+            raise AssertionError(f"Expected synthetic pdfplumber evidence flags: {synthetic_evidence}")
 
         camelot_out = tmpdir / "camelot"
         original_available = diagnostics.camelot_available
@@ -92,10 +126,26 @@ def main() -> int:
             raise AssertionError(f"Expected Tabula CSV/Markdown artifacts: {tabula_artifact}")
         if "Expenses" not in Path(tabula_artifact["markdown"]).read_text(encoding="utf-8"):
             raise AssertionError(f"Expected Tabula Markdown table content: {tabula_artifact}")
+        combined_candidates = build_table_candidates(
+            source=pdf,
+            table_artifacts=[{"page": 1, "table_number": 1, "rows": 2, "csv": "pdfplumber.csv", "markdown": "pdfplumber.md"}],
+            camelot_diagnostics=camelot_result,
+            tabula_diagnostics=tabula_result,
+        )
+        combined_summary = read_artifact_payload_summary(combined_candidates)
+        combined_backends = {table.get("backend") for page in combined_candidates.get("pages") or [] for table in page.get("tables") or []}
+        if combined_summary.get("table_count") != 3 or combined_backends != {"camelot", "pdfplumber", "tabula"}:
+            raise AssertionError(f"Expected combined table candidates from three backends: {combined_candidates}")
 
     print("PDF layout diagnostics test passed.")
     return 0
 
+
+
+def read_artifact_payload_summary(payload: dict) -> dict:
+    from ebook_markdown_pipeline.candidate_artifact_schema import summarize_candidate_artifact
+
+    return summarize_candidate_artifact(payload, "table_candidates_json")
 
 def fake_camelot_module():
     class FakeValues:

@@ -1,0 +1,3410 @@
+{
+  "schema_version": "candidate-benchmark-plan-v1",
+  "created_at": "2026-07-05 20:40:14",
+  "source_manifest": "",
+  "execution_policy": "plan_only_no_model_install_no_service_start",
+  "promotion_gate": {
+    "rule": "A heavy backend must beat or simplify an existing heavy route on shared samples before promotion.",
+    "required_evidence": [
+      "same sample class",
+      "same review questions",
+      "artifact evidence readable by read_artifact",
+      "backend scorecard with external wrapper evidence"
+    ]
+  },
+  "sample_classes": [
+    {
+      "class": "pdf_text_layer",
+      "candidate_backends": [
+        "pymupdf4llm",
+        "docling",
+        "markitdown",
+        "pypdf",
+        "pdfminer.six"
+      ],
+      "review_questions": [
+        "Does the fast local route preserve headings and reading order?",
+        "Is a heavy OCR/VLM route unnecessary?"
+      ],
+      "expected_artifacts": [
+        "markdown",
+        "review_report",
+        "conversion_report",
+        "external_wrapper_result_json",
+        "pdf_metadata_json",
+        "pdf_outline_json",
+        "text",
+        "pages_jsonl"
+      ],
+      "candidate_registry_keys": [
+        "pypdf",
+        "pdfminer_six"
+      ],
+      "candidate_backend_previews": [
+        {
+          "backend": "pypdf",
+          "registry_key": "pypdf",
+          "sample_class": "pdf_text_layer",
+          "role": "lightweight PDF metadata/outline diagnostics worker",
+          "best_for": "PDF metadata, outline, page-count, split/merge utility evidence when PyMuPDF output needs a lightweight second opinion",
+          "default_policy": "candidate-only diagnostics; not default Markdown conversion",
+          "artifact_contract": [
+            "pdf_metadata_json",
+            "pdf_outline_json",
+            "markdown",
+            "external_wrapper_result_json"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "pypdf",
+            "registry_key": "pypdf",
+            "capability": "pdf_lightweight_fallbacks",
+            "trigger": "shared benchmark sample class: pdf_text_layer",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/pypdf_diagnostics_worker.py --input <pdf> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "pdf_metadata_json",
+              "pdf_outline_json",
+              "markdown",
+              "external_wrapper_result_json"
+            ],
+            "readiness_checks": [
+              "pypdf diagnostics worker"
+            ],
+            "capability_checks": [
+              "pdf_lightweight_fallbacks"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "pypdf",
+              "registry_key": "pypdf",
+              "install_cost": "low",
+              "runtime_requirement": "pure Python package; no GPU or model weights",
+              "requires_external_repo": false,
+              "requires_model_cache": false,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": false,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [],
+              "health_names": [
+                "pypdf diagnostics worker"
+              ],
+              "capability_names": [
+                "pdf_lightweight_fallbacks"
+              ],
+              "plan_command_hint": "python scripts/pypdf_diagnostics_worker.py --input <pdf> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "pdf_metadata_json",
+                "pdf_outline_json",
+                "markdown",
+                "external_wrapper_result_json"
+              ],
+              "missing_states": [
+                "planned_only"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "pdfminer.six",
+          "registry_key": "pdfminer_six",
+          "sample_class": "pdf_text_layer",
+          "role": "pure-Python PDF text-layer diagnostics worker",
+          "best_for": "text-layer debugging and comparison when PyMuPDF/PyMuPDF4LLM output looks suspicious",
+          "default_policy": "candidate-only diagnostics; not default Markdown conversion",
+          "artifact_contract": [
+            "text",
+            "pages_jsonl",
+            "markdown",
+            "external_wrapper_result_json"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "pdfminer.six",
+            "registry_key": "pdfminer_six",
+            "capability": "pdf_lightweight_fallbacks",
+            "trigger": "shared benchmark sample class: pdf_text_layer",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/pdfminer_text_worker.py --input <pdf> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "text",
+              "pages_jsonl",
+              "markdown",
+              "external_wrapper_result_json"
+            ],
+            "readiness_checks": [
+              "pdfminer.six text worker"
+            ],
+            "capability_checks": [
+              "pdf_lightweight_fallbacks"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "pdfminer.six",
+              "registry_key": "pdfminer_six",
+              "install_cost": "low",
+              "runtime_requirement": "pure Python package; no GPU or model weights",
+              "requires_external_repo": false,
+              "requires_model_cache": false,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": false,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [],
+              "health_names": [
+                "pdfminer.six text worker"
+              ],
+              "capability_names": [
+                "pdf_lightweight_fallbacks"
+              ],
+              "plan_command_hint": "python scripts/pdfminer_text_worker.py --input <pdf> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "text",
+                "pages_jsonl",
+                "markdown",
+                "external_wrapper_result_json"
+              ],
+              "missing_states": [
+                "planned_only"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "class": "scanned_pdf",
+      "candidate_backends": [
+        "ocrmypdf",
+        "umi",
+        "mineru",
+        "Tesseract OCR",
+        "docTR",
+        "MonkeyOCR",
+        "dots.mocr"
+      ],
+      "review_questions": [
+        "Is OCR text complete without repeated headers/footers?",
+        "Can a document VLM replace or simplify an existing heavy route?"
+      ],
+      "expected_artifacts": [
+        "pages_jsonl",
+        "markdown",
+        "review_report",
+        "document_vlm_result_json",
+        "external_wrapper_result_json",
+        "text",
+        "ocr_blocks_jsonl",
+        "hocr",
+        "tsv",
+        "middle_json",
+        "content_list_json",
+        "layout_review_pdf",
+        "span_review_pdf",
+        "model_debug_pdf",
+        "image_assets_dir",
+        "layout_blocks_json",
+        "markdown_no_header_footer",
+        "layout_overlay_image",
+        "page_index_jsonl"
+      ],
+      "candidate_registry_keys": [
+        "tesseract",
+        "doctr",
+        "monkeyocr",
+        "dots_mocr"
+      ],
+      "candidate_backend_previews": [
+        {
+          "backend": "Tesseract OCR",
+          "registry_key": "tesseract",
+          "sample_class": "scanned_pdf",
+          "role": "classic OCR/hOCR/TSV baseline worker plan",
+          "best_for": "direct OCR standards baseline after OCRmyPDF/Umi/RapidOCR comparison needs page-level evidence",
+          "default_policy": "candidate-only direct OCR baseline; not default scanned-PDF route",
+          "artifact_contract": [
+            "text",
+            "ocr_blocks_jsonl",
+            "hocr",
+            "tsv",
+            "external_wrapper_result_json"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "Tesseract OCR",
+            "registry_key": "tesseract",
+            "capability": "ocr_candidate_workers",
+            "trigger": "shared benchmark sample class: scanned_pdf",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/tesseract_ocr_worker.py --input <image> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "text",
+              "ocr_blocks_jsonl",
+              "hocr",
+              "tsv",
+              "external_wrapper_result_json"
+            ],
+            "readiness_checks": [
+              "Tesseract OCR worker"
+            ],
+            "capability_checks": [
+              "ocr_candidate_workers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "Tesseract OCR",
+              "registry_key": "tesseract",
+              "install_cost": "medium",
+              "runtime_requirement": "external tesseract command and language data; no GPU",
+              "requires_external_repo": false,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": false,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "TESSDATA_PREFIX",
+                "external Tesseract language data directory"
+              ],
+              "health_names": [
+                "Tesseract OCR worker"
+              ],
+              "capability_names": [
+                "ocr_candidate_workers"
+              ],
+              "plan_command_hint": "python scripts/tesseract_ocr_worker.py --input <image> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "text",
+                "ocr_blocks_jsonl",
+                "hocr",
+                "tsv",
+                "external_wrapper_result_json"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "docTR",
+          "registry_key": "doctr",
+          "sample_class": "scanned_pdf",
+          "role": "Python OCR detection/recognition worker plan",
+          "best_for": "detection+recognition API comparison on clean images or rendered PDF pages",
+          "default_policy": "candidate-only OCR benchmark; never default routing",
+          "artifact_contract": [
+            "ocr_blocks_jsonl",
+            "markdown",
+            "external_wrapper_result_json"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "docTR",
+            "registry_key": "doctr",
+            "capability": "ocr_candidate_workers",
+            "trigger": "shared benchmark sample class: scanned_pdf",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/doctr_ocr_worker.py --input <image> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "ocr_blocks_jsonl",
+              "markdown",
+              "external_wrapper_result_json"
+            ],
+            "readiness_checks": [
+              "docTR OCR worker"
+            ],
+            "capability_checks": [
+              "ocr_candidate_workers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "docTR",
+              "registry_key": "doctr",
+              "install_cost": "medium/heavy",
+              "runtime_requirement": "Python package plus OCR models; GPU optional but model setup required",
+              "requires_external_repo": false,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "docTR model cache outside this repository"
+              ],
+              "health_names": [
+                "docTR OCR worker"
+              ],
+              "capability_names": [
+                "ocr_candidate_workers"
+              ],
+              "plan_command_hint": "python scripts/doctr_ocr_worker.py --input <image> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "ocr_blocks_jsonl",
+                "markdown",
+                "external_wrapper_result_json"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "MonkeyOCR",
+          "registry_key": "monkeyocr",
+          "sample_class": "scanned_pdf",
+          "role": "external document VLM worker plan",
+          "best_for": "complex scanned/layout-heavy PDFs or image folders when a full Markdown + layout artifact bundle is worth testing",
+          "default_policy": "candidate-only; explicit plan/fake/execute worker, never default routing",
+          "artifact_contract": [
+            "markdown",
+            "middle_json",
+            "content_list_json",
+            "layout_review_pdf",
+            "span_review_pdf",
+            "model_debug_pdf",
+            "image_assets_dir"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "MonkeyOCR",
+            "registry_key": "monkeyocr",
+            "capability": "external_document_vlm_wrappers",
+            "trigger": "shared benchmark sample class: scanned_pdf",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/monkeyocr_worker.py --input <input> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "markdown",
+              "middle_json",
+              "content_list_json",
+              "layout_review_pdf",
+              "span_review_pdf",
+              "model_debug_pdf",
+              "image_assets_dir"
+            ],
+            "readiness_checks": [
+              "MonkeyOCR worker"
+            ],
+            "capability_checks": [
+              "external_document_vlm_wrappers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "MonkeyOCR",
+              "registry_key": "monkeyocr",
+              "install_cost": "heavy",
+              "runtime_requirement": "external repo, isolated Python, model weights, and usually CUDA/remote inference",
+              "requires_external_repo": true,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "MONKEYOCR_ROOT",
+                "model_configs.yaml",
+                "model weight paths referenced by MonkeyOCR config"
+              ],
+              "health_names": [
+                "MonkeyOCR worker"
+              ],
+              "capability_names": [
+                "external_document_vlm_wrappers"
+              ],
+              "plan_command_hint": "python scripts/monkeyocr_worker.py --input <input> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "markdown",
+                "middle_json",
+                "content_list_json",
+                "layout_review_pdf",
+                "span_review_pdf",
+                "model_debug_pdf",
+                "image_assets_dir"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_env",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "dots.mocr",
+          "registry_key": "dots_mocr",
+          "sample_class": "scanned_pdf",
+          "role": "external HTTP/GPU document VLM provider plan",
+          "best_for": "multilingual document layout parsing through a vLLM/OpenAI-compatible service",
+          "default_policy": "candidate-only; provider/worker must be manually selected, never default routing",
+          "artifact_contract": [
+            "layout_blocks_json",
+            "markdown",
+            "markdown_no_header_footer",
+            "layout_overlay_image",
+            "page_index_jsonl"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "dots.mocr",
+            "registry_key": "dots_mocr",
+            "capability": "external_document_vlm_wrappers",
+            "trigger": "shared benchmark sample class: scanned_pdf",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/dots_mocr_worker.py --input <input> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "layout_blocks_json",
+              "markdown",
+              "markdown_no_header_footer",
+              "layout_overlay_image",
+              "page_index_jsonl"
+            ],
+            "readiness_checks": [
+              "dots.mocr provider"
+            ],
+            "capability_checks": [
+              "external_document_vlm_wrappers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "dots.mocr",
+              "registry_key": "dots_mocr",
+              "install_cost": "heavy",
+              "runtime_requirement": "external parser repo or HTTP service, model weights, and GPU/remote inference",
+              "requires_external_repo": true,
+              "requires_model_cache": true,
+              "requires_service": true,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": true,
+              "manual_start_hint": "Start and verify the dots.mocr/vLLM/OpenAI-compatible service outside this project; the registry reports needs_server and will not launch it.",
+              "model_cache_hints": [
+                "DOTS_MOCR_ROOT",
+                "DOTS_MOCR_BASE_URL",
+                "weights/DotsOCR or manually managed vLLM model cache"
+              ],
+              "health_names": [
+                "dots.mocr provider"
+              ],
+              "capability_names": [
+                "external_document_vlm_wrappers"
+              ],
+              "plan_command_hint": "python scripts/dots_mocr_worker.py --input <input> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "layout_blocks_json",
+                "markdown",
+                "markdown_no_header_footer",
+                "layout_overlay_image",
+                "page_index_jsonl"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_env",
+                "needs_model",
+                "needs_server"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "class": "pdf_two_column",
+      "candidate_backends": [
+        "mineru",
+        "docling",
+        "Marker",
+        "MonkeyOCR",
+        "dots.mocr",
+        "DocLayout-YOLO"
+      ],
+      "review_questions": [
+        "Is reading order correct across columns?",
+        "Do layout boxes explain any Markdown ordering errors?"
+      ],
+      "expected_artifacts": [
+        "layout_candidates_json",
+        "layout_overlay_image",
+        "markdown",
+        "review_report",
+        "external_wrapper_result_json",
+        "middle_json",
+        "content_list_json",
+        "layout_review_pdf",
+        "span_review_pdf",
+        "model_debug_pdf",
+        "image_assets_dir",
+        "layout_blocks_json",
+        "markdown_no_header_footer",
+        "page_index_jsonl",
+        "layout_summary"
+      ],
+      "candidate_registry_keys": [
+        "monkeyocr",
+        "dots_mocr",
+        "doclayout_yolo"
+      ],
+      "candidate_backend_previews": [
+        {
+          "backend": "MonkeyOCR",
+          "registry_key": "monkeyocr",
+          "sample_class": "pdf_two_column",
+          "role": "external document VLM worker plan",
+          "best_for": "complex scanned/layout-heavy PDFs or image folders when a full Markdown + layout artifact bundle is worth testing",
+          "default_policy": "candidate-only; explicit plan/fake/execute worker, never default routing",
+          "artifact_contract": [
+            "markdown",
+            "middle_json",
+            "content_list_json",
+            "layout_review_pdf",
+            "span_review_pdf",
+            "model_debug_pdf",
+            "image_assets_dir"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "MonkeyOCR",
+            "registry_key": "monkeyocr",
+            "capability": "external_document_vlm_wrappers",
+            "trigger": "shared benchmark sample class: pdf_two_column",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/monkeyocr_worker.py --input <input> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "markdown",
+              "middle_json",
+              "content_list_json",
+              "layout_review_pdf",
+              "span_review_pdf",
+              "model_debug_pdf",
+              "image_assets_dir"
+            ],
+            "readiness_checks": [
+              "MonkeyOCR worker"
+            ],
+            "capability_checks": [
+              "external_document_vlm_wrappers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "MonkeyOCR",
+              "registry_key": "monkeyocr",
+              "install_cost": "heavy",
+              "runtime_requirement": "external repo, isolated Python, model weights, and usually CUDA/remote inference",
+              "requires_external_repo": true,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "MONKEYOCR_ROOT",
+                "model_configs.yaml",
+                "model weight paths referenced by MonkeyOCR config"
+              ],
+              "health_names": [
+                "MonkeyOCR worker"
+              ],
+              "capability_names": [
+                "external_document_vlm_wrappers"
+              ],
+              "plan_command_hint": "python scripts/monkeyocr_worker.py --input <input> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "markdown",
+                "middle_json",
+                "content_list_json",
+                "layout_review_pdf",
+                "span_review_pdf",
+                "model_debug_pdf",
+                "image_assets_dir"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_env",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "dots.mocr",
+          "registry_key": "dots_mocr",
+          "sample_class": "pdf_two_column",
+          "role": "external HTTP/GPU document VLM provider plan",
+          "best_for": "multilingual document layout parsing through a vLLM/OpenAI-compatible service",
+          "default_policy": "candidate-only; provider/worker must be manually selected, never default routing",
+          "artifact_contract": [
+            "layout_blocks_json",
+            "markdown",
+            "markdown_no_header_footer",
+            "layout_overlay_image",
+            "page_index_jsonl"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "dots.mocr",
+            "registry_key": "dots_mocr",
+            "capability": "external_document_vlm_wrappers",
+            "trigger": "shared benchmark sample class: pdf_two_column",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/dots_mocr_worker.py --input <input> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "layout_blocks_json",
+              "markdown",
+              "markdown_no_header_footer",
+              "layout_overlay_image",
+              "page_index_jsonl"
+            ],
+            "readiness_checks": [
+              "dots.mocr provider"
+            ],
+            "capability_checks": [
+              "external_document_vlm_wrappers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "dots.mocr",
+              "registry_key": "dots_mocr",
+              "install_cost": "heavy",
+              "runtime_requirement": "external parser repo or HTTP service, model weights, and GPU/remote inference",
+              "requires_external_repo": true,
+              "requires_model_cache": true,
+              "requires_service": true,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": true,
+              "manual_start_hint": "Start and verify the dots.mocr/vLLM/OpenAI-compatible service outside this project; the registry reports needs_server and will not launch it.",
+              "model_cache_hints": [
+                "DOTS_MOCR_ROOT",
+                "DOTS_MOCR_BASE_URL",
+                "weights/DotsOCR or manually managed vLLM model cache"
+              ],
+              "health_names": [
+                "dots.mocr provider"
+              ],
+              "capability_names": [
+                "external_document_vlm_wrappers"
+              ],
+              "plan_command_hint": "python scripts/dots_mocr_worker.py --input <input> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "layout_blocks_json",
+                "markdown",
+                "markdown_no_header_footer",
+                "layout_overlay_image",
+                "page_index_jsonl"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_env",
+                "needs_model",
+                "needs_server"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "DocLayout-YOLO",
+          "registry_key": "doclayout_yolo",
+          "sample_class": "pdf_two_column",
+          "role": "layout detector baseline plan",
+          "best_for": "selected-page bbox/overlay evidence for inspect_document and layout-heavy PDF triage",
+          "default_policy": "candidate-only; layout evidence, not default Markdown conversion",
+          "artifact_contract": [
+            "layout_candidates_json",
+            "layout_overlay_image",
+            "layout_summary"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "DocLayout-YOLO",
+            "registry_key": "doclayout_yolo",
+            "capability": "layout_detector_baseline",
+            "trigger": "shared benchmark sample class: pdf_two_column",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/doclayout_yolo_worker.py --input <input> --output <run-dir> --pages 1-3 --mode plan",
+            "expected_artifacts": [
+              "layout_candidates_json",
+              "layout_overlay_image",
+              "layout_summary"
+            ],
+            "readiness_checks": [
+              "DocLayout-YOLO baseline"
+            ],
+            "capability_checks": [
+              "layout_detector_baseline"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "DocLayout-YOLO",
+              "registry_key": "doclayout_yolo",
+              "install_cost": "medium/heavy",
+              "runtime_requirement": "external model weights; GPU helpful but selected-page CPU experiments may be possible",
+              "requires_external_repo": true,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "DOCLAYOUT_YOLO_MODEL",
+                "external YOLO/DocLayout model cache"
+              ],
+              "health_names": [
+                "DocLayout-YOLO baseline"
+              ],
+              "capability_names": [
+                "layout_detector_baseline"
+              ],
+              "plan_command_hint": "python scripts/doclayout_yolo_worker.py --input <input> --output <run-dir> --pages 1-3 --mode plan",
+              "supported_artifacts": [
+                "layout_candidates_json",
+                "layout_overlay_image",
+                "layout_summary"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_env",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "class": "chinese_hierarchy_document",
+      "candidate_backends": [
+        "Docling",
+        "MarkItDown",
+        "Pandoc",
+        "MinerU",
+        "structure_repair"
+      ],
+      "review_questions": [
+        "Are Chinese numbered clauses promoted to stable heading levels?",
+        "Are ordinary body lines not over-promoted as headings?",
+        "Do structure repair decisions cite domain grammar, PDF outline, font, MinerU, or Docling evidence?"
+      ],
+      "expected_artifacts": [
+        "markdown",
+        "conversion_report",
+        "review_report",
+        "structure_report",
+        "structure_json",
+        "heading_candidates_json"
+      ],
+      "candidate_registry_keys": [],
+      "candidate_backend_previews": []
+    },
+    {
+      "class": "pdf_table",
+      "candidate_backends": [
+        "pdfplumber",
+        "Camelot",
+        "Tabula",
+        "Docling",
+        "MinerU",
+        "pdf_table"
+      ],
+      "review_questions": [
+        "Are true tables preserved as tables?",
+        "Are card/infographic layouts not forced into tables?"
+      ],
+      "expected_artifacts": [
+        "table_candidates_json",
+        "document_vlm_result_json",
+        "table_markdown",
+        "table_html",
+        "table_cells_json",
+        "table_comparison_summary",
+        "external_wrapper_result_json",
+        "table_overlay_image"
+      ],
+      "candidate_registry_keys": [
+        "pdf_table"
+      ],
+      "candidate_backend_previews": [
+        {
+          "backend": "pdf_table",
+          "registry_key": "pdf_table",
+          "sample_class": "pdf_table",
+          "role": "external table-page worker plan",
+          "best_for": "table-heavy PDF/image pages that need comparison against Camelot/Tabula/pdfplumber",
+          "default_policy": "candidate-only; table pages only, never whole-book default routing",
+          "artifact_contract": [
+            "table_markdown",
+            "table_html",
+            "table_cells_json",
+            "table_overlay_image",
+            "table_comparison_summary"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "pdf_table",
+            "registry_key": "pdf_table",
+            "capability": "external_table_worker",
+            "trigger": "shared benchmark sample class: pdf_table",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/pdf_table_worker.py --input <input> --output <run-dir> --pages <table-pages> --mode plan",
+            "expected_artifacts": [
+              "table_markdown",
+              "table_html",
+              "table_cells_json",
+              "table_overlay_image",
+              "table_comparison_summary"
+            ],
+            "readiness_checks": [
+              "pdf_table worker"
+            ],
+            "capability_checks": [
+              "external_table_worker"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "pdf_table",
+              "registry_key": "pdf_table",
+              "install_cost": "heavy",
+              "runtime_requirement": "external pdftable command plus table/OCR/layout models",
+              "requires_external_repo": true,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "PDF_TABLE_MODEL_DIR",
+                "external pdf_table/Paddle table model cache"
+              ],
+              "health_names": [
+                "pdf_table worker"
+              ],
+              "capability_names": [
+                "external_table_worker"
+              ],
+              "plan_command_hint": "python scripts/pdf_table_worker.py --input <input> --output <run-dir> --pages <table-pages> --mode plan",
+              "supported_artifacts": [
+                "table_markdown",
+                "table_html",
+                "table_cells_json",
+                "table_overlay_image",
+                "table_comparison_summary"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_env",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "class": "pdf_formula",
+      "candidate_backends": [
+        "Pix2Text",
+        "Marker",
+        "MinerU",
+        "Docling",
+        "UniMERNet"
+      ],
+      "review_questions": [
+        "Are formulas preserved as LaTeX/Markdown?",
+        "Are formula regions tied back to source pages?"
+      ],
+      "expected_artifacts": [
+        "formula_candidates_json",
+        "document_vlm_result_json",
+        "markdown",
+        "review_report"
+      ],
+      "candidate_registry_keys": [],
+      "candidate_backend_previews": []
+    },
+    {
+      "class": "ppt_export_pdf",
+      "candidate_backends": [
+        "mineru",
+        "docling",
+        "MonkeyOCR",
+        "dots.mocr",
+        "DocLayout-YOLO"
+      ],
+      "review_questions": [
+        "Are slide titles and text boxes preserved page-by-page?",
+        "Is slide layout evidence available for review?"
+      ],
+      "expected_artifacts": [
+        "layout_candidates_json",
+        "layout_overlay_image",
+        "markdown",
+        "review_report",
+        "external_wrapper_result_json",
+        "middle_json",
+        "content_list_json",
+        "layout_review_pdf",
+        "span_review_pdf",
+        "model_debug_pdf",
+        "image_assets_dir",
+        "layout_blocks_json",
+        "markdown_no_header_footer",
+        "page_index_jsonl",
+        "layout_summary"
+      ],
+      "candidate_registry_keys": [
+        "monkeyocr",
+        "dots_mocr",
+        "doclayout_yolo"
+      ],
+      "candidate_backend_previews": [
+        {
+          "backend": "MonkeyOCR",
+          "registry_key": "monkeyocr",
+          "sample_class": "ppt_export_pdf",
+          "role": "external document VLM worker plan",
+          "best_for": "complex scanned/layout-heavy PDFs or image folders when a full Markdown + layout artifact bundle is worth testing",
+          "default_policy": "candidate-only; explicit plan/fake/execute worker, never default routing",
+          "artifact_contract": [
+            "markdown",
+            "middle_json",
+            "content_list_json",
+            "layout_review_pdf",
+            "span_review_pdf",
+            "model_debug_pdf",
+            "image_assets_dir"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "MonkeyOCR",
+            "registry_key": "monkeyocr",
+            "capability": "external_document_vlm_wrappers",
+            "trigger": "shared benchmark sample class: ppt_export_pdf",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/monkeyocr_worker.py --input <input> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "markdown",
+              "middle_json",
+              "content_list_json",
+              "layout_review_pdf",
+              "span_review_pdf",
+              "model_debug_pdf",
+              "image_assets_dir"
+            ],
+            "readiness_checks": [
+              "MonkeyOCR worker"
+            ],
+            "capability_checks": [
+              "external_document_vlm_wrappers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "MonkeyOCR",
+              "registry_key": "monkeyocr",
+              "install_cost": "heavy",
+              "runtime_requirement": "external repo, isolated Python, model weights, and usually CUDA/remote inference",
+              "requires_external_repo": true,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "MONKEYOCR_ROOT",
+                "model_configs.yaml",
+                "model weight paths referenced by MonkeyOCR config"
+              ],
+              "health_names": [
+                "MonkeyOCR worker"
+              ],
+              "capability_names": [
+                "external_document_vlm_wrappers"
+              ],
+              "plan_command_hint": "python scripts/monkeyocr_worker.py --input <input> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "markdown",
+                "middle_json",
+                "content_list_json",
+                "layout_review_pdf",
+                "span_review_pdf",
+                "model_debug_pdf",
+                "image_assets_dir"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_env",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "dots.mocr",
+          "registry_key": "dots_mocr",
+          "sample_class": "ppt_export_pdf",
+          "role": "external HTTP/GPU document VLM provider plan",
+          "best_for": "multilingual document layout parsing through a vLLM/OpenAI-compatible service",
+          "default_policy": "candidate-only; provider/worker must be manually selected, never default routing",
+          "artifact_contract": [
+            "layout_blocks_json",
+            "markdown",
+            "markdown_no_header_footer",
+            "layout_overlay_image",
+            "page_index_jsonl"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "dots.mocr",
+            "registry_key": "dots_mocr",
+            "capability": "external_document_vlm_wrappers",
+            "trigger": "shared benchmark sample class: ppt_export_pdf",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/dots_mocr_worker.py --input <input> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "layout_blocks_json",
+              "markdown",
+              "markdown_no_header_footer",
+              "layout_overlay_image",
+              "page_index_jsonl"
+            ],
+            "readiness_checks": [
+              "dots.mocr provider"
+            ],
+            "capability_checks": [
+              "external_document_vlm_wrappers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "dots.mocr",
+              "registry_key": "dots_mocr",
+              "install_cost": "heavy",
+              "runtime_requirement": "external parser repo or HTTP service, model weights, and GPU/remote inference",
+              "requires_external_repo": true,
+              "requires_model_cache": true,
+              "requires_service": true,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": true,
+              "manual_start_hint": "Start and verify the dots.mocr/vLLM/OpenAI-compatible service outside this project; the registry reports needs_server and will not launch it.",
+              "model_cache_hints": [
+                "DOTS_MOCR_ROOT",
+                "DOTS_MOCR_BASE_URL",
+                "weights/DotsOCR or manually managed vLLM model cache"
+              ],
+              "health_names": [
+                "dots.mocr provider"
+              ],
+              "capability_names": [
+                "external_document_vlm_wrappers"
+              ],
+              "plan_command_hint": "python scripts/dots_mocr_worker.py --input <input> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "layout_blocks_json",
+                "markdown",
+                "markdown_no_header_footer",
+                "layout_overlay_image",
+                "page_index_jsonl"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_env",
+                "needs_model",
+                "needs_server"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "DocLayout-YOLO",
+          "registry_key": "doclayout_yolo",
+          "sample_class": "ppt_export_pdf",
+          "role": "layout detector baseline plan",
+          "best_for": "selected-page bbox/overlay evidence for inspect_document and layout-heavy PDF triage",
+          "default_policy": "candidate-only; layout evidence, not default Markdown conversion",
+          "artifact_contract": [
+            "layout_candidates_json",
+            "layout_overlay_image",
+            "layout_summary"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "DocLayout-YOLO",
+            "registry_key": "doclayout_yolo",
+            "capability": "layout_detector_baseline",
+            "trigger": "shared benchmark sample class: ppt_export_pdf",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/doclayout_yolo_worker.py --input <input> --output <run-dir> --pages 1-3 --mode plan",
+            "expected_artifacts": [
+              "layout_candidates_json",
+              "layout_overlay_image",
+              "layout_summary"
+            ],
+            "readiness_checks": [
+              "DocLayout-YOLO baseline"
+            ],
+            "capability_checks": [
+              "layout_detector_baseline"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "DocLayout-YOLO",
+              "registry_key": "doclayout_yolo",
+              "install_cost": "medium/heavy",
+              "runtime_requirement": "external model weights; GPU helpful but selected-page CPU experiments may be possible",
+              "requires_external_repo": true,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "DOCLAYOUT_YOLO_MODEL",
+                "external YOLO/DocLayout model cache"
+              ],
+              "health_names": [
+                "DocLayout-YOLO baseline"
+              ],
+              "capability_names": [
+                "layout_detector_baseline"
+              ],
+              "plan_command_hint": "python scripts/doclayout_yolo_worker.py --input <input> --output <run-dir> --pages 1-3 --mode plan",
+              "supported_artifacts": [
+                "layout_candidates_json",
+                "layout_overlay_image",
+                "layout_summary"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_env",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "class": "infographic_image",
+      "candidate_backends": [
+        "Pix2Text",
+        "Surya",
+        "PaddleOCR-VL",
+        "Qwen-VL",
+        "Tesseract OCR",
+        "docTR",
+        "MonkeyOCR",
+        "dots.mocr"
+      ],
+      "review_questions": [
+        "Is visual reading order human-readable?",
+        "Are non-table card regions kept out of table output?"
+      ],
+      "expected_artifacts": [
+        "layout_blocks_json",
+        "markdown",
+        "layout_overlay_image",
+        "document_vlm_result_json",
+        "layout_candidates_json",
+        "table_candidates_json",
+        "formula_candidates_json",
+        "external_wrapper_result_json",
+        "text",
+        "ocr_blocks_jsonl",
+        "hocr",
+        "tsv",
+        "middle_json",
+        "content_list_json",
+        "layout_review_pdf",
+        "span_review_pdf",
+        "model_debug_pdf",
+        "image_assets_dir",
+        "markdown_no_header_footer",
+        "page_index_jsonl"
+      ],
+      "candidate_registry_keys": [
+        "tesseract",
+        "doctr",
+        "monkeyocr",
+        "dots_mocr"
+      ],
+      "candidate_backend_previews": [
+        {
+          "backend": "Tesseract OCR",
+          "registry_key": "tesseract",
+          "sample_class": "infographic_image",
+          "role": "classic OCR/hOCR/TSV baseline worker plan",
+          "best_for": "direct OCR standards baseline after OCRmyPDF/Umi/RapidOCR comparison needs page-level evidence",
+          "default_policy": "candidate-only direct OCR baseline; not default scanned-PDF route",
+          "artifact_contract": [
+            "text",
+            "ocr_blocks_jsonl",
+            "hocr",
+            "tsv",
+            "external_wrapper_result_json"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "Tesseract OCR",
+            "registry_key": "tesseract",
+            "capability": "ocr_candidate_workers",
+            "trigger": "shared benchmark sample class: infographic_image",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/tesseract_ocr_worker.py --input <image> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "text",
+              "ocr_blocks_jsonl",
+              "hocr",
+              "tsv",
+              "external_wrapper_result_json"
+            ],
+            "readiness_checks": [
+              "Tesseract OCR worker"
+            ],
+            "capability_checks": [
+              "ocr_candidate_workers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "Tesseract OCR",
+              "registry_key": "tesseract",
+              "install_cost": "medium",
+              "runtime_requirement": "external tesseract command and language data; no GPU",
+              "requires_external_repo": false,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": false,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "TESSDATA_PREFIX",
+                "external Tesseract language data directory"
+              ],
+              "health_names": [
+                "Tesseract OCR worker"
+              ],
+              "capability_names": [
+                "ocr_candidate_workers"
+              ],
+              "plan_command_hint": "python scripts/tesseract_ocr_worker.py --input <image> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "text",
+                "ocr_blocks_jsonl",
+                "hocr",
+                "tsv",
+                "external_wrapper_result_json"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "docTR",
+          "registry_key": "doctr",
+          "sample_class": "infographic_image",
+          "role": "Python OCR detection/recognition worker plan",
+          "best_for": "detection+recognition API comparison on clean images or rendered PDF pages",
+          "default_policy": "candidate-only OCR benchmark; never default routing",
+          "artifact_contract": [
+            "ocr_blocks_jsonl",
+            "markdown",
+            "external_wrapper_result_json"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "docTR",
+            "registry_key": "doctr",
+            "capability": "ocr_candidate_workers",
+            "trigger": "shared benchmark sample class: infographic_image",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/doctr_ocr_worker.py --input <image> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "ocr_blocks_jsonl",
+              "markdown",
+              "external_wrapper_result_json"
+            ],
+            "readiness_checks": [
+              "docTR OCR worker"
+            ],
+            "capability_checks": [
+              "ocr_candidate_workers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "docTR",
+              "registry_key": "doctr",
+              "install_cost": "medium/heavy",
+              "runtime_requirement": "Python package plus OCR models; GPU optional but model setup required",
+              "requires_external_repo": false,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "docTR model cache outside this repository"
+              ],
+              "health_names": [
+                "docTR OCR worker"
+              ],
+              "capability_names": [
+                "ocr_candidate_workers"
+              ],
+              "plan_command_hint": "python scripts/doctr_ocr_worker.py --input <image> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "ocr_blocks_jsonl",
+                "markdown",
+                "external_wrapper_result_json"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "MonkeyOCR",
+          "registry_key": "monkeyocr",
+          "sample_class": "infographic_image",
+          "role": "external document VLM worker plan",
+          "best_for": "complex scanned/layout-heavy PDFs or image folders when a full Markdown + layout artifact bundle is worth testing",
+          "default_policy": "candidate-only; explicit plan/fake/execute worker, never default routing",
+          "artifact_contract": [
+            "markdown",
+            "middle_json",
+            "content_list_json",
+            "layout_review_pdf",
+            "span_review_pdf",
+            "model_debug_pdf",
+            "image_assets_dir"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "MonkeyOCR",
+            "registry_key": "monkeyocr",
+            "capability": "external_document_vlm_wrappers",
+            "trigger": "shared benchmark sample class: infographic_image",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/monkeyocr_worker.py --input <input> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "markdown",
+              "middle_json",
+              "content_list_json",
+              "layout_review_pdf",
+              "span_review_pdf",
+              "model_debug_pdf",
+              "image_assets_dir"
+            ],
+            "readiness_checks": [
+              "MonkeyOCR worker"
+            ],
+            "capability_checks": [
+              "external_document_vlm_wrappers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "MonkeyOCR",
+              "registry_key": "monkeyocr",
+              "install_cost": "heavy",
+              "runtime_requirement": "external repo, isolated Python, model weights, and usually CUDA/remote inference",
+              "requires_external_repo": true,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "MONKEYOCR_ROOT",
+                "model_configs.yaml",
+                "model weight paths referenced by MonkeyOCR config"
+              ],
+              "health_names": [
+                "MonkeyOCR worker"
+              ],
+              "capability_names": [
+                "external_document_vlm_wrappers"
+              ],
+              "plan_command_hint": "python scripts/monkeyocr_worker.py --input <input> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "markdown",
+                "middle_json",
+                "content_list_json",
+                "layout_review_pdf",
+                "span_review_pdf",
+                "model_debug_pdf",
+                "image_assets_dir"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_env",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "dots.mocr",
+          "registry_key": "dots_mocr",
+          "sample_class": "infographic_image",
+          "role": "external HTTP/GPU document VLM provider plan",
+          "best_for": "multilingual document layout parsing through a vLLM/OpenAI-compatible service",
+          "default_policy": "candidate-only; provider/worker must be manually selected, never default routing",
+          "artifact_contract": [
+            "layout_blocks_json",
+            "markdown",
+            "markdown_no_header_footer",
+            "layout_overlay_image",
+            "page_index_jsonl"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "dots.mocr",
+            "registry_key": "dots_mocr",
+            "capability": "external_document_vlm_wrappers",
+            "trigger": "shared benchmark sample class: infographic_image",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/dots_mocr_worker.py --input <input> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "layout_blocks_json",
+              "markdown",
+              "markdown_no_header_footer",
+              "layout_overlay_image",
+              "page_index_jsonl"
+            ],
+            "readiness_checks": [
+              "dots.mocr provider"
+            ],
+            "capability_checks": [
+              "external_document_vlm_wrappers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "dots.mocr",
+              "registry_key": "dots_mocr",
+              "install_cost": "heavy",
+              "runtime_requirement": "external parser repo or HTTP service, model weights, and GPU/remote inference",
+              "requires_external_repo": true,
+              "requires_model_cache": true,
+              "requires_service": true,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": true,
+              "manual_start_hint": "Start and verify the dots.mocr/vLLM/OpenAI-compatible service outside this project; the registry reports needs_server and will not launch it.",
+              "model_cache_hints": [
+                "DOTS_MOCR_ROOT",
+                "DOTS_MOCR_BASE_URL",
+                "weights/DotsOCR or manually managed vLLM model cache"
+              ],
+              "health_names": [
+                "dots.mocr provider"
+              ],
+              "capability_names": [
+                "external_document_vlm_wrappers"
+              ],
+              "plan_command_hint": "python scripts/dots_mocr_worker.py --input <input> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "layout_blocks_json",
+                "markdown",
+                "markdown_no_header_footer",
+                "layout_overlay_image",
+                "page_index_jsonl"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_env",
+                "needs_model",
+                "needs_server"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "class": "image_set",
+      "candidate_backends": [
+        "image_book_rebuilder",
+        "Umi-OCR",
+        "RapidOCR",
+        "Tesseract OCR",
+        "docTR",
+        "MonkeyOCR"
+      ],
+      "review_questions": [
+        "Are duplicate/overlapping screenshots ordered correctly?",
+        "Does OCR text retain page boundaries?"
+      ],
+      "expected_artifacts": [
+        "markdown",
+        "order_report",
+        "review_report",
+        "external_wrapper_result_json",
+        "text",
+        "ocr_blocks_jsonl",
+        "hocr",
+        "tsv",
+        "middle_json",
+        "content_list_json",
+        "layout_review_pdf",
+        "span_review_pdf",
+        "model_debug_pdf",
+        "image_assets_dir"
+      ],
+      "candidate_registry_keys": [
+        "tesseract",
+        "doctr",
+        "monkeyocr"
+      ],
+      "candidate_backend_previews": [
+        {
+          "backend": "Tesseract OCR",
+          "registry_key": "tesseract",
+          "sample_class": "image_set",
+          "role": "classic OCR/hOCR/TSV baseline worker plan",
+          "best_for": "direct OCR standards baseline after OCRmyPDF/Umi/RapidOCR comparison needs page-level evidence",
+          "default_policy": "candidate-only direct OCR baseline; not default scanned-PDF route",
+          "artifact_contract": [
+            "text",
+            "ocr_blocks_jsonl",
+            "hocr",
+            "tsv",
+            "external_wrapper_result_json"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "Tesseract OCR",
+            "registry_key": "tesseract",
+            "capability": "ocr_candidate_workers",
+            "trigger": "shared benchmark sample class: image_set",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/tesseract_ocr_worker.py --input <image> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "text",
+              "ocr_blocks_jsonl",
+              "hocr",
+              "tsv",
+              "external_wrapper_result_json"
+            ],
+            "readiness_checks": [
+              "Tesseract OCR worker"
+            ],
+            "capability_checks": [
+              "ocr_candidate_workers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "Tesseract OCR",
+              "registry_key": "tesseract",
+              "install_cost": "medium",
+              "runtime_requirement": "external tesseract command and language data; no GPU",
+              "requires_external_repo": false,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": false,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "TESSDATA_PREFIX",
+                "external Tesseract language data directory"
+              ],
+              "health_names": [
+                "Tesseract OCR worker"
+              ],
+              "capability_names": [
+                "ocr_candidate_workers"
+              ],
+              "plan_command_hint": "python scripts/tesseract_ocr_worker.py --input <image> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "text",
+                "ocr_blocks_jsonl",
+                "hocr",
+                "tsv",
+                "external_wrapper_result_json"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "docTR",
+          "registry_key": "doctr",
+          "sample_class": "image_set",
+          "role": "Python OCR detection/recognition worker plan",
+          "best_for": "detection+recognition API comparison on clean images or rendered PDF pages",
+          "default_policy": "candidate-only OCR benchmark; never default routing",
+          "artifact_contract": [
+            "ocr_blocks_jsonl",
+            "markdown",
+            "external_wrapper_result_json"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "docTR",
+            "registry_key": "doctr",
+            "capability": "ocr_candidate_workers",
+            "trigger": "shared benchmark sample class: image_set",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/doctr_ocr_worker.py --input <image> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "ocr_blocks_jsonl",
+              "markdown",
+              "external_wrapper_result_json"
+            ],
+            "readiness_checks": [
+              "docTR OCR worker"
+            ],
+            "capability_checks": [
+              "ocr_candidate_workers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "docTR",
+              "registry_key": "doctr",
+              "install_cost": "medium/heavy",
+              "runtime_requirement": "Python package plus OCR models; GPU optional but model setup required",
+              "requires_external_repo": false,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "docTR model cache outside this repository"
+              ],
+              "health_names": [
+                "docTR OCR worker"
+              ],
+              "capability_names": [
+                "ocr_candidate_workers"
+              ],
+              "plan_command_hint": "python scripts/doctr_ocr_worker.py --input <image> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "ocr_blocks_jsonl",
+                "markdown",
+                "external_wrapper_result_json"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "MonkeyOCR",
+          "registry_key": "monkeyocr",
+          "sample_class": "image_set",
+          "role": "external document VLM worker plan",
+          "best_for": "complex scanned/layout-heavy PDFs or image folders when a full Markdown + layout artifact bundle is worth testing",
+          "default_policy": "candidate-only; explicit plan/fake/execute worker, never default routing",
+          "artifact_contract": [
+            "markdown",
+            "middle_json",
+            "content_list_json",
+            "layout_review_pdf",
+            "span_review_pdf",
+            "model_debug_pdf",
+            "image_assets_dir"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "MonkeyOCR",
+            "registry_key": "monkeyocr",
+            "capability": "external_document_vlm_wrappers",
+            "trigger": "shared benchmark sample class: image_set",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/monkeyocr_worker.py --input <input> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "markdown",
+              "middle_json",
+              "content_list_json",
+              "layout_review_pdf",
+              "span_review_pdf",
+              "model_debug_pdf",
+              "image_assets_dir"
+            ],
+            "readiness_checks": [
+              "MonkeyOCR worker"
+            ],
+            "capability_checks": [
+              "external_document_vlm_wrappers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "MonkeyOCR",
+              "registry_key": "monkeyocr",
+              "install_cost": "heavy",
+              "runtime_requirement": "external repo, isolated Python, model weights, and usually CUDA/remote inference",
+              "requires_external_repo": true,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "MONKEYOCR_ROOT",
+                "model_configs.yaml",
+                "model weight paths referenced by MonkeyOCR config"
+              ],
+              "health_names": [
+                "MonkeyOCR worker"
+              ],
+              "capability_names": [
+                "external_document_vlm_wrappers"
+              ],
+              "plan_command_hint": "python scripts/monkeyocr_worker.py --input <input> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "markdown",
+                "middle_json",
+                "content_list_json",
+                "layout_review_pdf",
+                "span_review_pdf",
+                "model_debug_pdf",
+                "image_assets_dir"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_env",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "class": "web_archive",
+      "candidate_backends": [
+        "process_web_archive",
+        "dots.mocr",
+        "DocLayout-YOLO"
+      ],
+      "review_questions": [
+        "Do screenshot visual checks align with source HTML/Markdown?",
+        "Are image/table positions reviewable?"
+      ],
+      "expected_artifacts": [
+        "visual_check_json",
+        "visual_blocks_json",
+        "table_candidates_json",
+        "image_positions_json",
+        "external_wrapper_result_json",
+        "layout_blocks_json",
+        "markdown",
+        "markdown_no_header_footer",
+        "layout_overlay_image",
+        "page_index_jsonl",
+        "layout_candidates_json",
+        "layout_summary"
+      ],
+      "candidate_registry_keys": [
+        "dots_mocr",
+        "doclayout_yolo"
+      ],
+      "candidate_backend_previews": [
+        {
+          "backend": "dots.mocr",
+          "registry_key": "dots_mocr",
+          "sample_class": "web_archive",
+          "role": "external HTTP/GPU document VLM provider plan",
+          "best_for": "multilingual document layout parsing through a vLLM/OpenAI-compatible service",
+          "default_policy": "candidate-only; provider/worker must be manually selected, never default routing",
+          "artifact_contract": [
+            "layout_blocks_json",
+            "markdown",
+            "markdown_no_header_footer",
+            "layout_overlay_image",
+            "page_index_jsonl"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "dots.mocr",
+            "registry_key": "dots_mocr",
+            "capability": "external_document_vlm_wrappers",
+            "trigger": "shared benchmark sample class: web_archive",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/dots_mocr_worker.py --input <input> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "layout_blocks_json",
+              "markdown",
+              "markdown_no_header_footer",
+              "layout_overlay_image",
+              "page_index_jsonl"
+            ],
+            "readiness_checks": [
+              "dots.mocr provider"
+            ],
+            "capability_checks": [
+              "external_document_vlm_wrappers"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "dots.mocr",
+              "registry_key": "dots_mocr",
+              "install_cost": "heavy",
+              "runtime_requirement": "external parser repo or HTTP service, model weights, and GPU/remote inference",
+              "requires_external_repo": true,
+              "requires_model_cache": true,
+              "requires_service": true,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": true,
+              "manual_start_hint": "Start and verify the dots.mocr/vLLM/OpenAI-compatible service outside this project; the registry reports needs_server and will not launch it.",
+              "model_cache_hints": [
+                "DOTS_MOCR_ROOT",
+                "DOTS_MOCR_BASE_URL",
+                "weights/DotsOCR or manually managed vLLM model cache"
+              ],
+              "health_names": [
+                "dots.mocr provider"
+              ],
+              "capability_names": [
+                "external_document_vlm_wrappers"
+              ],
+              "plan_command_hint": "python scripts/dots_mocr_worker.py --input <input> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "layout_blocks_json",
+                "markdown",
+                "markdown_no_header_footer",
+                "layout_overlay_image",
+                "page_index_jsonl"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_env",
+                "needs_model",
+                "needs_server"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "DocLayout-YOLO",
+          "registry_key": "doclayout_yolo",
+          "sample_class": "web_archive",
+          "role": "layout detector baseline plan",
+          "best_for": "selected-page bbox/overlay evidence for inspect_document and layout-heavy PDF triage",
+          "default_policy": "candidate-only; layout evidence, not default Markdown conversion",
+          "artifact_contract": [
+            "layout_candidates_json",
+            "layout_overlay_image",
+            "layout_summary"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "DocLayout-YOLO",
+            "registry_key": "doclayout_yolo",
+            "capability": "layout_detector_baseline",
+            "trigger": "shared benchmark sample class: web_archive",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/doclayout_yolo_worker.py --input <input> --output <run-dir> --pages 1-3 --mode plan",
+            "expected_artifacts": [
+              "layout_candidates_json",
+              "layout_overlay_image",
+              "layout_summary"
+            ],
+            "readiness_checks": [
+              "DocLayout-YOLO baseline"
+            ],
+            "capability_checks": [
+              "layout_detector_baseline"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "DocLayout-YOLO",
+              "registry_key": "doclayout_yolo",
+              "install_cost": "medium/heavy",
+              "runtime_requirement": "external model weights; GPU helpful but selected-page CPU experiments may be possible",
+              "requires_external_repo": true,
+              "requires_model_cache": true,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": true,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [
+                "DOCLAYOUT_YOLO_MODEL",
+                "external YOLO/DocLayout model cache"
+              ],
+              "health_names": [
+                "DocLayout-YOLO baseline"
+              ],
+              "capability_names": [
+                "layout_detector_baseline"
+              ],
+              "plan_command_hint": "python scripts/doclayout_yolo_worker.py --input <input> --output <run-dir> --pages 1-3 --mode plan",
+              "supported_artifacts": [
+                "layout_candidates_json",
+                "layout_overlay_image",
+                "layout_summary"
+              ],
+              "missing_states": [
+                "planned_only",
+                "needs_env",
+                "needs_model"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "class": "academic_pdf",
+      "candidate_backends": [
+        "GROBID",
+        "Nougat",
+        "Marker",
+        "MinerU",
+        "Docling",
+        "pypdf",
+        "pdfminer.six"
+      ],
+      "review_questions": [
+        "Are title/authors/abstract/references extracted as side evidence?",
+        "Are formulas and two-column reading order acceptable?"
+      ],
+      "expected_artifacts": [
+        "conversion_report",
+        "structure_report",
+        "formula_candidates_json",
+        "review_report",
+        "external_wrapper_result_json",
+        "pdf_metadata_json",
+        "pdf_outline_json",
+        "markdown",
+        "text",
+        "pages_jsonl"
+      ],
+      "candidate_registry_keys": [
+        "pypdf",
+        "pdfminer_six"
+      ],
+      "candidate_backend_previews": [
+        {
+          "backend": "pypdf",
+          "registry_key": "pypdf",
+          "sample_class": "academic_pdf",
+          "role": "lightweight PDF metadata/outline diagnostics worker",
+          "best_for": "PDF metadata, outline, page-count, split/merge utility evidence when PyMuPDF output needs a lightweight second opinion",
+          "default_policy": "candidate-only diagnostics; not default Markdown conversion",
+          "artifact_contract": [
+            "pdf_metadata_json",
+            "pdf_outline_json",
+            "markdown",
+            "external_wrapper_result_json"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "pypdf",
+            "registry_key": "pypdf",
+            "capability": "pdf_lightweight_fallbacks",
+            "trigger": "shared benchmark sample class: academic_pdf",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/pypdf_diagnostics_worker.py --input <pdf> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "pdf_metadata_json",
+              "pdf_outline_json",
+              "markdown",
+              "external_wrapper_result_json"
+            ],
+            "readiness_checks": [
+              "pypdf diagnostics worker"
+            ],
+            "capability_checks": [
+              "pdf_lightweight_fallbacks"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "pypdf",
+              "registry_key": "pypdf",
+              "install_cost": "low",
+              "runtime_requirement": "pure Python package; no GPU or model weights",
+              "requires_external_repo": false,
+              "requires_model_cache": false,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": false,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [],
+              "health_names": [
+                "pypdf diagnostics worker"
+              ],
+              "capability_names": [
+                "pdf_lightweight_fallbacks"
+              ],
+              "plan_command_hint": "python scripts/pypdf_diagnostics_worker.py --input <pdf> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "pdf_metadata_json",
+                "pdf_outline_json",
+                "markdown",
+                "external_wrapper_result_json"
+              ],
+              "missing_states": [
+                "planned_only"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        },
+        {
+          "backend": "pdfminer.six",
+          "registry_key": "pdfminer_six",
+          "sample_class": "academic_pdf",
+          "role": "pure-Python PDF text-layer diagnostics worker",
+          "best_for": "text-layer debugging and comparison when PyMuPDF/PyMuPDF4LLM output looks suspicious",
+          "default_policy": "candidate-only diagnostics; not default Markdown conversion",
+          "artifact_contract": [
+            "text",
+            "pages_jsonl",
+            "markdown",
+            "external_wrapper_result_json"
+          ],
+          "run_preview": {
+            "schema_version": "candidate-run-preview-v1",
+            "backend": "pdfminer.six",
+            "registry_key": "pdfminer_six",
+            "capability": "pdf_lightweight_fallbacks",
+            "trigger": "shared benchmark sample class: academic_pdf",
+            "execution_policy": "plan_or_fake_first_no_model_install_no_service_start",
+            "default_mode": "plan",
+            "safe_modes": [
+              "plan",
+              "fake"
+            ],
+            "execute_requires_explicit_approval": true,
+            "model_install_enabled": false,
+            "service_start_enabled": false,
+            "remote_call_enabled": false,
+            "command_hint": "python scripts/pdfminer_text_worker.py --input <pdf> --output <run-dir> --mode plan",
+            "expected_artifacts": [
+              "text",
+              "pages_jsonl",
+              "markdown",
+              "external_wrapper_result_json"
+            ],
+            "readiness_checks": [
+              "pdfminer.six text worker"
+            ],
+            "capability_checks": [
+              "pdf_lightweight_fallbacks"
+            ],
+            "readiness_contract": {
+              "schema_version": "candidate-readiness-contract-v1",
+              "backend": "pdfminer.six",
+              "registry_key": "pdfminer_six",
+              "install_cost": "low",
+              "runtime_requirement": "pure Python package; no GPU or model weights",
+              "requires_external_repo": false,
+              "requires_model_cache": false,
+              "requires_service": false,
+              "requires_gpu_or_heavy_runtime": false,
+              "manual_start_required": false,
+              "manual_start_hint": "No service is started by this project; use plan/fake mode until a human prepares the external runtime.",
+              "model_cache_hints": [],
+              "health_names": [
+                "pdfminer.six text worker"
+              ],
+              "capability_names": [
+                "pdf_lightweight_fallbacks"
+              ],
+              "plan_command_hint": "python scripts/pdfminer_text_worker.py --input <pdf> --output <run-dir> --mode plan",
+              "supported_artifacts": [
+                "text",
+                "pages_jsonl",
+                "markdown",
+                "external_wrapper_result_json"
+              ],
+              "missing_states": [
+                "planned_only"
+              ],
+              "ready_state": "ready only after env, model/cache, and manually managed service checks pass",
+              "model_install_enabled": false,
+              "service_start_enabled": false,
+              "remote_call_enabled": false
+            },
+            "missing_state_policy": "report_needs_manual_start_or_model_config; do_not_start_or_install",
+            "promotion_gate_required": true,
+            "will_not": [
+              "install models",
+              "start services",
+              "make remote calls",
+              "process private documents without explicit user input",
+              "promote default routing"
+            ],
+            "next_actions": [
+              {
+                "action": "run_plan_or_fake_first",
+                "tool": "external_wrapper_plan",
+                "safe_default": true,
+                "destructive": false,
+                "why": "inspect command/artifact plan before any real backend execution"
+              },
+              {
+                "action": "read_wrapper_result",
+                "tool": "read_artifact",
+                "artifact_type": "external_wrapper_result_json",
+                "safe_default": true,
+                "destructive": false,
+                "why": "review normalized wrapper result before comparing quality"
+              },
+              {
+                "action": "update_scorecard",
+                "tool": "generate_backend_scorecard",
+                "safe_default": true,
+                "destructive": false,
+                "why": "fold wrapper/candidate artifacts into promotion gates"
+              },
+              {
+                "action": "build_review_bundle",
+                "tool": "build_layout_table_review_bundle",
+                "safe_default": true,
+                "destructive": false,
+                "why": "compare layout/table/formula evidence before route changes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "class": "doc_office",
+      "candidate_backends": [
+        "Docling",
+        "MarkItDown",
+        "Pandoc",
+        "Tika"
+      ],
+      "review_questions": [
+        "Does the lightweight baseline preserve structure?",
+        "Is Tika useful only as inspect evidence?"
+      ],
+      "expected_artifacts": [
+        "markdown",
+        "conversion_report",
+        "review_report"
+      ],
+      "candidate_registry_keys": [],
+      "candidate_backend_previews": []
+    }
+  ],
+  "samples": []
+}

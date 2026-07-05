@@ -28,6 +28,22 @@ from ebook_markdown_pipeline import (  # noqa: E402
     write_batch_summary,
 )
 from ebook_markdown_pipeline.artifact_schema import artifact  # noqa: E402
+from ebook_markdown_pipeline.candidate_backend_registry import candidate_backend_registry_payload  # noqa: E402
+from ebook_markdown_pipeline.diagnostic_artifact_schema import (  # noqa: E402
+    diagnostic_artifact_schema_payload,
+    summarize_diagnostic_json,
+    summarize_ocr_blocks_jsonl,
+)
+from ebook_markdown_pipeline.candidate_artifact_schema import (  # noqa: E402
+    candidate_artifact_schema_payload,
+    summarize_candidate_artifact,
+    validate_candidate_artifact,
+)
+from ebook_markdown_pipeline.academic_evidence import build_academic_evidence as build_academic_evidence_payload, write_academic_evidence_artifacts  # noqa: E402
+from ebook_markdown_pipeline.chunk_map import build_chunk_map as build_chunk_map_payload, write_chunk_map_artifacts  # noqa: E402
+from ebook_markdown_pipeline.document_intelligence_blocks import build_document_intelligence_blocks as build_document_intelligence_blocks_payload, write_document_intelligence_blocks_artifacts  # noqa: E402
+from ebook_markdown_pipeline.format_baseline_matrix import build_format_baseline_matrix as build_format_baseline_matrix_payload, write_format_baseline_matrix_artifacts  # noqa: E402
+from ebook_markdown_pipeline.review_lifecycle import build_review_lifecycle as build_review_lifecycle_payload, write_review_lifecycle_artifacts  # noqa: E402
 from ebook_markdown_pipeline.batch_convert_books import suggest_review_next_actions  # noqa: E402
 from ebook_markdown_pipeline.document_locator import build_location_index, export_location_review_pack, query_location_index  # noqa: E402
 from ebook_markdown_pipeline.document_inspector import inspect_document  # noqa: E402
@@ -92,7 +108,23 @@ JSON_ARTIFACT_TYPES = {
     "visual_check_json",
     "visual_blocks_json",
     "table_candidates_json",
+    "layout_candidates_json",
+    "formula_candidates_json",
+    "document_vlm_result_json",
+    "external_wrapper_result_json",
+    "layout_table_review_bundle_json",
+    "optional_backend_scorecard_json",
+    "candidate_benchmark_plan_json",
     "image_positions_json",
+    "pdf_metadata_json",
+    "pdf_outline_json",
+    "pdf_layout_evidence_json",
+    "ocr_provider_comparison_json",
+    "review_lifecycle_json",
+    "chunk_map_json",
+    "academic_evidence_json",
+    "format_baseline_matrix_json",
+    "document_intelligence_blocks_json",
 }
 READABLE_ARTIFACT_TYPES = {
     "markdown",
@@ -127,9 +159,28 @@ READABLE_ARTIFACT_TYPES = {
     "visual_check_json",
     "visual_blocks_json",
     "table_candidates_json",
+    "layout_candidates_json",
+    "formula_candidates_json",
+    "document_vlm_result_json",
+    "external_wrapper_result_json",
+    "layout_table_review_bundle_json",
+    "optional_backend_scorecard_json",
+    "candidate_benchmark_plan_json",
     "image_positions_json",
     "requirements_lock",
     "tool_log",
+    "pdf_metadata_json",
+    "pdf_outline_json",
+    "pdf_layout_evidence_json",
+    "ocr_blocks_jsonl",
+    "ocr_provider_comparison_json",
+    "review_lifecycle_json",
+    "chunk_map_json",
+    "academic_evidence_json",
+    "format_baseline_matrix_json",
+    "document_intelligence_blocks_json",
+    "hocr",
+    "tsv",
 }
 
 
@@ -236,6 +287,21 @@ def tool_schemas() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {},
+            },
+        },
+        {
+            "name": "list_candidate_backends",
+            "description": "List candidate-only external backends, readiness contracts, run previews, and supported artifact schemas without executing workers.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "backend": {"type": "string"},
+                    "sample_class": {"type": "string"},
+                    "capability": {"type": "string"},
+                    "artifact_type": {"type": "string"},
+                    "max_results": {"type": "integer", "default": 50},
+                    "include_registry": {"type": "boolean", "default": False}
+                }
             },
         },
         {
@@ -526,6 +592,31 @@ def tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "build_review_lifecycle",
+            "description": "Build metadata-only review lifecycle artifacts from an existing queue, batch, handoff, bundle, or scorecard JSON.",
+            "inputSchema": {"type": "object", "properties": {"source": {"type": "string"}, "output": {"type": "string"}, "include_paths": {"type": "boolean", "default": False}, "format": {"type": "string", "enum": ["json", "markdown", "both"], "default": "both"}}, "required": ["source", "output"]},
+        },
+        {
+            "name": "build_chunk_map",
+            "description": "Build metadata-only chunk-map artifacts from an existing Markdown output and optional structure JSON.",
+            "inputSchema": {"type": "object", "properties": {"markdown": {"type": "string"}, "structure_json": {"type": "string"}, "output": {"type": "string"}, "max_chunk_chars": {"type": "integer", "default": 1800}, "include_text_preview": {"type": "boolean", "default": False}}, "required": ["markdown", "output"]},
+        },
+        {
+            "name": "build_academic_evidence",
+            "description": "Build academic metadata/reference/formula side-evidence artifacts from existing JSON outputs.",
+            "inputSchema": {"type": "object", "properties": {"sources": {"type": "array", "items": {"type": "string"}}, "output": {"type": "string"}}, "required": ["sources", "output"]},
+        },
+        {
+            "name": "build_format_baseline_matrix",
+            "description": "Build a consume-only format baseline matrix from existing conversion or inspect reports.",
+            "inputSchema": {"type": "object", "properties": {"sources": {"type": "array", "items": {"type": "string"}}, "output": {"type": "string"}}, "required": ["sources", "output"]},
+        },
+        {
+            "name": "build_document_intelligence_blocks",
+            "description": "Normalize existing layout/table/formula/OCR sidecars into local document-intelligence block evidence.",
+            "inputSchema": {"type": "object", "properties": {"sources": {"type": "array", "items": {"type": "string"}}, "output": {"type": "string"}}, "required": ["sources", "output"]},
+        },
+        {
             "name": "read_artifact",
             "description": "Read a text/JSON/JSONL/Markdown artifact by path with size and line limits.",
             "inputSchema": {
@@ -699,6 +790,8 @@ def tool_schemas() -> list[dict[str, Any]]:
 def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     if name == "get_agent_contract":
         return agent_contract_payload()
+    if name == "list_candidate_backends":
+        return list_candidate_backends_tool(arguments)
     if name == "scan_books":
         return scan_books(arguments)
     if name == "health_check":
@@ -731,6 +824,16 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return read_report(arguments)
     if name == "read_pdf_tool_log":
         return read_pdf_tool_log(arguments)
+    if name == "build_review_lifecycle":
+        return build_review_lifecycle_tool(arguments)
+    if name == "build_chunk_map":
+        return build_chunk_map_tool(arguments)
+    if name == "build_academic_evidence":
+        return build_academic_evidence_tool(arguments)
+    if name == "build_format_baseline_matrix":
+        return build_format_baseline_matrix_tool(arguments)
+    if name == "build_document_intelligence_blocks":
+        return build_document_intelligence_blocks_tool(arguments)
     if name == "read_artifact":
         return read_artifact(arguments)
     if name == "inspect_agent_batch_results":
@@ -773,6 +876,7 @@ def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
         "process_material_contract": process_material_contract_payload(),
         "specialist_tools": [
             "health_check",
+            "list_candidate_backends",
             "show_latest_quality_gate",
             "build_quality_improvement_queue",
             "inspect_document",
@@ -785,6 +889,9 @@ def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
         "supports_async_jobs": True,
         "supports_artifacts": True,
         "operating_context": operating_context,
+        "candidate_backend_registry": operating_context["candidate_backend_registry"],
+        "candidate_artifact_schemas": operating_context["candidate_artifact_schemas"],
+        "diagnostic_artifact_schemas": operating_context["diagnostic_artifact_schemas"],
         "pipeline_capabilities": operating_context["pipeline_capabilities"],
         "risk_status": operating_context["risk_status"],
         "config_sources": operating_context["config_sources"],
@@ -809,6 +916,94 @@ def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
     }
 
 
+def list_candidate_backends_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    registry = candidate_backend_registry_payload()
+    filters = {
+        "backend": str(arguments.get("backend") or "").strip(),
+        "sample_class": str(arguments.get("sample_class") or "").strip(),
+        "capability": str(arguments.get("capability") or "").strip(),
+        "artifact_type": str(arguments.get("artifact_type") or "").strip(),
+    }
+    max_results = int(arguments.get("max_results") or 50)
+    backends = [item for item in registry.get("backends") or [] if isinstance(item, dict)]
+    filtered = [item for item in backends if candidate_backend_matches(item, filters)]
+    filtered = filtered[: max(1, max_results)]
+    payload: dict[str, Any] = {
+        "schema_version": "candidate-backend-list-v1",
+        "execution_policy": "candidate_only_plan_or_fake_first",
+        "remote_call_enabled": False,
+        "model_install_enabled": False,
+        "service_start_enabled": False,
+        "filters": {key: value for key, value in filters.items() if value},
+        "count": len(filtered),
+        "total_registered": len(backends),
+        "sample_classes": sorted({sample for item in backends for sample in item.get("sample_classes") or [] if sample}),
+        "capabilities": sorted({capability for item in backends for capability in item.get("capability_names") or [] if capability}),
+        "artifact_types": sorted({artifact for item in backends for artifact in item.get("artifact_contract") or [] if artifact}),
+        "backends": filtered,
+        "next_actions": candidate_backend_list_next_actions(filtered),
+    }
+    if arguments.get("include_registry"):
+        payload["registry"] = registry
+    return payload
+
+
+def candidate_backend_matches(item: dict[str, Any], filters: dict[str, str]) -> bool:
+    backend = filters.get("backend") or ""
+    sample_class = filters.get("sample_class") or ""
+    capability = filters.get("capability") or ""
+    artifact_type = filters.get("artifact_type") or ""
+    if backend:
+        aliases = [item.get("key"), item.get("display_name"), *(item.get("health_names") or [])]
+        if normalize_filter_value(backend) not in {normalize_filter_value(alias) for alias in aliases if alias}:
+            return False
+    if sample_class and normalize_filter_value(sample_class) not in {normalize_filter_value(value) for value in item.get("sample_classes") or []}:
+        return False
+    if capability and normalize_filter_value(capability) not in {normalize_filter_value(value) for value in item.get("capability_names") or []}:
+        return False
+    if artifact_type and normalize_filter_value(artifact_type) not in {normalize_filter_value(value) for value in item.get("artifact_contract") or []}:
+        return False
+    return True
+
+
+def normalize_filter_value(value: Any) -> str:
+    return str(value or "").lower().replace("-", "_").replace(".", "_").replace(" ", "_").strip()
+
+
+def candidate_backend_list_next_actions(backends: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not backends:
+        return [
+            {
+                "action": "list_all_candidate_backends",
+                "tool": "list_candidate_backends",
+                "arguments": {},
+                "safe_default": True,
+                "destructive": False,
+                "why": "No candidate backend matched the current filters; inspect the full non-executing registry.",
+            }
+        ]
+    actions = [
+        {
+            "action": "inspect_candidate_run_preview",
+            "tool": "list_candidate_backends",
+            "arguments": {"backend": backends[0].get("key")},
+            "safe_default": True,
+            "destructive": False,
+            "why": "Review the candidate's plan/fake-first command and readiness contract before any external worker run.",
+        }
+    ]
+    if any((item.get("readiness_contract") or {}).get("manual_start_required") for item in backends):
+        actions.append(
+            {
+                "action": "check_manual_service_readiness",
+                "tool": "health_check",
+                "arguments": {},
+                "safe_default": True,
+                "destructive": False,
+                "why": "One or more candidates require a manually managed service; report readiness without starting it.",
+            }
+        )
+    return actions
 def process_material_contract_payload() -> dict[str, Any]:
     return {
         "schema_version": "process-material-v2",
@@ -842,6 +1037,9 @@ def agent_operating_context() -> dict[str, Any]:
         "local_env_loaded_keys": env_status["loaded_keys"],
         "pipeline_capabilities": capabilities,
         "online_provider_health": provider_registry_health(),
+        "candidate_backend_registry": candidate_backend_registry_payload(),
+        "candidate_artifact_schemas": candidate_artifact_schema_payload(),
+        "diagnostic_artifact_schemas": diagnostic_artifact_schema_payload(),
         "risk_status": agent_risk_status(capabilities),
         "route_defaults": {
             "process_material": "recognize_or_convert",
@@ -961,6 +1159,9 @@ def health_check(arguments: dict[str, Any]) -> dict[str, Any]:
         "capabilities": capabilities,
         "online_provider_health": online_health,
         "provider_status": online_health,
+        "candidate_backend_registry": candidate_backend_registry_payload(),
+        "candidate_artifact_schemas": candidate_artifact_schema_payload(),
+        "diagnostic_artifact_schemas": diagnostic_artifact_schema_payload(),
         "backend_status": {
             "ready": ready,
             "degraded": degraded,
@@ -1765,11 +1966,79 @@ def write_online_enhancement_artifacts(payload: dict[str, Any], arguments: dict[
     md_path = output_dir / f"{stem}.md"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
     md_path.write_text(render_online_enhancement_markdown(payload), encoding="utf-8", newline="\n")
-    return [
+    artifacts = [
         artifact("json", json_path, label="Online enhancement JSON", media_type="application/json"),
         artifact("markdown", md_path, label="Online enhancement report", media_type="text/markdown"),
     ]
+    artifacts.extend(write_online_candidate_artifacts(payload, arguments, output_dir))
+    return artifacts
 
+
+def write_online_candidate_artifacts(payload: dict[str, Any], arguments: dict[str, Any], output_dir: Path) -> list[dict[str, Any]]:
+    task = str(payload.get("task") or "")
+    result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+    artifacts: list[dict[str, Any]] = []
+    tables = result.get("tables") if isinstance(result.get("tables"), list) else []
+    if task in {"vlm_layout", "ocr_layout"}:
+        document_path = output_dir / "document-vlm-result.json"
+        blocks = result.get("blocks") if isinstance(result.get("blocks"), list) else []
+        markdown = str(result.get("markdown") or "")
+        if not blocks and markdown.strip():
+            blocks = [
+                {
+                    "type": "markdown_text",
+                    "text_preview": markdown.strip()[:1000],
+                    "text_char_count": len(markdown.strip()),
+                    "origin": "online_enhancement_markdown",
+                }
+            ]
+        document_payload = {
+            "schema_version": "document-vlm-result-v1",
+            "backend": payload.get("provider"),
+            "status": "review",
+            "mode": task,
+            "provider_mode": payload.get("provider_mode"),
+            "remote_call_enabled": bool(payload.get("remote_call_enabled")),
+            "input": str(arguments.get("input_path") or ""),
+            "pages": [
+                {
+                    "page": 1,
+                    "source": str(arguments.get("input_path") or "online_enhancement"),
+                    "blocks": blocks,
+                    "tables": tables,
+                }
+            ],
+            "artifacts": [
+                {"type": "json", "path": str(output_dir / f"{safe_online_artifact_stem(task)}.json")},
+                {"type": "markdown", "path": str(output_dir / f"{safe_online_artifact_stem(task)}.md")},
+            ],
+            "warnings": result.get("warnings") if isinstance(result.get("warnings"), list) else [],
+            "promotion_use": "online/fake document-VLM review side evidence; explicit enhancement only",
+        }
+        if markdown:
+            document_payload["markdown_text_preview"] = markdown[:2000]
+        document_path.write_text(json.dumps(document_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+        artifacts.append(artifact("document_vlm_result_json", document_path, label="Document VLM result", media_type="application/json"))
+    if task in {"vlm_layout", "ocr_layout", "table_repair"} and tables:
+        table_path = output_dir / "table-candidates.json"
+        table_payload = {
+            "schema_version": "table-candidates-v1",
+            "backend": payload.get("provider"),
+            "status": "review",
+            "mode": task,
+            "provider_mode": payload.get("provider_mode"),
+            "remote_call_enabled": bool(payload.get("remote_call_enabled")),
+            "input": str(arguments.get("input_path") or "online_enhancement"),
+            "pages": [{"page": 1, "source": str(arguments.get("input_path") or "online_enhancement"), "tables": tables}],
+            "artifacts": [
+                {"type": "json", "path": str(output_dir / f"{safe_online_artifact_stem(task)}.json")},
+                {"type": "markdown", "path": str(output_dir / f"{safe_online_artifact_stem(task)}.md")},
+            ],
+            "warnings": result.get("warnings") if isinstance(result.get("warnings"), list) else [],
+        }
+        table_path.write_text(json.dumps(table_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+        artifacts.append(artifact("table_candidates_json", table_path, label="Table candidates", media_type="application/json"))
+    return artifacts
 
 def safe_online_artifact_stem(task: str) -> str:
     safe = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in task.lower()).strip("-_")
@@ -2490,6 +2759,46 @@ def read_report(arguments: dict[str, Any]) -> dict[str, Any]:
     return {"path": str(path), "report": json.loads(path.read_text(encoding="utf-8"))}
 
 
+def build_review_lifecycle_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    source = Path(arguments["source"])
+    output = Path(arguments["output"])
+    payload = build_review_lifecycle_payload(source, include_paths=bool(arguments.get("include_paths", False)))
+    artifacts = write_review_lifecycle_artifacts(output, payload)
+    return {"schema_version": "artifact-schema-v1", "status": "ok", "state": payload.get("lifecycle_state"), "artifacts": [artifact("review_lifecycle_json", artifacts["json"]), artifact("markdown", artifacts["markdown"])], "summary": payload.get("summary") or {}, "policy": payload.get("consume_policy") or {}}
+
+
+def build_chunk_map_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    markdown = Path(arguments["markdown"])
+    structure_json = Path(arguments["structure_json"]) if arguments.get("structure_json") else None
+    output = Path(arguments["output"])
+    payload = build_chunk_map_payload(markdown, structure_json=structure_json, max_chunk_chars=int(arguments.get("max_chunk_chars") or 1800), include_text_preview=bool(arguments.get("include_text_preview", False)))
+    artifacts = write_chunk_map_artifacts(output, payload)
+    return {"schema_version": "artifact-schema-v1", "status": "ok", "artifacts": [artifact("chunk_map_json", artifacts["json"]), artifact("markdown", artifacts["markdown"])], "summary": payload.get("summary") or {}, "policy": payload.get("policy") or {}}
+
+
+def build_academic_evidence_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    sources = [Path(value) for value in arguments.get("sources") or []]
+    output = Path(arguments["output"])
+    payload = build_academic_evidence_payload(sources)
+    artifacts = write_academic_evidence_artifacts(output, payload)
+    return {"schema_version": "artifact-schema-v1", "status": "ok", "artifacts": [artifact("academic_evidence_json", artifacts["json"]), artifact("markdown", artifacts["markdown"])], "summary": payload.get("summary") or {}, "policy": payload.get("policy") or {}}
+
+
+def build_format_baseline_matrix_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    sources = [Path(value) for value in arguments.get("sources") or []]
+    output = Path(arguments["output"])
+    payload = build_format_baseline_matrix_payload(sources)
+    artifacts = write_format_baseline_matrix_artifacts(output, payload)
+    return {"schema_version": "artifact-schema-v1", "status": "ok", "artifacts": [artifact("format_baseline_matrix_json", artifacts["json"]), artifact("markdown", artifacts["markdown"])], "summary": payload.get("summary") or {}, "policy": payload.get("policy") or {}}
+
+
+def build_document_intelligence_blocks_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    sources = [Path(value) for value in arguments.get("sources") or []]
+    output = Path(arguments["output"])
+    payload = build_document_intelligence_blocks_payload(sources)
+    artifacts = write_document_intelligence_blocks_artifacts(output, payload)
+    return {"schema_version": "artifact-schema-v1", "status": "ok", "artifacts": [artifact("document_intelligence_blocks_json", artifacts["json"]), artifact("markdown", artifacts["markdown"])], "summary": payload.get("summary") or {}, "policy": payload.get("policy") or {}}
+
 def read_pdf_tool_log(arguments: dict[str, Any]) -> dict[str, Any]:
     path = Path(arguments["path"])
     max_lines = int(arguments.get("max_lines") or 120)
@@ -2531,14 +2840,238 @@ def read_artifact(arguments: dict[str, Any]) -> dict[str, Any]:
         "truncated": truncated_by_lines or truncated_by_chars,
         "text": limited_text,
     }
+    parsed_json: Any | None = None
     if artifact_type in JSON_ARTIFACT_TYPES:
         try:
-            payload["json"] = json.loads(text)
+            parsed_json = json.loads(text)
+            payload["json"] = parsed_json
         except json.JSONDecodeError:
             payload["json_error"] = "Invalid JSON."
-    if artifact_type in {"pages_jsonl", "location_index_jsonl"}:
+    if isinstance(parsed_json, dict):
+        summary = summarize_known_artifact_json(parsed_json, artifact_type)
+        if summary:
+            payload["summary"] = summary
+    if artifact_type in {"pages_jsonl", "location_index_jsonl", "ocr_blocks_jsonl"}:
         payload["records"] = parse_jsonl_preview(limited_lines)
+        if artifact_type == "ocr_blocks_jsonl":
+            payload["summary"] = summarize_ocr_blocks_jsonl(payload["records"], artifact_type=artifact_type)
     return payload
+
+
+def summarize_known_artifact_json(value: dict[str, Any], artifact_type: str) -> dict[str, Any]:
+    schema = str(value.get("schema_version") or "")
+    if artifact_type == "external_wrapper_result_json" or schema == "external-wrapper-result-v1":
+        artifacts = [item for item in value.get("artifacts") or [] if isinstance(item, dict)]
+        warnings = [str(item) for item in value.get("warnings") or []]
+        next_actions = [item for item in value.get("next_actions") or [] if isinstance(item, dict)]
+        return {
+            "kind": "external_wrapper_result",
+            "backend": value.get("backend"),
+            "mode": value.get("mode"),
+            "status": value.get("status"),
+            "input": value.get("input"),
+            "output_dir": value.get("output_dir"),
+            "artifact_count": len(artifacts),
+            "artifact_types": sorted({str(item.get("type") or "") for item in artifacts if item.get("type")}),
+            "metrics": value.get("metrics") or {},
+            "warning_count": len(warnings),
+            "warnings_preview": warnings[:5],
+            "next_actions_preview": next_actions[:5],
+        }
+    if artifact_type in {"layout_candidates_json", "table_candidates_json", "formula_candidates_json", "document_vlm_result_json"}:
+        return summarize_candidate_json(value, artifact_type)
+    if artifact_type == "layout_table_review_bundle_json" or schema == "layout-table-review-bundle-v1":
+        return summarize_layout_table_review_bundle_json(value)
+    if artifact_type == "optional_backend_scorecard_json" or schema == "optional-backend-scorecard-v1":
+        return summarize_optional_backend_scorecard_json(value)
+    if artifact_type == "candidate_benchmark_plan_json" or schema == "candidate-benchmark-plan-v1":
+        return summarize_candidate_benchmark_plan_json(value)
+    if artifact_type == "ocr_provider_comparison_json" or schema == "ocr-provider-comparison-v1":
+        return summarize_ocr_provider_comparison_json(value)
+    if artifact_type == "visual_check_json" or schema in {"web-archive-visual-check-v1", "1"} or (artifact_type == "visual_check_json" and value.get("schema_version") == 1):
+        return summarize_visual_check_json(value)
+    if artifact_type == "review_lifecycle_json" or schema == "review-lifecycle-v1":
+        return summarize_review_lifecycle_json(value)
+    if artifact_type == "chunk_map_json" or schema == "chunk-map-v1":
+        return summarize_chunk_map_json(value)
+    if artifact_type == "academic_evidence_json" or schema == "academic-evidence-v1":
+        return summarize_academic_evidence_json(value)
+    if artifact_type == "format_baseline_matrix_json" or schema == "format-baseline-matrix-v1":
+        return summarize_format_baseline_matrix_json(value)
+    if artifact_type == "document_intelligence_blocks_json" or schema == "document-intelligence-blocks-v1":
+        return summarize_document_intelligence_blocks_json(value)
+    if artifact_type in {"pdf_metadata_json", "pdf_outline_json", "pdf_layout_evidence_json"}:
+        return summarize_diagnostic_json(value, artifact_type)
+    return {}
+
+
+def summarize_visual_check_json(value: dict[str, Any]) -> dict[str, Any]:
+    warnings = [str(item) for item in value.get("warnings") or []]
+    return {
+        "kind": "web_archive_visual_check",
+        "schema_version": value.get("schema_version"),
+        "legacy_schema_version": value.get("legacy_schema_version"),
+        "source_contract": value.get("source_contract") or "web-content-fetcher-archive",
+        "execution_policy": value.get("execution_policy") or "consume_existing_archive_only_no_crawling",
+        "status": value.get("status"),
+        "archive_path": value.get("archive_path"),
+        "manifest_path": value.get("manifest_path"),
+        "output_dir": value.get("output_dir"),
+        "ocr_backend": value.get("ocr_backend"),
+        "ocr_status": value.get("ocr_status"),
+        "ocr_text_chars": int(value.get("ocr_text_chars") or 0),
+        "visual_block_count": int(value.get("visual_block_count") or 0),
+        "table_candidate_count": int(value.get("table_candidate_count") or 0),
+        "image_position_count": int(value.get("image_position_count") or 0),
+        "warning_count": len(warnings),
+        "warnings_preview": warnings[:5],
+        "has_layout_ocr": bool(value.get("layout_ocr_path")),
+        "has_visual_blocks": bool(value.get("visual_blocks_path")),
+        "has_table_candidates": bool(value.get("table_candidates_path")),
+        "has_image_positions": bool(value.get("image_positions_path")),
+        "next_step": value.get("next_step") or "",
+    }
+
+def summarize_review_lifecycle_json(value: dict[str, Any]) -> dict[str, Any]:
+    return {"kind": "review_lifecycle", "schema_version": value.get("schema_version"), "source_schema_version": value.get("source_schema_version"), "lifecycle_state": value.get("lifecycle_state"), "review_target_count": len(value.get("review_targets") or []), "job_ref_count": len(value.get("job_refs") or []), "artifact_ref_count": len(value.get("artifact_refs") or []), "blocked_actions": value.get("blocked_actions") or [], "recommended_followup": value.get("recommended_followup") or value.get("recommended_next_action") or ""}
+
+
+def summarize_chunk_map_json(value: dict[str, Any]) -> dict[str, Any]:
+    summary = value.get("summary") if isinstance(value.get("summary"), dict) else {}
+    return {"kind": "chunk_map", "schema_version": value.get("schema_version"), "source_name": value.get("source_name"), "element_count": int(summary.get("element_count") or len(value.get("elements") or [])), "chunk_count": int(summary.get("chunk_count") or len(value.get("chunks") or [])), "page_break_count": int(summary.get("page_break_count") or 0), "element_types": summary.get("element_types") or {}, "policy_mode": (value.get("policy") or {}).get("mode")}
+
+
+def summarize_academic_evidence_json(value: dict[str, Any]) -> dict[str, Any]:
+    summary = value.get("summary") if isinstance(value.get("summary"), dict) else {}
+    return {"kind": "academic_evidence", "schema_version": value.get("schema_version"), "title": summary.get("title") or value.get("title"), "reference_count": int(summary.get("reference_count") or len(value.get("references") or [])), "formula_count": int(summary.get("formula_count") or len(value.get("formulas") or [])), "source_count": int(summary.get("source_count") or len(value.get("sources") or [])), "policy_mode": (value.get("policy") or {}).get("mode")}
+
+
+def summarize_format_baseline_matrix_json(value: dict[str, Any]) -> dict[str, Any]:
+    summary = value.get("summary") if isinstance(value.get("summary"), dict) else {}
+    best = summary.get("best_available_baseline") if isinstance(summary.get("best_available_baseline"), dict) else {}
+    return {"kind": "format_baseline_matrix", "schema_version": value.get("schema_version"), "row_count": int(summary.get("row_count") or len(value.get("rows") or [])), "baseline_counts": summary.get("baseline_counts") or {}, "best_available_baseline": best.get("baseline"), "best_quality_level": best.get("quality_level"), "policy_mode": (value.get("policy") or {}).get("mode")}
+
+
+def summarize_document_intelligence_blocks_json(value: dict[str, Any]) -> dict[str, Any]:
+    summary = value.get("summary") if isinstance(value.get("summary"), dict) else {}
+    return {"kind": "document_intelligence_blocks", "schema_version": value.get("schema_version"), "block_count": int(summary.get("block_count") or len(value.get("blocks") or [])), "relationship_count": int(summary.get("relationship_count") or len(value.get("relationships") or [])), "block_type_counts": summary.get("block_type_counts") or {}, "source_count": int(summary.get("source_count") or len(value.get("sources") or [])), "policy_mode": (value.get("policy") or {}).get("mode")}
+
+def summarize_layout_table_review_bundle_json(value: dict[str, Any]) -> dict[str, Any]:
+    summary = value.get("summary") if isinstance(value.get("summary"), dict) else {}
+    next_actions = [item for item in value.get("next_actions") or [] if isinstance(item, dict)]
+    benchmark_context = value.get("benchmark_context") if isinstance(value.get("benchmark_context"), dict) else {}
+    return {
+        "kind": "layout_table_review_bundle",
+        "schema_version": value.get("schema_version"),
+        "source": value.get("source"),
+        "artifact_count": int(summary.get("artifact_count") or len(value.get("artifact_summaries") or [])),
+        "backend_count": len(summary.get("backends") or []),
+        "backends": summary.get("backends") or [],
+        "block_count": int(summary.get("block_count") or 0),
+        "table_count": int(summary.get("table_count") or 0),
+        "formula_count": int(summary.get("formula_count") or 0),
+        "review_page_count": int(summary.get("review_page_count") or len(value.get("review_pages") or [])),
+        "table_review_matrix_count": int(summary.get("table_review_matrix_count") or len(value.get("table_review_matrix") or [])),
+        "formula_review_matrix_count": int(summary.get("formula_review_matrix_count") or len(value.get("formula_review_matrix") or [])),
+        "promotion_review_count": int(summary.get("promotion_review_count") or len(value.get("promotion_reviews") or [])),
+        "benchmark_context_found": bool(summary.get("benchmark_context_found") or benchmark_context),
+        "candidate_class": benchmark_context.get("candidate_class") if benchmark_context else "",
+        "missing_expected_artifact_count": int(summary.get("missing_expected_artifact_count") or len(((benchmark_context or {}).get("expected_artifact_coverage") or {}).get("missing") or [])),
+        "next_action_count": len(next_actions),
+        "next_actions_preview": next_actions[:5],
+    }
+
+
+def summarize_optional_backend_scorecard_json(value: dict[str, Any]) -> dict[str, Any]:
+    summary = value.get("summary") if isinstance(value.get("summary"), dict) else {}
+    backends = [item for item in value.get("backends") or [] if isinstance(item, dict)]
+    gate_counts: dict[str, int] = {}
+    for item in backends:
+        decision = str((item.get("promotion_gate") or {}).get("decision") or "unknown")
+        gate_counts[decision] = gate_counts.get(decision, 0) + 1
+    return {
+        "kind": "optional_backend_scorecard",
+        "schema_version": value.get("schema_version"),
+        "status": summary.get("status") or value.get("status"),
+        "backend_count": int(summary.get("backend_count") or len(backends)),
+        "ready": summary.get("ready") or [],
+        "missing_optional": summary.get("missing_optional") or [],
+        "recommended_candidates": summary.get("recommended_candidates") or [],
+        "external_wrapper_result_count": int(value.get("external_wrapper_result_count") or summary.get("external_wrapper_result_count") or 0),
+        "candidate_artifact_count": int(value.get("candidate_artifact_count") or summary.get("candidate_artifact_count") or 0),
+        "promotion_gate_counts": summary.get("promotion_gate_counts") or gate_counts,
+    }
+
+
+def summarize_candidate_benchmark_plan_json(value: dict[str, Any]) -> dict[str, Any]:
+    sample_classes = [item for item in value.get("sample_classes") or [] if isinstance(item, dict)]
+    samples = [item for item in value.get("samples") or [] if isinstance(item, dict)]
+    expected_artifacts = sorted({str(artifact) for item in sample_classes for artifact in item.get("expected_artifacts") or [] if artifact})
+    candidate_backends = sorted({str(backend) for item in sample_classes for backend in item.get("candidate_backends") or [] if backend})
+    return {
+        "kind": "candidate_benchmark_plan",
+        "schema_version": value.get("schema_version"),
+        "execution_policy": value.get("execution_policy"),
+        "source_manifest": value.get("source_manifest"),
+        "sample_class_count": len(sample_classes),
+        "sample_count": len(samples),
+        "classes": [item.get("class") for item in sample_classes if item.get("class")],
+        "candidate_backend_count": len(candidate_backends),
+        "candidate_backends_preview": candidate_backends[:12],
+        "expected_artifact_count": len(expected_artifacts),
+        "expected_artifacts_preview": expected_artifacts[:12],
+        "promotion_required_evidence": (value.get("promotion_gate") or {}).get("required_evidence") or value.get("promotion_required_evidence") or [],
+    }
+
+def summarize_ocr_provider_comparison_json(value: dict[str, Any]) -> dict[str, Any]:
+    summary = value.get("summary") if isinstance(value.get("summary"), dict) else {}
+    providers = [item for item in value.get("providers") or [] if isinstance(item, dict)]
+    registry = value.get("provider_registry") if isinstance(value.get("provider_registry"), dict) else {}
+    registry_providers = [item for item in registry.get("providers") or [] if isinstance(item, dict)]
+    provider_rows = []
+    categories: set[str] = set()
+    for item in providers:
+        metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+        category_metrics = item.get("category_metrics") if isinstance(item.get("category_metrics"), dict) else {}
+        categories.update(str(category) for category in category_metrics if category)
+        provider_rows.append(
+            {
+                "provider": item.get("provider"),
+                "display_name": item.get("display_name"),
+                "status": item.get("status"),
+                "sample_count": metrics.get("sample_count", 0),
+                "total_char_count": metrics.get("total_char_count", 0),
+                "total_block_count": metrics.get("total_block_count", 0),
+                "total_bbox_count": metrics.get("total_bbox_count", 0),
+                "bbox_coverage": metrics.get("bbox_coverage", 0),
+            }
+        )
+    return {
+        "kind": "ocr_provider_comparison",
+        "schema_version": value.get("schema_version"),
+        "status": value.get("status") or summary.get("status"),
+        "image_count": int(value.get("image_count") or 0),
+        "provider_count": int(summary.get("provider_count") or len(providers)),
+        "ok_or_partial_count": int(summary.get("ok_or_partial_count") or 0),
+        "missing_count": int(summary.get("missing_count") or 0),
+        "failed_count": int(summary.get("failed_count") or 0),
+        "ocr_block_schema_version": value.get("ocr_block_schema_version"),
+        "ocr_blocks_jsonl": value.get("ocr_blocks_jsonl"),
+        "provider_registry_schema_version": registry.get("schema_version"),
+        "registry_provider_count": len(registry_providers),
+        "registry_executable_count": sum(1 for item in registry_providers if item.get("executable")),
+        "registry_planned_count": sum(1 for item in registry_providers if not item.get("executable")),
+        "categories": sorted(categories)[:20],
+        "providers": provider_rows[:12],
+    }
+
+def summarize_candidate_json(value: dict[str, Any], artifact_type: str) -> dict[str, Any]:
+    summary = summarize_candidate_artifact(value, artifact_type)
+    validation = validate_candidate_artifact(value, artifact_type)
+    summary["schema_valid"] = validation.get("ok")
+    summary["schema_errors"] = validation.get("errors") or []
+    summary["schema_warnings"] = validation.get("warnings") or []
+    return summary
 
 
 def inspect_agent_batch_results(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -3110,6 +3643,8 @@ def infer_artifact_type(path: Path) -> str:
             return "agent_smoke_summary_markdown"
         return "markdown"
     if suffix == ".jsonl":
+        if "ocr-blocks" in name or "ocr_blocks" in name:
+            return "ocr_blocks_jsonl"
         if "location" in name:
             return "location_index_jsonl"
         return "pages_jsonl"
@@ -3120,6 +3655,12 @@ def infer_artifact_type(path: Path) -> str:
             return "agent_smoke_summary_json"
         if "agent-batch-results" in name:
             return "agent_batch_results"
+        if "layout-table-review-bundle" in name:
+            return "layout_table_review_bundle_json"
+        if "backend-scorecard" in name:
+            return "optional_backend_scorecard_json"
+        if "candidate-benchmark-plan" in name or "candidate-plan" in name:
+            return "candidate_benchmark_plan_json"
         if "review-decisions" in name:
             return "review_decisions_json"
         if "review-checklist" in name:
@@ -3140,10 +3681,26 @@ def infer_artifact_type(path: Path) -> str:
             return "visual_check_json"
         if "visual_blocks" in name:
             return "visual_blocks_json"
-        if "table_candidates" in name:
+        if "ocr-provider-comparison" in name or "ocr_provider_comparison" in name:
+            return "ocr_provider_comparison_json"
+        if "external-wrapper-result" in name:
+            return "external_wrapper_result_json"
+        if "layout_candidates" in name or "layout-candidates" in name:
+            return "layout_candidates_json"
+        if "table_candidates" in name or "table-candidates" in name:
             return "table_candidates_json"
+        if "formula_candidates" in name or "formula-candidates" in name:
+            return "formula_candidates_json"
+        if "document-vlm-result" in name or "document_vlm_result" in name:
+            return "document_vlm_result_json"
         if "image_positions" in name:
             return "image_positions_json"
+        if "pypdf-metadata" in name or "pdf-metadata" in name:
+            return "pdf_metadata_json"
+        if "pypdf-outline" in name or "pdf-outline" in name:
+            return "pdf_outline_json"
+        if "layout-evidence" in name or "layout_evidence" in name or "pdf-layout-evidence" in name:
+            return "pdf_layout_evidence_json"
         if "report" in name:
             return "conversion_report"
         if "cluster" in name:
@@ -3151,6 +3708,11 @@ def infer_artifact_type(path: Path) -> str:
         if "structure" in name:
             return "structure_json"
         return "json"
+
+    if suffix in {".hocr"}:
+        return "hocr"
+    if suffix in {".tsv"}:
+        return "tsv"
     if suffix in {".log", ".txt"}:
         return "text"
     if suffix in {".html", ".htm"}:

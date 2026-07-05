@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
 
 from ebook_markdown_pipeline.process_web_archive import process_web_archive
+from ebook_markdown_pipeline.ebook_converter_mcp import read_artifact
 
 
 def main() -> int:
@@ -41,9 +42,15 @@ def main() -> int:
             raise AssertionError(f"Missing visual-check outputs: {missing}")
         if result["status"] != "pending_visual_engine":
             raise AssertionError(f"Expected pending status without screenshot: {result}")
+        if result.get("schema_version") != "web-archive-visual-check-v1":
+            raise AssertionError(f"Expected stable visual-check schema: {result}")
         table_candidates = json.loads((output_dir / "table_candidates.json").read_text(encoding="utf-8"))
         if len(table_candidates) != 1:
             raise AssertionError(f"Expected one table candidate from source markdown: {table_candidates}")
+        readable = read_artifact({"path": str(output_dir / "visual_check_result.json"), "artifact_type": "visual_check_json"})
+        summary = readable.get("summary") or {}
+        if summary.get("kind") != "web_archive_visual_check" or summary.get("table_candidate_count") != 1 or summary.get("source_contract") != "web-content-fetcher-archive":
+            raise AssertionError(f"Expected visual-check read_artifact summary: {readable}")
 
     print("Web archive visual-check smoke test passed.")
     return 0

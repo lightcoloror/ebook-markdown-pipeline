@@ -13,7 +13,9 @@ if str(ROOT.parent) not in sys.path:
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from deepseek_ocr_image_to_md import build_deepseek_command, clean_stdout, prompt_from_args, stdout_to_markdown  # noqa: E402
+from document_vlm_artifact_utils import write_document_vlm_result  # noqa: E402
 from ebook_markdown_pipeline.batch_convert_books import default_options, dependency_health_report, environment_capability_summary  # noqa: E402
+from ebook_markdown_pipeline.ebook_converter_mcp import read_artifact  # noqa: E402
 
 
 def main() -> int:
@@ -48,6 +50,7 @@ def main() -> int:
             raise AssertionError(f"Unexpected DeepSeek-OCR markdown cleanup: {markdown}")
         if clean_stdout("CUDA ready\n正文") != "正文":
             raise AssertionError("Expected runtime noise to be removed from DeepSeek-OCR stdout.")
+        assert_document_vlm_artifact(root, image, output, markdown, backend="deepseek_ocr")
 
         completed = subprocess.run(
             [
@@ -68,7 +71,7 @@ def main() -> int:
             errors="replace",
             check=False,
         )
-        if completed.returncode != 0 or "deepseek_ocr_transformers_runner.py" not in completed.stdout:
+        if completed.returncode != 0 or "deepseek_ocr_transformers_runner.py" not in completed.stdout or "document-vlm-result.json" not in completed.stdout:
             raise AssertionError(f"Expected DeepSeek-OCR dry-run command: {completed.returncode}\n{completed.stdout}")
 
     checks = dependency_health_report([], default_options(), fast=True)
@@ -80,6 +83,23 @@ def main() -> int:
 
     print("DeepSeek-OCR wrapper contract test passed.")
     return 0
+
+
+def assert_document_vlm_artifact(root: Path, image: Path, output: Path, markdown: str, *, backend: str) -> None:
+    artifact = write_document_vlm_result(
+        root / "document-vlm-result.json",
+        backend=backend,
+        source=image,
+        markdown_path=output,
+        markdown=markdown,
+        mode="markdown",
+        raw_dir=root / "raw",
+        command=["fake"],
+    )
+    readable = read_artifact({"path": str(artifact), "artifact_type": "document_vlm_result_json"})
+    summary = readable.get("summary") or {}
+    if summary.get("kind") != "document_vlm_result_json" or summary.get("block_count") != 1 or summary.get("candidate_schema_known") is not True:
+        raise AssertionError(f"Expected readable DeepSeek-OCR document VLM summary: {readable}")
 
 
 if __name__ == "__main__":
