@@ -35,9 +35,9 @@ CATEGORY_PROFILES: dict[str, dict[str, Any]] = {
         "expected_artifacts": ["layout_candidates_json", "layout_overlay_image", "markdown", "review_report"],
     },
     "pdf_table": {
-        "candidate_backends": ["pdfplumber", "Camelot", "Tabula", "Docling", "MinerU"],
-        "review_questions": ["Are true tables preserved as tables?", "Are card/infographic layouts not forced into tables?"],
-        "expected_artifacts": ["table_candidates_json", "document_vlm_result_json", "table_markdown", "table_html", "table_cells_json", "table_comparison_summary"],
+        "candidate_backends": ["pdfplumber", "Camelot", "Tabula", "Docling", "MinerU", "table_to_xlsx"],
+        "review_questions": ["Are true tables preserved as tables?", "Are card/infographic layouts not forced into tables?", "Does the XLSX draft open and preserve the expected cell grid?"],
+        "expected_artifacts": ["table_candidates_json", "document_vlm_result_json", "table_markdown", "table_html", "table_cells_json", "table_comparison_summary", "table_xlsx"],
     },
     "pdf_formula": {
         "candidate_backends": ["Pix2Text", "Marker", "MinerU", "Docling", "UniMERNet"],

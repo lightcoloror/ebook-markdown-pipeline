@@ -68,7 +68,7 @@ def main() -> int:
     if not {"pypdf", "pdfminer.six"}.issubset(text_layer):
         raise AssertionError(f"Expected lightweight PDF fallback sample mapping: {text_layer}")
     table = {item.display_name for item in candidate_backends_for_sample_class("pdf_table")}
-    if "pdf_table" not in table:
+    if not {"pdf_table", "table_to_xlsx"}.issubset(table):
         raise AssertionError(f"Expected pdf_table sample mapping: {table}")
     layout = {item.display_name for item in candidate_backends_for_sample_class("pdf_two_column")}
     if not {"DocLayout-YOLO", "dots.mocr"}.issubset(layout):

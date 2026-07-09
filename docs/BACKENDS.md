@@ -32,6 +32,7 @@ The converter is local-first and tool-first. Backends are optional specialist to
 | dots.mocr | External HTTP/GPU document VLM provider plan | Candidate only | Heavy | Prefer remote/vLLM/OpenAI-compatible provider shape. Service/model startup is manual and never automatic. |
 | DocLayout-YOLO | Layout detector baseline for bbox/overlay evidence | Candidate only | Medium/Heavy | Layout evidence only, not Markdown conversion. Use for selected pages in inspect/benchmark flows. |
 | pdf_table | External table-page worker plan | Candidate only | Heavy | Table pages only. Compare with Camelot/Tabula/pdfplumber before using as a recommendation. |
+| table_to_xlsx | Photo/scanned table to editable XLSX worker plan | Candidate only | Medium/Heavy | Uses PaddleOCR TableRecognitionPipelineV2, img2table, or RapidTable as explicit future backends. Current safe path exports existing table evidence to an `.xlsx` draft without installing models. |
 | Unlimited-OCR | Long-horizon VLM OCR candidate for multi-page images/PDF pages | Not integrated; candidate only | Heavy | Do not install or route by default. Consider only if fixture/real-sample scorecards prove a clear quality gain and it can replace an existing heavy VLM/OCR module rather than add another large model. |
 
 ## Routing Defaults

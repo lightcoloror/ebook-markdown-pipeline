@@ -104,10 +104,10 @@ def candidate_run_preview(profile: CandidateBackendProfile, *, capability: str =
 
 def candidate_readiness_contract(profile: CandidateBackendProfile) -> dict[str, Any]:
     key = normalize_backend_name(profile.key)
-    external_repo_keys = {"monkeyocr", "dots_mocr", "doclayout_yolo", "pdf_table"}
+    external_repo_keys = {"monkeyocr", "dots_mocr", "doclayout_yolo", "pdf_table", "table_to_xlsx"}
     service_keys = {"dots_mocr"}
-    model_cache_keys = {"tesseract", "doctr", "monkeyocr", "dots_mocr", "doclayout_yolo", "pdf_table"}
-    gpu_or_heavy_keys = {"doctr", "monkeyocr", "dots_mocr", "doclayout_yolo", "pdf_table"}
+    model_cache_keys = {"tesseract", "doctr", "monkeyocr", "dots_mocr", "doclayout_yolo", "pdf_table", "table_to_xlsx"}
+    gpu_or_heavy_keys = {"doctr", "monkeyocr", "dots_mocr", "doclayout_yolo", "pdf_table", "table_to_xlsx"}
     model_cache_hints = {
         "tesseract": ["TESSDATA_PREFIX", "external Tesseract language data directory"],
         "doctr": ["docTR model cache outside this repository"],
@@ -115,6 +115,7 @@ def candidate_readiness_contract(profile: CandidateBackendProfile) -> dict[str, 
         "dots_mocr": ["DOTS_MOCR_ROOT", "DOTS_MOCR_BASE_URL", "weights/DotsOCR or manually managed vLLM model cache"],
         "doclayout_yolo": ["DOCLAYOUT_YOLO_MODEL", "external YOLO/DocLayout model cache"],
         "pdf_table": ["PDF_TABLE_MODEL_DIR", "external pdf_table/Paddle table model cache"],
+        "table_to_xlsx": ["PADDLEOCR_MODEL_DIR", "IMG2TABLE_HOME", "RAPIDTABLE_MODEL_DIR", "external table-recognition model cache"],
     }
     missing_states = ["planned_only"]
     if key in external_repo_keys:
@@ -293,6 +294,23 @@ CANDIDATE_BACKENDS: tuple[CandidateBackendProfile, ...] = (
         artifact_contract=("table_markdown", "table_html", "table_cells_json", "table_overlay_image", "table_comparison_summary"),
         risk="table pages only; compare against Camelot/Tabula/pdfplumber before recommendation",
         sample_classes=("pdf_table",),
+    ),
+    CandidateBackendProfile(
+        key="table_to_xlsx",
+        display_name="table_to_xlsx",
+        module="scripts/table_to_xlsx_worker.py",
+        health_names=("table_to_xlsx worker",),
+        capability_names=("table_to_xlsx_export",),
+        role="candidate photo/scanned table to XLSX worker plan",
+        best_for="photo or scanned paper Excel-like tables that need editable XLSX draft output",
+        install_cost="medium/heavy",
+        gpu_or_model="PaddleOCR TableRecognitionPipelineV2 or img2table/RapidTable plus OCR/table models",
+        license_note="personal-use candidate; upstream runtime/model terms tracked separately",
+        default_policy="candidate-only; XLSX draft export only, never default whole-document routing",
+        command_hint="python scripts/table_to_xlsx_worker.py --input <image-or-pdf-page> --output <run-dir> --mode plan",
+        artifact_contract=("table_xlsx", "table_candidates_json", "table_to_xlsx_summary"),
+        risk="Excel output is an editable draft; formulas, formatting, filters, colors, and exact column widths are not reliably recovered",
+        sample_classes=("pdf_table", "infographic_image", "image_set"),
     ),
 )
 
