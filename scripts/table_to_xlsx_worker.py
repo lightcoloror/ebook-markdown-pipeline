@@ -6,6 +6,7 @@ import html
 import importlib.util
 import json
 import re
+import subprocess
 import shutil
 import sys
 import zipfile
@@ -32,6 +33,38 @@ XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 
 def module_available(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
+
+
+def cv2_ximgproc_available() -> bool:
+    if not module_available("cv2"):
+        return False
+    try:
+        import cv2  # type: ignore[import-not-found]
+    except Exception:  # noqa: BLE001
+        return False
+    return hasattr(cv2, "ximgproc")
+
+
+def tesseract_languages() -> list[str]:
+    executable = shutil.which("tesseract")
+    if not executable:
+        return []
+    command: list[str] | str = [executable, "--list-langs"]
+    shell = False
+    if Path(executable).suffix.lower() in {".bat", ".cmd"}:
+        command = f'"{executable}" --list-langs'
+        shell = True
+    try:
+        completed = subprocess.run(command, text=True, encoding="utf-8", errors="replace", capture_output=True, check=False, shell=shell)
+    except OSError:
+        return []
+    languages: list[str] = []
+    for line in (completed.stdout + "\n" + completed.stderr).splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.lower().startswith("list of available languages"):
+            continue
+        languages.append(stripped)
+    return sorted(set(languages))
 
 
 def build_command(args: argparse.Namespace) -> list[str]:
@@ -62,16 +95,24 @@ def build_command(args: argparse.Namespace) -> list[str]:
 
 
 def health(args: argparse.Namespace) -> dict[str, object]:
+    available_tesseract_languages = tesseract_languages()
     return {
         "status": "planned",
         "selected_backend": args.backend,
         "checks": [
             {"name": "paddleocr", "available": module_available("paddleocr"), "role": "preferred heavy table recognition backend"},
             {"name": "img2table", "available": module_available("img2table"), "role": "lightweight table-to-xlsx baseline"},
+            {"name": "cv2_ximgproc", "available": cv2_ximgproc_available(), "role": "OpenCV contrib module required by img2table table detection"},
             {"name": "rapid_table", "available": module_available("rapid_table") or module_available("rapidtable"), "role": "table structure recognition fallback"},
-            {"name": "tesseract", "available": command_available("tesseract"), "role": "img2table OCR option"},
+            {
+                "name": "tesseract",
+                "available": command_available("tesseract"),
+                "role": "img2table OCR option",
+                "languages": available_tesseract_languages,
+                "selected_language_available": args.ocr_lang in available_tesseract_languages,
+            },
         ],
-        "note": "Plan/fake mode never installs models or runs recognition. Execute mode only uses already-installed optional dependencies.",
+        "note": "Plan/fake mode never installs models or runs recognition. Execute mode only uses already-installed optional dependencies; img2table also needs cv2.ximgproc from OpenCV contrib.",
     }
 
 
@@ -235,6 +276,8 @@ def run_img2table_export(args: argparse.Namespace, input_path: Path, output_dir:
     warnings: list[str] = []
     if not module_available("img2table"):
         return "failed", [], {}, ["img2table is not installed; install/configure it manually before execute mode."]
+    if not cv2_ximgproc_available():
+        return "failed", [], {}, ["img2table requires cv2.ximgproc; ensure OpenCV contrib is the cv2 module loaded by this Python environment."]
     if args.ocr == "tesseract" and not command_available("tesseract"):
         return "failed", [], {}, ["Tesseract executable is not available; choose --ocr none or configure Tesseract."]
     try:
@@ -355,17 +398,21 @@ def run() -> dict[str, object]:
     if args.mode == "plan":
         status = "planned"
     else:
+        handled_by_backend = False
         if args.mode == "fake":
             rows = [["A", "B"], ["fake", "table"]]
         elif args.backend == "img2table" and not any([args.csv, args.markdown, args.table_candidates]):
             status, artifacts, metrics, warnings = run_img2table_export(args, input_path, output_dir)
+            handled_by_backend = True
             rows = []
         elif args.backend == "paddle_table_v2" and not any([args.csv, args.markdown, args.table_candidates]):
             status, artifacts, metrics, warnings = run_paddle_table_v2_export(args, input_path, output_dir)
+            handled_by_backend = True
             rows = []
         elif args.backend == "rapidtable" and not any([args.csv, args.markdown, args.table_candidates]):
             status = "failed"
             warnings = ["RapidTable execute mode is reserved for a later adapter; use img2table or PaddleOCR first."]
+            handled_by_backend = True
             rows = []
         else:
             rows, warnings = rows_from_args(args)
@@ -405,7 +452,7 @@ def run() -> dict[str, object]:
             )
             metrics = {"row_count": len(rows), "column_count": max((len(row) for row in rows), default=0), "artifact_count": len(artifacts)}
             status = "ok"
-        else:
+        elif not handled_by_backend:
             status = "failed"
 
     payload = make_result(
