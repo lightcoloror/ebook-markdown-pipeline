@@ -37,10 +37,12 @@ The release profile writes `release-summary.json/md` and updates `benchmarks/run
 ## Agent Contract
 
 - `process_material` must keep `schema_version=process-material-v2`.
+- CLI, MCP, and HTTP conversion jobs must keep `schema_version=ebook-job-v1` and `artifact_schema_version=artifact-schema-v1`.
+- Material handoff bundles must keep `material-consumer-handoff-v1`, local artifact refs, and `network_transfer_allowed=false`.
 - `next_actions` and `recommended_followup` must remain machine executable with `tool`, `arguments`, `safe_default`, and `destructive=false`.
 - `enhance_job_artifact` should remain non-overwriting by default and should not require agents to guess Markdown output paths.
 - `/health`, `/capabilities`, and `get_agent_contract` must expose backend/provider capability status.
-- `scripts/check_service_readiness.py --json` should report `on-demand` or `ready`, not `blocked`, when HTTP is not required.
+- `scripts/check_service_readiness.py --json` should report `stopped-by-design` or `ready`, not `blocked`, when HTTP is not required; `http.auto_start` must remain false.
 - `build_quality_improvement_queue` should return non-destructive `next_actions`; concrete local paths should require `include_paths=true`.
 - Remote online model calls must require explicit `allow_remote=true`.
 

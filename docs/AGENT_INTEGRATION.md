@@ -17,7 +17,11 @@ The long-term technical direction is documented in [TECHNICAL_DIRECTION.md](TECH
 
 The stable agent calling contract is documented in [TOOL_CONTRACT.md](TOOL_CONTRACT.md). Agents should prefer `process_material`, poll long jobs with `get_job_status`, and read outputs through `read_artifact`.
 
-Service discovery, HTTP on-demand status, port configuration, and MCP/HTTP/CLI fallback rules are documented in [SERVICE_CONTRACT.md](SERVICE_CONTRACT.md). Dispatchers should read that document before treating a missing HTTP listener as a converter outage.
+CLI, MCP, and HTTP conversion jobs use `schema_version=ebook-job-v1` and `artifact_schema_version=artifact-schema-v1`. CLI conversions persist this envelope as `<report-dir>/job-result.json`; MCP and HTTP expose the same envelope through `start_conversion` and `get_job_status`.
+
+Service discovery, HTTP `stopped-by-design` status, port configuration, and MCP/HTTP/CLI fallback rules are documented in [SERVICE_CONTRACT.md](SERVICE_CONTRACT.md). Dispatchers should read that document before treating a missing HTTP listener as a converter outage.
+
+MinerU uses the operator-managed localhost service in [MINERU_API_SERVICE.md](MINERU_API_SERVICE.md). Agents must call `mineru_api.cmd status` and use the configured `--api-url`; they must never invoke MinerU's implicit temporary API path.
 
 The architecture diagrams and module boundaries are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -118,6 +122,8 @@ Freshly generated agent batch plans/results also include `contract_validation`; 
 If contract validation fails, generated or inspected batch results expose `inspect_contract_validation` in `next_actions` with the validation errors.
 
 Use the MCP/HTTP tool `build_agent_handoff_bundle` or the CLI wrapper `scripts/build_agent_handoff_bundle.py --batch-results <agent-batch-results.json> --output <dir>` to create a lightweight `agent-handoff-bundle.json/md` index for another session. The bundle includes contract validation, attention, selection, artifact summary, next actions, and review items without copying large outputs.
+
+Handoff bundles include `material-consumer-handoff-v1`, advertise `bookwiki` and `video_knowledge_pipeline` as supported consumers, and enforce `local_artifact_refs_only` with `network_transfer_allowed=false`. The durable five-fixture baseline also writes `handoff-bundle.json/md` with the same consumer contract.
 
 The bundle also exposes `handoff_status` and `recommended_next_action`, so a receiving agent can distinguish ready handoffs from contract failures, failed-job recovery, artifact-read failures, quality regressions, and ordinary review queues without re-deriving that state. When a matching top-level action exists, `recommended_next_action` keeps its executable `tool` / `arguments`, `command_args`, or `powershell_command` fields.
 
@@ -456,7 +462,7 @@ The MCP tool names and top-level JSON keys should be treated as stable:
 
 Future changes should add fields rather than rename or remove these keys.
 
-Tools that write files should return `schema_version` and `artifacts` when possible. Artifact objects follow `artifact-schema-v1`:
+Tools that write files should return `schema_version` and `artifacts` when possible. Conversion jobs follow `ebook-job-v1`; artifact objects follow `artifact-schema-v1`:
 
 - `type`: stable artifact type, such as `markdown`, `location_index_sqlite`, `pages_jsonl`, `order_report`, or `review_report`.
 - `path`: local filesystem path.

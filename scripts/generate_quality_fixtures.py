@@ -22,6 +22,7 @@ def main() -> int:
     root.mkdir(parents=True, exist_ok=True)
     write_text_fixture(root / "text" / "sample.txt")
     write_epub_fixture(root / "ebooks" / "sample.epub")
+    write_office_fixture(root / "office" / "sample.docx")
     write_pdf_fixtures(root / "pdf")
     write_image_fixtures(root / "images")
     write_manifests(root)
@@ -95,6 +96,63 @@ def write_epub_fixture(path: Path) -> None:
         archive.writestr("OPS/chapter1.xhtml", xhtml_chapter("Chapter One", "A short public-domain-style chapter."))
         archive.writestr("OPS/chapter2.xhtml", xhtml_chapter("Chapter Two", "A second chapter for heading regression."))
 
+
+def write_office_fixture(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "[Content_Types].xml",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+</Types>
+""",
+        )
+        archive.writestr(
+            "_rels/.rels",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>
+""",
+        )
+        archive.writestr(
+            "word/_rels/document.xml.rels",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>
+""",
+        )
+        archive.writestr(
+            "word/styles.xml",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
+  <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/></w:style>
+  <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:outlineLvl w:val="0"/></w:style>
+  <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:outlineLvl w:val="1"/></w:style>
+</w:styles>
+""",
+        )
+        archive.writestr(
+            "word/document.xml",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>Office Fixture</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Overview</w:t></w:r></w:p>
+    <w:p><w:r><w:t>This synthetic DOCX validates the local Office-to-Markdown path without private documents.</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Checklist</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Markdown, manifest, and quality evidence must all be present.</w:t></w:r></w:p>
+    <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>
+  </w:body>
+</w:document>
+""",
+        )
 
 def xhtml_chapter(title: str, body: str) -> str:
     return f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -372,6 +430,7 @@ def write_manifests(root: Path) -> None:
     samples = [
         {"id": "txt-01", "path": rel(root / "text" / "sample.txt"), "category": "text_doc"},
         {"id": "epub-01", "path": rel(root / "ebooks" / "sample.epub"), "category": "ebook_epub"},
+        {"id": "office-docx-01", "path": rel(root / "office" / "sample.docx"), "category": "office_docx"},
         {"id": "azw3-substitute-01", "path": rel(root / "ebooks" / "sample.epub"), "category": "ebook_azw3_substitute"},
         {"id": "pdf-text-01", "path": rel(root / "pdf" / "text-layer.pdf"), "category": "pdf_text_layer"},
         {"id": "pdf-bookmarked-01", "path": rel(root / "pdf" / "bookmarked.pdf"), "category": "pdf_bookmarked_outline"},
@@ -391,7 +450,7 @@ def write_manifests(root: Path) -> None:
         {"id": "ocr-lowres-01", "path": rel(root / "images" / "ocr" / "lowres.png"), "category": "image_ocr_lowres"},
         {"id": "ocr-infographic-01", "path": rel(root / "images" / "ocr" / "infographic-text.png"), "category": "image_ocr_infographic"},
     ]
-    minimal_ids = {"txt-01", "epub-01", "azw3-substitute-01", "pdf-text-01", "pdf-bookmarked-01", "pdf-two-column-01", "pdf-ppt-export-01"}
+    minimal_ids = {"txt-01", "epub-01", "office-docx-01", "azw3-substitute-01", "pdf-text-01", "pdf-bookmarked-01", "pdf-two-column-01", "pdf-ppt-export-01"}
     write_manifest(root / "quality-minimal.json", [item for item in samples if item["id"] in minimal_ids], "Minimal public quality-gate fixtures.")
     write_manifest(root / "quality-full.json", samples, "Full public quality-gate fixtures, including OCR/image-heavy samples.")
 

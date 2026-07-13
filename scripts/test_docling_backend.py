@@ -11,6 +11,7 @@ from ebook_markdown_pipeline import default_options, normalize_command_options
 from ebook_markdown_pipeline.batch_convert_books import (
     collect_sources,
     detect_source_kind,
+    docling_fallback_dependency,
     find_missing_dependencies,
     pipeline_name,
 )
@@ -44,8 +45,18 @@ def main() -> int:
         if docling_available():
             if missing:
                 raise AssertionError(f"Docling is importable, but dependencies are reported missing: {missing}")
-        elif not any("docling" in item.lower() for item in missing):
-            raise AssertionError(f"Missing Docling should be reported clearly: {missing}")
+        else:
+            fallback = docling_fallback_dependency(docx, options)
+            if fallback != "pandoc":
+                raise AssertionError(f"Auto mode should select Pandoc fallback for DOCX, got: {fallback}")
+            if any("docling" in item.lower() for item in missing):
+                raise AssertionError(f"Auto fallback should not block on missing Docling: {missing}")
+
+            forced_options = normalize_command_options(default_options(input=tmpdir, output=tmpdir / "forced-out"))
+            forced_options.document_pipeline_mode = "docling"
+            forced_missing = find_missing_dependencies([docx], forced_options)
+            if not any("docling" in item.lower() for item in forced_missing):
+                raise AssertionError(f"Forced Docling mode should report missing Docling clearly: {forced_missing}")
 
     print("Docling backend routing test passed.")
     return 0

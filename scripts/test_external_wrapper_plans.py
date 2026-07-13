@@ -47,6 +47,23 @@ def assert_result(payload: dict, backend: str, mode: str, min_artifacts: int = 0
         raise AssertionError(f"Expected persisted result for {backend}: {result_path}")
 
 
+def assert_dots_command_contract(payload: dict, dots_root: Path) -> None:
+    command = [str(item) for item in payload.get("command") or []]
+    expected_output = str(Path(payload["output_dir"]) / "tool-output")
+    if len(command) < 5:
+        raise AssertionError(f"Expected dots.mocr command: {payload}")
+    if command[1] != str(dots_root / "dots_mocr" / "parser.py"):
+        raise AssertionError(f"Expected upstream dots_mocr parser path: {command}")
+    if command[2] != str(Path(payload["input"])):
+        raise AssertionError(f"Expected positional input for dots.mocr: {command}")
+    if command[3:5] != ["--output", expected_output]:
+        raise AssertionError(f"Expected dots.mocr --output contract: {command}")
+    if "--input_path" in command or "--output_dir" in command:
+        raise AssertionError(f"Deprecated dots.mocr arguments leaked into command: {command}")
+    protocol_index = command.index("--protocol") if "--protocol" in command else -1
+    if protocol_index < 0 or command[protocol_index + 1] != "http":
+        raise AssertionError(f"Expected protocol derived from server URL: {command}")
+
 
 def assert_health_integration() -> None:
     checks = dependency_health_report([], default_options(), fast=True)
@@ -130,8 +147,16 @@ def main() -> int:
         "fake",
         6,
     )
+    dots_root = root / "dots-source"
+    dots_plan = run_script(
+        "dots_mocr_worker.py",
+        root / "dots-plan",
+        ["--dots-root", str(dots_root), "--mode", "plan"],
+    )
+    assert_result(dots_plan, "dots_mocr", "plan")
+    assert_dots_command_contract(dots_plan, dots_root)
     assert_result(
-        run_script("dots_mocr_worker.py", root / "dots-fake", ["--mode", "fake"]),
+        run_script("dots_mocr_worker.py", root / "dots-fake", ["--dots-root", str(dots_root), "--mode", "fake"]),
         "dots_mocr",
         "fake",
         5,

@@ -1,0 +1,21 @@
+{
+  "schema_version": "ebook-http-discovery-proposal-v1",
+  "status": "proposal_only",
+  "apply": false,
+  "queue_id": "RFQ-F355DEE60F08",
+  "current_contract": {
+    "http_url_source": "config/http.env",
+    "configured_url": "http://127.0.0.1:9241",
+    "legacy_port_8765_state": "stopped",
+    "legacy_port_8765_authoritative": false,
+    "auto_start": false
+  },
+  "proposed_discovery_fields": {
+    "cli_status": "health-check-v2.minimal_ok",
+    "http_runtime_status": "listener plus PID evidence",
+    "optional_backend_status": "health-check-v2 capability matrix",
+    "minimal_output_status": "offline-stage-quality-v1 route"
+  },
+  "registry_patch_required": false,
+  "reason": "The registry already declares stopped-by-design, auto_start=false, and config/http.env. Keep runtime composition project-local until a shared registry change is separately approved."
+}

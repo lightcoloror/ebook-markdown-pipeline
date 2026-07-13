@@ -1,0 +1,70 @@
+{
+  "schema_version": "ebook-http-status-fixtures-v1",
+  "policy": {
+    "synthetic_local_only": true,
+    "service_start_allowed": false,
+    "registry_write_allowed": false
+  },
+  "cases": [
+    {
+      "id": "legacy-8765-stopped",
+      "observation": {
+        "configured_url": "http://127.0.0.1:9241",
+        "listener": {"checked": true, "listening": false},
+        "pid": {"file_exists": false},
+        "legacy_8765": {"state": "stopped", "evidence_ref": "infra-health-baseline-run2-2026-07-11.json"},
+        "cli_health": {"schema_version": "health-check-v2", "status": "degraded_optional", "minimal_ok": true},
+        "optional_backends": {"docling_documents": "missing"},
+        "quality_route": {"route": {"status": "minimal-deliverable", "deliverable": true}, "artifact": {"exists": true}, "quality": {"passed": true}, "manual_review_required": false}
+      }
+    },
+    {
+      "id": "healthy-mock",
+      "observation": {
+        "configured_url": "http://127.0.0.1:9241",
+        "listener": {"checked": true, "listening": true},
+        "pid": {"file_exists": true, "process_alive": true, "command_matches": true, "pid": 4242},
+        "legacy_8765": {"state": "stopped"},
+        "cli_health": {"schema_version": "health-check-v2", "status": "degraded_optional", "minimal_ok": true},
+        "optional_backends": {},
+        "quality_route": {"route": {"status": "minimal-deliverable", "deliverable": true}, "artifact": {"exists": true}, "quality": {"passed": true}, "manual_review_required": false}
+      }
+    },
+    {
+      "id": "stale-pid",
+      "observation": {
+        "configured_url": "http://127.0.0.1:9241",
+        "listener": {"checked": true, "listening": false},
+        "pid": {"file_exists": true, "process_alive": false, "command_matches": false, "pid": 999999},
+        "legacy_8765": {"state": "stopped"},
+        "cli_health": {"schema_version": "health-check-v2", "status": "degraded_optional", "minimal_ok": true},
+        "optional_backends": {},
+        "quality_route": {"route": {"status": "degraded", "deliverable": true}, "artifact": {"exists": true}, "quality": {"passed": false}, "manual_review_required": true}
+      }
+    },
+    {
+      "id": "cli-ready-http-stopped",
+      "observation": {
+        "configured_url": "http://127.0.0.1:9241",
+        "listener": {"checked": true, "listening": false},
+        "pid": {"file_exists": false},
+        "legacy_8765": {"state": "stopped"},
+        "cli_health": {"schema_version": "health-check-v2", "status": "degraded_optional", "minimal_ok": true},
+        "optional_backends": {},
+        "quality_route": {"route": {"status": "minimal-deliverable", "deliverable": true}, "artifact": {"exists": true}, "quality": {"passed": true}, "manual_review_required": false}
+      }
+    },
+    {
+      "id": "backend-missing-degraded-output",
+      "observation": {
+        "configured_url": "http://127.0.0.1:9241",
+        "listener": {"checked": true, "listening": false},
+        "pid": {"file_exists": false},
+        "legacy_8765": {"state": "stopped"},
+        "cli_health": {"schema_version": "health-check-v2", "status": "degraded_optional", "minimal_ok": true},
+        "optional_backends": {"docling_documents": "missing", "pdf_table_extraction": "missing", "image_layout_enhancement": "degraded"},
+        "quality_route": {"route": {"status": "degraded", "deliverable": true}, "artifact": {"exists": true}, "quality": {"passed": false}, "manual_review_required": true, "fallback_proposal": {"available": false, "automatic": false}}
+      }
+    }
+  ]
+}

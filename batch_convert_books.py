@@ -19,6 +19,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import asdict, dataclass
@@ -28,6 +29,11 @@ from typing import Iterable
 
 try:
     from ebook_markdown_pipeline.local_env import load_project_env
+    from ebook_markdown_pipeline.artifact_schema import artifact, job_payload
+    from ebook_markdown_pipeline.mineru_api_config import (
+        default_mineru_api_url,
+        default_mineru_client_temp_root,
+    )
     from ebook_markdown_pipeline.docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available, docling_health
     from ebook_markdown_pipeline.markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ebook_markdown_pipeline.ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
@@ -40,6 +46,8 @@ try:
     from ebook_markdown_pipeline.tika_backend import tika_health
 except ModuleNotFoundError:  # Allows running this file directly by absolute path.
     from local_env import load_project_env
+    from artifact_schema import artifact, job_payload
+    from mineru_api_config import default_mineru_api_url, default_mineru_client_temp_root
     from docling_backend import DOCLING_FORMATS, convert_with_docling, docling_available, docling_health
     from markitdown_backend import MARKITDOWN_FORMATS, convert_with_markitdown, markitdown_available
     from ocrmypdf_preprocessor import OCRmyPDFPreprocessError, ocrmypdf_available, preprocess_pdf_with_ocrmypdf
@@ -73,6 +81,7 @@ OUTPUT_FORMATS = {
 }
 
 PDF_PIPELINE_MODES = ("auto", "marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown", "ocrmypdf", "pdfcraft", "olmocr")
+MINIMAL_REQUIRED_CAPABILITIES = ("structured_ebooks", "pdf_fast_text")
 SOURCE_SITE_DOMAIN_LABELS = (("z-library", "sk"), ("1lib", "sk"), ("z-lib", "sk"))
 SOURCE_SITE_DOMAIN_PATTERN = "|".join(r"\.".join(re.escape(part) for part in labels) for labels in SOURCE_SITE_DOMAIN_LABELS)
 TRUNCATED_SOURCE_SITE_TAG_RE = re.compile(
@@ -197,6 +206,10 @@ class PdfToolFailedError(RuntimeError):
         self.diagnostic = diagnostic
 
 
+class MinerUAPIUnavailableError(RuntimeError):
+    pass
+
+
 class DoclingTimeoutError(RuntimeError):
     def __init__(self, message: str, diagnostic: dict[str, object]):
         super().__init__(message)
@@ -209,15 +222,15 @@ class MarkItDownTimeoutError(RuntimeError):
         self.diagnostic = diagnostic
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Batch convert EPUB/FB2/TXT/ODT/AZW/AZW3/MOBI/RTF/PDF with automatic format detection. "
             "Stable split pipeline: pandoc for structured ebooks/docs, calibre + pandoc for Kindle/RTF, MinerU for PDFs."
         )
     )
-    parser.add_argument("input", type=Path, help="Input file or directory")
-    parser.add_argument("output", type=Path, help="Output directory")
+    parser.add_argument("input", nargs="?", type=Path, help="Input file or directory")
+    parser.add_argument("output", nargs="?", type=Path, help="Output directory")
     parser.add_argument(
         "--recursive",
         action="store_true",
@@ -271,6 +284,14 @@ def parse_args() -> argparse.Namespace:
         "--mineru-command",
         default="mineru",
         help="MinerU converter command, default: mineru",
+    )
+    parser.add_argument(
+        "--mineru-api-url",
+        default=default_mineru_api_url(),
+        help=(
+            "Shared MinerU FastAPI URL. Defaults to EBOOK_CONVERTER_MINERU_API_URL "
+            "or config/mineru-api.env. The pipeline never starts MinerU's temporary API."
+        ),
     )
     parser.add_argument(
         "--mineru-extra-args",
@@ -363,6 +384,12 @@ def parse_args() -> argparse.Namespace:
         "--health-check",
         action="store_true",
         help="Only print dependency and environment health information, then exit",
+    )
+    parser.add_argument(
+        "--health-check-format",
+        choices=("json", "text"),
+        default="json",
+        help="Health output format, default: json",
     )
     parser.add_argument(
         "--pdf-tool-idle-timeout",
@@ -508,7 +535,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable automatic fallback to Pandoc/lightweight text output when Docling fails or times out.",
     )
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    if not args.health_check and (args.input is None or args.output is None):
+        parser.error("input and output are required unless --health-check is used")
+    return args
 
 
 def default_options(**overrides) -> SimpleNamespace:
@@ -521,6 +551,7 @@ def default_options(**overrides) -> SimpleNamespace:
         "marker_command": suggested_command_value("marker_single"),
         "marker_extra_args": [],
         "mineru_command": suggested_command_value("mineru"),
+        "mineru_api_url": default_mineru_api_url(),
         "mineru_extra_args": [],
         "mineru_method": "auto",
         "mineru_backend": "pipeline",
@@ -603,6 +634,15 @@ def run_batch(args: argparse.Namespace) -> int:
     if getattr(args, "no_calibre_fallback", False):
         args.calibre_fallback_to_epub = False
     normalize_command_options(args)
+    if getattr(args, "health_check", False):
+        checks = dependency_health_report([], args)
+        payload = build_health_status(checks)
+        if getattr(args, "health_check_format", "json") == "text":
+            safe_print(format_health_report(checks))
+        else:
+            safe_print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if payload["minimal_ok"] else 2
+
     sources = collect_sources(
         args.input,
         recursive=args.recursive,
@@ -616,10 +656,6 @@ def run_batch(args: argparse.Namespace) -> int:
     if getattr(args, "resume", False) and getattr(args, "manifest", None) is None:
         args.manifest = args.output / "manifest.json"
 
-    if getattr(args, "health_check", False):
-        checks = dependency_health_report(sources, args)
-        safe_print(format_health_report(checks))
-        return 0 if all(item["status"] != "missing" for item in checks) else 2
 
     missing = find_missing_dependencies(sources, args)
     if missing:
@@ -641,6 +677,8 @@ def run_batch(args: argparse.Namespace) -> int:
             encoding="utf-8",
         )
     write_batch_summary(results, args)
+    job_result_path = write_cli_job_result(results, args)
+    safe_print(f"Job result: {job_result_path}")
 
     failures = [item for item in results if item.status == "failed"]
     return 0 if not failures else 3
@@ -1450,7 +1488,7 @@ def external_candidate_wrapper_health() -> list[dict[str, str]]:
     if dots_wrapper.exists():
         if dots_server:
             dots_status = "needs_server"
-        elif dots_root and (dots_root / "dots_ocr" / "parser.py").exists():
+        elif dots_root and (dots_root / "dots_mocr" / "parser.py").exists():
             dots_status = "needs_server"
         elif dots_root:
             dots_status = "needs_env"
@@ -1487,6 +1525,44 @@ def external_candidate_wrapper_health() -> list[dict[str, str]]:
     ]
 
 
+def build_health_status(
+    checks: list[dict[str, str]],
+    *,
+    capabilities: list[dict[str, str]] | None = None,
+) -> dict[str, object]:
+    resolved_capabilities = capabilities if capabilities is not None else environment_capability_summary(checks)
+    status_by_name = {str(item.get("name") or ""): str(item.get("status") or "missing") for item in resolved_capabilities}
+    missing_minimal = [
+        name for name in MINIMAL_REQUIRED_CAPABILITIES if status_by_name.get(name, "missing") == "missing"
+    ]
+    ready = [str(item.get("name") or "") for item in resolved_capabilities if item.get("status") == "ok"]
+    degraded = [str(item.get("name") or "") for item in resolved_capabilities if item.get("status") == "degraded"]
+    missing = [str(item.get("name") or "") for item in resolved_capabilities if item.get("status") == "missing"]
+    minimal_ok = not missing_minimal
+    if not minimal_ok:
+        overall_status = "core_missing"
+    elif degraded or missing:
+        overall_status = "degraded_optional"
+    else:
+        overall_status = "core_ok"
+    capability_status = {"ready": ready, "degraded": degraded, "missing": missing}
+    return {
+        "schema_version": "health-check-v2",
+        "status": overall_status,
+        "checks": checks,
+        "capabilities": resolved_capabilities,
+        "backend_status": capability_status,
+        "capability_status": capability_status,
+        "ok": minimal_ok,
+        "minimal_ok": minimal_ok,
+        "minimal_required_capabilities": list(MINIMAL_REQUIRED_CAPABILITIES),
+        "missing_minimal_capabilities": missing_minimal,
+        "optional_missing_is_ok": True,
+        "ready_capabilities": ready,
+        "degraded_capabilities": degraded,
+        "missing_capabilities": missing,
+    }
+
 def format_health_report(checks: list[dict[str, str]]) -> str:
     lines = ["Dependency health check:"]
     for item in checks:
@@ -1505,10 +1581,9 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
 
     def command_ok(candidates: tuple[str, ...]) -> bool:
         return any(
-            any(candidate in name for name in names)
-            and by_name[name].get("status") == "ok"
-            for candidate in candidates
+            by_name[name].get("status") == "ok"
             for name in names
+            if any(candidate in name for candidate in candidates)
         )
 
     def check_ok(name: str) -> bool:
@@ -1561,15 +1636,21 @@ def environment_capability_summary(checks: list[dict[str, str]]) -> list[dict[st
 
     capabilities: list[dict[str, str]] = []
 
-    structured_ok = pandoc_ok and calibre_ok
+    structured_status = "ok" if pandoc_ok and calibre_ok else "degraded" if pandoc_ok else "missing"
     capabilities.append(
         capability_item(
             "structured_ebooks",
-            "ok" if structured_ok else "missing",
+            structured_status,
             "EPUB/TXT/RTF/ODT via Pandoc; AZW/AZW3/MOBI via Calibre+Pandoc"
-            if structured_ok
-            else "Pandoc and Calibre are both needed for broad ebook coverage.",
-            "Use normal conversion." if structured_ok else "Install/fix Pandoc and Calibre before large ebook batches.",
+            if structured_status == "ok"
+            else "Pandoc covers EPUB/TXT/ODT; Calibre is missing, so AZW/AZW3/MOBI and broad fallback coverage are degraded."
+            if pandoc_ok
+            else "Pandoc is missing, so the core structured ebook path is unavailable.",
+            "Use normal conversion."
+            if structured_status == "ok"
+            else "Use Pandoc-supported formats and install Calibre only when broader ebook coverage is needed."
+            if pandoc_ok
+            else "Install or repair Pandoc before structured ebook conversion.",
         )
     )
 
@@ -3141,6 +3222,59 @@ def run_mineru_pdf_convert(
     run_single_mineru_pdf_convert(source, output_path, args, progress_callback, progress_index, progress_total)
 
 
+def resolve_mineru_api_url(args: argparse.Namespace) -> str:
+    value = str(getattr(args, "mineru_api_url", "") or default_mineru_api_url()).strip().rstrip("/")
+    parsed = urllib.parse.urlparse(value)
+    if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or parsed.port is None:
+        raise ValueError(
+            "MinerU API URL must be an explicit localhost URL such as http://127.0.0.1:8000; "
+            f"received {value!r}."
+        )
+    return value
+
+
+def mineru_client_temp_root(args: argparse.Namespace) -> Path:
+    configured = getattr(args, "mineru_client_temp_root", None) or os.environ.get(
+        "EBOOK_CONVERTER_MINERU_CLIENT_TEMP_ROOT"
+    )
+    output_root = getattr(args, "output", None)
+    if configured:
+        root = Path(configured).resolve()
+    elif output_root:
+        root = Path(output_root).resolve() / ".reports" / ".mineru-client-temp"
+    else:
+        root = default_mineru_client_temp_root()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def validate_mineru_extra_args(extra_args: Iterable[str]) -> None:
+    if any(str(item) == "--api-url" or str(item).startswith("--api-url=") for item in extra_args):
+        raise ValueError("Use --mineru-api-url instead of passing --api-url through --mineru-extra-args.")
+
+
+def mineru_api_health(api_url: str, timeout_seconds: float = 2.0) -> dict[str, object]:
+    request = urllib.request.Request(f"{api_url}/health", headers={"Accept": "application/json"})
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(request, timeout=timeout_seconds) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+            healthy = response.status == 200 and payload.get("status") == "healthy"
+            return {"healthy": healthy, "status_code": response.status, "payload": payload}
+    except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        return {"healthy": False, "error_type": type(exc).__name__, "error": str(exc)}
+
+
+def require_mineru_api(api_url: str) -> None:
+    health = mineru_api_health(api_url)
+    if health.get("healthy"):
+        return
+    raise MinerUAPIUnavailableError(
+        f"Shared MinerU API is unavailable at {api_url}: {health}. "
+        "Start it explicitly with mineru_api.cmd start. The pipeline will not start MinerU's temporary API."
+    )
+
+
 def run_single_mineru_pdf_convert(
     source: Path,
     output_path: Path,
@@ -3149,7 +3283,12 @@ def run_single_mineru_pdf_convert(
     progress_index: int | None = None,
     progress_total: int | None = None,
 ) -> None:
-    tmpdir_path = Path(tempfile.mkdtemp(prefix="mineru-output-"))
+    api_url = resolve_mineru_api_url(args)
+    validate_mineru_extra_args(getattr(args, "mineru_extra_args", []))
+    if not getattr(args, "dry_run", False):
+        require_mineru_api(api_url)
+    temp_root = mineru_client_temp_root(args)
+    tmpdir_path = Path(tempfile.mkdtemp(prefix="mineru-output-", dir=temp_root))
     success = False
     try:
         cmd = [
@@ -3158,6 +3297,8 @@ def run_single_mineru_pdf_convert(
             str(source),
             "-o",
             str(tmpdir_path),
+            "--api-url",
+            api_url,
             "-m",
             getattr(args, "mineru_method", "auto"),
             "-b",
@@ -3231,7 +3372,7 @@ def run_segmented_mineru_pdf_convert(
     progress_index: int | None = None,
     progress_total: int | None = None,
 ) -> None:
-    tmpdir_path = Path(tempfile.mkdtemp(prefix="mineru-segments-"))
+    tmpdir_path = Path(tempfile.mkdtemp(prefix="mineru-segments-", dir=mineru_client_temp_root(args)))
     merged_md = tmpdir_path / "merged.md"
     chunk_paths: list[Path] = []
     success = False
@@ -3678,12 +3819,18 @@ def build_embedded_image_ocr_map(
             continue
         text = str(result.get("text") or "").strip() if isinstance(result, dict) else ""
         if text:
-            results[src] = {
+            blocks = list(result.get("blocks") or []) if isinstance(result, dict) else []
+            confidence_values = ocr_block_confidences(blocks)
+            entry = {
                 "status": "ok",
                 "provider": str(result.get("provider") or "rapidocr") if isinstance(result, dict) else "rapidocr",
                 "text": text,
-                "block_count": len(result.get("blocks") or []) if isinstance(result, dict) else 0,
+                "block_count": len(blocks),
             }
+            if confidence_values:
+                entry["average_confidence"] = round(sum(confidence_values) / len(confidence_values), 4)
+                entry["low_confidence_blocks"] = sum(1 for value in confidence_values if value < 0.65)
+            results[src] = entry
     return results
 
 
@@ -4851,6 +4998,86 @@ def pdf_tool_log_path(args: argparse.Namespace, source: Path, output_path: Path,
     return report_dir / "pdf-tool-logs" / f"{timestamp}-{tool}-{safe_stem}-{digest}.log"
 
 
+def conversion_report_root(args: argparse.Namespace) -> Path:
+    summary = getattr(args, "summary", None)
+    if summary:
+        return Path(summary).parent
+    report_dir = getattr(args, "report_dir", None)
+    if report_dir:
+        return Path(report_dir)
+    return Path(args.output) / ".reports"
+
+
+def conversion_artifact_refs(results: list[ConversionResult], args: argparse.Namespace) -> list[dict[str, object]]:
+    artifacts: list[dict[str, object]] = []
+    for result in results:
+        if result.output and Path(result.output).is_file():
+            output_path = Path(result.output)
+            media_type = "text/markdown" if output_path.suffix.lower() in {".md", ".markdown"} else "text/plain"
+            artifacts.append(artifact("markdown" if media_type == "text/markdown" else "text", output_path, media_type=media_type))
+        if result.report and Path(result.report).is_file():
+            artifacts.append(artifact("conversion_report", result.report, media_type="application/json"))
+    report_root = conversion_report_root(args)
+    for name, artifact_type, media_type in (
+        ("summary.md", "summary_report", "text/markdown"),
+        ("summary.json", "summary_json", "application/json"),
+        ("review-checklist.md", "review_report", "text/markdown"),
+        ("review-checklist.json", "review_json", "application/json"),
+        ("review-decisions.md", "review_decisions", "text/markdown"),
+        ("review-decisions.json", "review_decisions_json", "application/json"),
+    ):
+        path = report_root / name
+        if path.is_file():
+            artifacts.append(artifact(artifact_type, path, media_type=media_type))
+    manifest = getattr(args, "manifest", None)
+    if manifest and Path(manifest).is_file():
+        artifacts.append(artifact("json", manifest, label="Conversion manifest", media_type="application/json"))
+    return artifacts
+
+
+def write_cli_job_result(results: list[ConversionResult], args: argparse.Namespace) -> Path:
+    failures = [item for item in results if item.status == "failed"]
+    warnings = [item.message for item in results if item.status == "skipped" and item.message]
+    errors = [f"{item.source}: {item.message}" for item in failures]
+    report_root = conversion_report_root(args)
+    report_root.mkdir(parents=True, exist_ok=True)
+    path = report_root / "job-result.json"
+    started_at = next((item.started_at for item in results if item.started_at), timestamp_now())
+    finished_at = next((item.finished_at for item in reversed(results) if item.finished_at), timestamp_now())
+    quality_counts: dict[str, int] = {}
+    for item in results:
+        if not item.report or not Path(item.report).is_file():
+            continue
+        try:
+            report = json.loads(Path(item.report).read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        level = str((report.get("quality") or {}).get("level") or "unknown")
+        quality_counts[level] = quality_counts.get(level, 0) + 1
+    payload = job_payload(
+        job_id=f"cli-{int(time.time())}",
+        kind="conversion",
+        status="failed" if failures else "done",
+        started_at=started_at,
+        finished_at=finished_at,
+        input_path=args.input,
+        output_path=args.output,
+        total=len(results),
+        completed=len(results),
+        results=[asdict(item) for item in results],
+        artifacts=conversion_artifact_refs(results, args),
+        warnings=warnings,
+        errors=errors,
+        next_actions=[
+            {"action": "read_artifact", "arguments": {"path": item["path"], "artifact_type": item["type"]}}
+            for item in conversion_artifact_refs(results, args)
+            if item.get("type") in {"markdown", "summary_report", "review_report"}
+        ],
+        quality_summary={"status_counts": quality_counts, "review_count": quality_counts.get("review", 0) + quality_counts.get("poor", 0)},
+    )
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+    return path
+
 def write_conversion_report(result: ConversionResult, args: argparse.Namespace, output_path: Path) -> None:
     if getattr(args, "no_reports", False):
         return
@@ -4916,6 +5143,12 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
     calibre_fallback_diagnostics = getattr(args, "_calibre_fallback_diagnostics", [])
     if calibre_fallback_diagnostics:
         payload["calibre_fallback_diagnostics"] = calibre_fallback_diagnostics
+    payload["quality_risks"] = deterministic_quality_risks(
+        payload.get("quality") or {},
+        pdf_preflight=payload.get("pdf_preflight") or {},
+        pdf_layout_diagnostics=payload.get("pdf_layout_diagnostics") or {},
+        ocr_confidences=embedded_ocr_confidences(payload.get("embedded_image_ocr") or {}),
+    )
     report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     result.report = str(report_path)
 
@@ -5539,6 +5772,133 @@ def analyze_markdown_quality(path: Path) -> MarkdownQuality | None:
     )
 
 
+def ocr_block_confidences(blocks: Iterable[dict[str, object]]) -> list[float]:
+    values: list[float] = []
+    for block in blocks:
+        raw = block.get("confidence", block.get("score"))
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if value > 1.0 and value <= 100.0:
+            value /= 100.0
+        if 0.0 <= value <= 1.0:
+            values.append(value)
+    return values
+
+
+def embedded_ocr_confidences(report: dict[str, object]) -> list[float]:
+    ocr = report.get("ocr") if isinstance(report, dict) else None
+    if not isinstance(ocr, dict):
+        return []
+    values: list[float] = []
+    for item in ocr.values():
+        if not isinstance(item, dict):
+            continue
+        try:
+            value = float(item.get("average_confidence"))
+        except (TypeError, ValueError):
+            continue
+        if 0.0 <= value <= 1.0:
+            values.append(value)
+    return values
+
+
+def deterministic_quality_risks(
+    quality: MarkdownQuality | dict[str, object] | None,
+    *,
+    pdf_preflight: PdfPreflight | dict[str, object] | None = None,
+    pdf_layout_diagnostics: dict[str, object] | None = None,
+    ocr_confidences: Iterable[float] | None = None,
+) -> dict[str, object]:
+    quality_payload = asdict(quality) if isinstance(quality, MarkdownQuality) else dict(quality or {})
+    preflight_payload = asdict(pdf_preflight) if isinstance(pdf_preflight, PdfPreflight) else dict(pdf_preflight or {})
+    layout_payload = dict(pdf_layout_diagnostics or {})
+    layout_summary = layout_payload.get("summary") if isinstance(layout_payload.get("summary"), dict) else {}
+    risks: list[dict[str, object]] = []
+
+    characters = int(quality_payload.get("characters") or 0)
+    nonempty_lines = int(quality_payload.get("nonempty_lines") or 0)
+    headings = int(quality_payload.get("headings") or 0)
+    if characters == 0 or nonempty_lines == 0:
+        risks.append(
+            {
+                "code": "empty_document",
+                "severity": "error",
+                "evidence": {"characters": characters, "nonempty_lines": nonempty_lines},
+                "action": "treat conversion as failed and inspect backend output",
+            }
+        )
+    elif characters >= 500 and headings == 0:
+        risks.append(
+            {
+                "code": "heading_hierarchy_missing",
+                "severity": "warning",
+                "evidence": {"characters": characters, "headings": headings},
+                "action": "compare source outline and rerun structure recovery",
+            }
+        )
+
+    page_number_lines = int(quality_payload.get("page_number_lines") or 0)
+    repeated_noise_lines = int(quality_payload.get("repeated_noise_lines") or 0)
+    page_noise_ratio = round(page_number_lines / max(nonempty_lines, 1), 4)
+    if page_noise_ratio > 0.08 or repeated_noise_lines >= 4:
+        risks.append(
+            {
+                "code": "page_number_noise",
+                "severity": "warning",
+                "evidence": {
+                    "page_number_lines": page_number_lines,
+                    "nonempty_lines": nonempty_lines,
+                    "ratio": page_noise_ratio,
+                    "repeated_noise_lines": repeated_noise_lines,
+                },
+                "action": "remove repeated page-edge noise before accepting Markdown",
+            }
+        )
+
+    confidence_values = [float(value) for value in (ocr_confidences or []) if 0.0 <= float(value) <= 1.0]
+    if confidence_values:
+        average_confidence = round(sum(confidence_values) / len(confidence_values), 4)
+        low_count = sum(1 for value in confidence_values if value < 0.65)
+        if average_confidence < 0.70 or low_count / len(confidence_values) >= 0.30:
+            risks.append(
+                {
+                    "code": "ocr_low_confidence",
+                    "severity": "warning",
+                    "evidence": {
+                        "average_confidence": average_confidence,
+                        "sample_count": len(confidence_values),
+                        "low_confidence_count": low_count,
+                    },
+                    "action": "review low-confidence OCR regions or compare a local OCR provider",
+                }
+            )
+
+    table_like_pages = int(preflight_payload.get("table_like_pages") or 0)
+    table_pages = list(layout_summary.get("table_pages") or [])
+    table_count = int(layout_summary.get("table_count") or 0)
+    if table_like_pages > 0 or table_pages or table_count > 0:
+        risks.append(
+            {
+                "code": "table_structure_risk",
+                "severity": "warning",
+                "evidence": {
+                    "preflight_table_like_pages": table_like_pages,
+                    "diagnostic_table_pages": table_pages[:30],
+                    "diagnostic_table_count": table_count,
+                },
+                "action": "inspect table artifacts and compare row/column retention",
+            }
+        )
+
+    return {
+        "schema_version": "deterministic-quality-risks-v1",
+        "status": "review" if risks else "ok",
+        "risk_codes": [str(item["code"]) for item in risks],
+        "risks": risks,
+    }
+
 def safe_report_name(stem: str) -> str:
     safe = sanitize_output_stem(stem)
     return safe[:140].rstrip(" ._-") or "converted-book"
@@ -5978,6 +6338,9 @@ def calibre_environment() -> dict[str, str]:
 
 def mineru_environment(args: argparse.Namespace) -> dict[str, str]:
     env = os.environ.copy()
+    temp_root = mineru_client_temp_root(args)
+    for key in ("TEMP", "TMP", "TMPDIR"):
+        env[key] = str(temp_root)
     model_source = getattr(args, "mineru_model_source", "modelscope")
     if model_source:
         env["MINERU_MODEL_SOURCE"] = model_source

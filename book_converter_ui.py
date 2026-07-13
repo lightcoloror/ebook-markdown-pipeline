@@ -101,6 +101,50 @@ except ModuleNotFoundError:
     )
 
 
+def input_path_key(path: Path) -> str:
+    return os.path.normcase(os.path.abspath(os.path.normpath(str(path))))
+
+
+def merge_input_paths(existing: list[Path], incoming: list[Path]) -> list[Path]:
+    merged: list[Path] = []
+    seen: set[str] = set()
+    for path in [*existing, *incoming]:
+        key = input_path_key(path)
+        if key not in seen:
+            seen.add(key)
+            merged.append(path)
+    return merged
+
+
+def collect_drop_files(paths: list[Path], *, recursive: bool, include_hidden: bool) -> list[Path]:
+    accepted_extensions = SUPPORTED_FORMATS | IMAGE_EXTENSIONS
+    collected: list[Path] = []
+    for path in paths:
+        if path.is_file():
+            if path.suffix.lower() in accepted_extensions:
+                collected.append(path)
+            continue
+        if not path.is_dir():
+            continue
+        candidates = path.rglob("*") if recursive else path.glob("*")
+        for candidate in sorted(candidates):
+            if not candidate.is_file() or candidate.suffix.lower() not in accepted_extensions:
+                continue
+            if not include_hidden and any(part.startswith(".") for part in candidate.relative_to(path).parts):
+                continue
+            collected.append(candidate)
+    return merge_input_paths([], collected)
+
+
+def common_input_root(paths: list[Path]) -> Path:
+    if not paths:
+        return Path()
+    try:
+        return Path(os.path.commonpath([str(path.parent) for path in paths]))
+    except ValueError:
+        return paths[0].parent
+
+
 class BookConverterUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -171,8 +215,9 @@ class BookConverterUI:
         ttk.Entry(paths, textvariable=self.input_var).grid(row=0, column=1, sticky="ew", padx=8)
         ttk.Button(paths, text="文件 / Files", command=self.pick_input_files).grid(row=0, column=2, padx=4)
         ttk.Button(paths, text="文件夹 / Folder", command=self.pick_input_folder).grid(row=0, column=3, padx=4)
-        ttk.Label(paths, text="也可以直接把文件/文件夹拖到窗口里 / Drag files or folders here").grid(
-            row=2, column=1, sticky="w", padx=8, pady=(2, 0)
+        ttk.Button(paths, text="清空 / Clear", command=self.clear_input_queue).grid(row=0, column=4, padx=4)
+        ttk.Label(paths, text="可分多批拖入，只有点击清空才移除旧文件 / Drop in batches; Clear removes queued files").grid(
+            row=2, column=1, columnspan=4, sticky="w", padx=8, pady=(2, 0)
         )
 
         ttk.Label(paths, text="输出文件夹 / Output").grid(row=1, column=0, sticky="w", pady=4)
@@ -487,16 +532,20 @@ class BookConverterUI:
         ]
         paths = filedialog.askopenfilenames(title="选择输入文件 / Choose input file(s)", filetypes=filetypes)
         if paths:
-            self.selected_input_files = [Path(path) for path in paths]
-            self.input_var.set(self.format_selected_files(self.selected_input_files))
-            self.apply_default_output_from_sources(self.selected_input_files)
+            self.append_input_files([Path(path) for path in paths], source_label="选择 / Selected")
 
     def pick_input_folder(self) -> None:
         path = filedialog.askdirectory(title="选择输入文件夹 / Choose input folder")
         if path:
-            self.selected_input_files = []
-            self.input_var.set(path)
-            self.set_default_output(path)
+            files = collect_drop_files(
+                [Path(path)],
+                recursive=self.recursive_var.get(),
+                include_hidden=self.include_hidden_var.get(),
+            )
+            if files:
+                self.append_input_files(files, source_label="选择文件夹 / Selected folder")
+            else:
+                messagebox.showwarning("没有支持文件 / No supported files", "所选文件夹中没有支持的文件。/ No supported files were found in the folder.")
 
     def pick_output_folder(self) -> None:
         initial_dir = self.output_var.get().strip() or self.default_output_initial_dir()
@@ -522,44 +571,60 @@ class BookConverterUI:
             return
 
         accepted_extensions = SUPPORTED_FORMATS | IMAGE_EXTENSIONS
-        files = [path for path in paths if path.is_file() and path.suffix.lower() in accepted_extensions]
-        folders = [path for path in paths if path.is_dir()]
+        files = collect_drop_files(
+            paths,
+            recursive=self.recursive_var.get(),
+            include_hidden=self.include_hidden_var.get(),
+        )
         unsupported = [path for path in paths if path.is_file() and path.suffix.lower() not in accepted_extensions]
-
-        if files:
-            self.selected_input_files = files
-            self.input_var.set(self.format_selected_files(files))
-            self.apply_default_output_from_sources(files)
-            self.write_log(f"已拖入 {len(files)} 个支持文件。/ Dropped {len(files)} supported file(s).")
-        elif len(folders) == 1:
-            self.selected_input_files = []
-            self.input_var.set(str(folders[0]))
-            self.set_default_output(str(folders[0]))
-            self.write_log(f"已拖入文件夹 / Dropped folder: {folders[0]}")
-        elif folders:
-            self.selected_input_files = []
-            self.input_var.set(str(folders[0]))
-            self.set_default_output(str(folders[0]))
-            self.write_log(f"拖入多个文件夹，使用第一个。/ Dropped multiple folders; using first: {folders[0]}")
-        else:
-            messagebox.showwarning("不支持的拖放 / Unsupported drop", "没有拖入支持的电子书/PDF文件。/ No supported ebook/PDF files were dropped.")
+        if not files:
+            messagebox.showwarning("不支持的拖放 / Unsupported drop", "没有拖入支持的电子书/PDF/图片文件。/ No supported ebook/PDF/image files were dropped.")
             return
 
+        self.append_input_files(files, source_label="拖入 / Dropped")
         if unsupported:
             self.write_log(f"已忽略 {len(unsupported)} 个不支持文件。/ Ignored {len(unsupported)} unsupported file(s).")
-        image_files = [path for path in files if path.suffix.lower() in IMAGE_EXTENSIONS]
-        if image_files and len(image_files) == len(files):
-            image_root = Path(os.path.commonpath([str(path.parent) for path in image_files]))
+
+        image_files = [path for path in self.selected_input_files if path.suffix.lower() in IMAGE_EXTENSIONS]
+        if image_files and len(image_files) == len(self.selected_input_files):
+            image_root = common_input_root(image_files)
             self.scan_image_book_inputs(image_root, image_files)
         else:
             if image_files:
                 self.write_log(
-                    "拖入了图片和文档的混合批次；本次普通扫描会处理文档。"
-                    "如需识别图片，请单独拖入图片或在高级工具中使用截图成书。/ "
-                    "Mixed image/document drop detected; normal scan will process documents. "
-                    "Drop images separately or use Image Book in Advanced Tools."
+                    "累计队列中同时有图片和文档；普通扫描会处理文档。"
+                    "如需识别图片，请清空后只拖图片，或使用高级工具中的截图成书。/ "
+                    "The accumulated queue contains images and documents; normal scan processes documents. "
+                    "Clear and drop only images, or use Image Book in Advanced Tools."
                 )
             self.scan()
+
+    def append_input_files(self, paths: list[Path], *, source_label: str) -> None:
+        existing = list(self.selected_input_files)
+        if not existing:
+            input_text = self.input_var.get().strip()
+            if input_text:
+                existing = collect_drop_files(
+                    [Path(input_text)],
+                    recursive=self.recursive_var.get(),
+                    include_hidden=self.include_hidden_var.get(),
+                )
+        previous_count = len(existing)
+        self.selected_input_files = merge_input_paths(existing, paths)
+        added_count = len(self.selected_input_files) - previous_count
+        duplicate_count = max(len(paths) - added_count, 0)
+        self.input_var.set(self.format_selected_files(self.selected_input_files))
+        self.apply_default_output_from_sources(self.selected_input_files)
+        self.write_log(
+            f"{source_label}: 新增 {added_count}，重复 {duplicate_count}，当前共 {len(self.selected_input_files)} 个文件。/ "
+            f"Added {added_count}, skipped {duplicate_count} duplicate(s), {len(self.selected_input_files)} total."
+        )
+
+    def clear_input_queue(self) -> None:
+        count = len(self.selected_input_files)
+        self.selected_input_files = []
+        self.input_var.set("")
+        self.write_log(f"已清空 {count} 个输入文件。/ Cleared {count} queued input file(s).")
 
     def build_options(self):
         marker_extra = [item for item in self.marker_extra_var.get().split() if item]
@@ -608,7 +673,7 @@ class BookConverterUI:
             if not sources:
                 return Path(), []
 
-            common_root = Path(os.path.commonpath([str(path.parent) for path in sources]))
+            common_root = common_input_root(sources)
             return common_root, sorted(sources)
 
         input_text = self.input_var.get().strip()
@@ -632,7 +697,7 @@ class BookConverterUI:
             ]
             if not sources:
                 return Path(), []
-            common_root = Path(os.path.commonpath([str(path.parent) for path in sources]))
+            common_root = common_input_root(sources)
             return common_root, sorted(sources)
 
         input_text = self.input_var.get().strip()
@@ -657,7 +722,7 @@ class BookConverterUI:
         if len(sources) == 1:
             self.set_default_output(str(sources[0].parent))
             return
-        common_root = Path(os.path.commonpath([str(path.parent) for path in sources]))
+        common_root = common_input_root(sources)
         self.set_default_output(str(common_root))
 
     def set_default_output(self, path: str | Path) -> None:

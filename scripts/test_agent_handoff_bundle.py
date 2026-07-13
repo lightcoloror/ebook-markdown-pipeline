@@ -38,6 +38,13 @@ def main() -> int:
         bundle = bundle_mod.build_bundle(results_path)
         if bundle.get("schema_version") != "agent-handoff-bundle-v1" or bundle.get("handoff_ready") is not False:
             raise AssertionError(f"Expected review bundle to need attention: {bundle}")
+        consumer = bundle.get("consumer_contract") or {}
+        if consumer.get("schema_version") != "material-consumer-handoff-v1":
+            raise AssertionError(f"Expected material consumer contract: {bundle}")
+        if set(consumer.get("supported_consumers") or []) != {"bookwiki", "video_knowledge_pipeline"}:
+            raise AssertionError(f"Expected BookWiki/VKP consumer hints: {consumer}")
+        if consumer.get("network_transfer_allowed") is not False:
+            raise AssertionError(f"Handoff must remain local-only: {consumer}")
         if bundle.get("handoff_status") != "needs_review" or bundle.get("recommended_next_action", {}).get("action") != "inspect_review_items":
             raise AssertionError(f"Expected review bundle status and recommendation: {bundle}")
         if bundle.get("recommended_next_action", {}).get("review_jobs") != 1:

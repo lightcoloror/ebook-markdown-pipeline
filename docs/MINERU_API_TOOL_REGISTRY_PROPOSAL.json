@@ -1,0 +1,25 @@
+{
+  "schema_version": "tool-registry-patch-proposal-v1",
+  "status": "proposal-only",
+  "target": "D:\\used-by-codex\\tool-registry.json#tools.ebook_markdown_pipeline",
+  "reason": "Shared registry ownership belongs to the Local Tools lane.",
+  "merge": {
+    "mineru_api": {
+      "mode": "operator-managed-localhost",
+      "auto_start": false,
+      "bind_host": "127.0.0.1",
+      "config_source": "config\\mineru-api.env",
+      "wrapper": "D:\\used-by-codex\\ebook_markdown_pipeline\\mineru_api.cmd",
+      "commands": {
+        "status": "D:\\used-by-codex\\ebook_markdown_pipeline\\mineru_api.cmd status",
+        "start": "D:\\used-by-codex\\ebook_markdown_pipeline\\mineru_api.cmd start",
+        "health": "D:\\used-by-codex\\ebook_markdown_pipeline\\mineru_api.cmd health",
+        "stop": "D:\\used-by-codex\\ebook_markdown_pipeline\\mineru_api.cmd stop"
+      },
+      "health": "GET /health",
+      "client_contract": "Always pass --api-url; never allow MinerU temporary LocalAPIServer fallback.",
+      "fallback": "PyMuPDF4LLM/PyMuPDF or explicit failed conversion report",
+      "state_root": "D:\\used-by-codex\\.local\\mineru-api"
+    }
+  }
+}

@@ -48,12 +48,13 @@ def service_readiness_payload(
     elif require_http:
         status = "needs_manual_start"
     else:
-        status = "on-demand"
+        status = "stopped-by-design"
     return {
         "schema_version": "ebook-service-readiness-v1",
         "status": status,
         "http": {
             "mode": "on-demand",
+            "auto_start": False,
             "configured_url": http_config.local_url,
             "docker_url": http_config.docker_url,
             "config_path": str(http_config.source),
@@ -66,6 +67,6 @@ def service_readiness_payload(
             "docker_agents": "Start the HTTP bridge explicitly, then call host.docker.internal with the configured port.",
             "do_not_assume_port": "Read config/http.env or /health instead of hard-coding 8765 or any other port.",
         },
-        "state_labels": ["ready", "on-demand", "needs_manual_start", "degraded", "blocked"],
+        "state_labels": ["ready", "stopped-by-design", "needs_manual_start", "degraded", "blocked"],
     }
 

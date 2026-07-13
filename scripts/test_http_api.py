@@ -52,7 +52,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
     readiness = health.get("service_readiness") or {}
     if readiness.get("schema_version") != "ebook-service-readiness-v1":
         raise RuntimeError(f"Health response is missing service readiness: {health}")
-    if readiness.get("status") not in {"ready", "on-demand", "needs_manual_start", "degraded", "blocked"}:
+    if readiness.get("status") not in {"ready", "stopped-by-design", "needs_manual_start", "degraded", "blocked"}:
         raise RuntimeError(f"Health response has invalid service readiness status: {health}")
     if "hard-coding 8765" not in readiness.get("fallback", {}).get("do_not_assume_port", ""):
         raise RuntimeError(f"Health service readiness should warn against stale fixed ports: {health}")

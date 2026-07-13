@@ -27,7 +27,8 @@ from ebook_markdown_pipeline import (  # noqa: E402
     normalize_command_options,
     write_batch_summary,
 )
-from ebook_markdown_pipeline.artifact_schema import artifact  # noqa: E402
+from ebook_markdown_pipeline.artifact_registry import JSON_ARTIFACT_TYPES, READABLE_ARTIFACT_TYPES, infer_artifact_type  # noqa: E402
+from ebook_markdown_pipeline.artifact_schema import artifact, job_payload, material_consumer_contract  # noqa: E402
 from ebook_markdown_pipeline.candidate_backend_registry import candidate_backend_registry_payload  # noqa: E402
 from ebook_markdown_pipeline.diagnostic_artifact_schema import (  # noqa: E402
     diagnostic_artifact_schema_payload,
@@ -88,101 +89,6 @@ AGENT_BATCH_CONTRACT_CAPABILITIES = {
     "quality_comparison",
     "recommended_rerun",
 }
-JSON_ARTIFACT_TYPES = {
-    "json",
-    "agent_batch_results",
-    "agent_handoff_bundle_json",
-    "agent_smoke_summary_json",
-    "conversion_report",
-    "summary_json",
-    "review_json",
-    "review_decisions_json",
-    "clusters_json",
-    "structure_json",
-    "environment_json",
-    "environment_lock",
-    "environment_lock_compare",
-    "environment_lock_compare_json",
-    "quality_comparison_json",
-    "quality_improvement_queue_json",
-    "visual_check_json",
-    "visual_blocks_json",
-    "table_candidates_json",
-    "layout_candidates_json",
-    "formula_candidates_json",
-    "document_vlm_result_json",
-    "external_wrapper_result_json",
-    "layout_table_review_bundle_json",
-    "optional_backend_scorecard_json",
-    "candidate_benchmark_plan_json",
-    "image_positions_json",
-    "pdf_metadata_json",
-    "pdf_outline_json",
-    "pdf_layout_evidence_json",
-    "ocr_provider_comparison_json",
-    "review_lifecycle_json",
-    "chunk_map_json",
-    "academic_evidence_json",
-    "format_baseline_matrix_json",
-    "document_intelligence_blocks_json",
-}
-READABLE_ARTIFACT_TYPES = {
-    "markdown",
-    "agent_handoff_bundle_markdown",
-    "agent_handoff_bundle_json",
-    "agent_batch_run_summary",
-    "agent_batch_summary",
-    "agent_batch_results",
-    "agent_smoke_summary_markdown",
-    "agent_smoke_summary_json",
-    "html",
-    "text",
-    "conversion_report",
-    "summary_report",
-    "summary_json",
-    "review_report",
-    "review_json",
-    "review_decisions",
-    "review_decisions_json",
-    "location_index_jsonl",
-    "pages_jsonl",
-    "order_report",
-    "structure_report",
-    "structure_json",
-    "environment_report",
-    "environment_json",
-    "environment_lock",
-    "environment_lock_compare",
-    "environment_lock_compare_json",
-    "quality_comparison",
-    "quality_comparison_json",
-    "visual_check_json",
-    "visual_blocks_json",
-    "table_candidates_json",
-    "layout_candidates_json",
-    "formula_candidates_json",
-    "document_vlm_result_json",
-    "external_wrapper_result_json",
-    "layout_table_review_bundle_json",
-    "optional_backend_scorecard_json",
-    "candidate_benchmark_plan_json",
-    "image_positions_json",
-    "requirements_lock",
-    "tool_log",
-    "pdf_metadata_json",
-    "pdf_outline_json",
-    "pdf_layout_evidence_json",
-    "ocr_blocks_jsonl",
-    "ocr_provider_comparison_json",
-    "review_lifecycle_json",
-    "chunk_map_json",
-    "academic_evidence_json",
-    "format_baseline_matrix_json",
-    "document_intelligence_blocks_json",
-    "hocr",
-    "tsv",
-}
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="MCP stdio server for ebook_markdown_pipeline.")
@@ -2165,22 +2071,15 @@ def start_conversion(arguments: dict[str, Any]) -> dict[str, Any]:
 
     job_id = f"job-{int(time.time())}-{len(JOBS) + 1}"
     events: queue.Queue[dict[str, Any]] = queue.Queue()
-    job = {
-        "job_id": job_id,
-        "kind": "conversion",
-        "status": "running",
-        "started_at": timestamp(),
-        "input": str(input_root),
-        "output": str(options.output),
-        "total": len(sources),
-        "completed": 0,
-        "events": [],
-        "results": [],
-        "artifacts": [],
-        "warnings": [],
-        "errors": [],
-        "error": None,
-    }
+    job = job_payload(
+        job_id=job_id,
+        kind="conversion",
+        status="running",
+        started_at=timestamp(),
+        input_path=input_root,
+        output_path=options.output,
+        total=len(sources),
+    )
     with JOBS_LOCK:
         JOBS[job_id] = job
 
@@ -2241,7 +2140,7 @@ def start_conversion(arguments: dict[str, Any]) -> dict[str, Any]:
 
     threading.Thread(target=event_drain, daemon=True).start()
     threading.Thread(target=worker, daemon=True).start()
-    return {"job_id": job_id, "status": "running", "total": len(sources)}
+    return {key: job[key] for key in ("schema_version", "artifact_schema_version", "job_id", "kind", "status", "started_at", "input", "output", "total", "completed", "artifacts", "warnings", "errors", "next_actions")}
 
 
 def conversion_artifacts(results: list[Any], options: argparse.Namespace) -> list[dict[str, Any]]:
@@ -2708,23 +2607,15 @@ def update_job(job_id: str, **updates: Any) -> None:
 
 def create_job(kind: str, *, input_path: Path, output_path: Path, total: int | None = None) -> str:
     job_id = f"job-{int(time.time())}-{len(JOBS) + 1}"
-    job = {
-        "job_id": job_id,
-        "kind": kind,
-        "status": "running",
-        "started_at": timestamp(),
-        "input": str(input_path),
-        "output": str(output_path),
-        "total": total,
-        "completed": 0,
-        "events": [],
-        "results": [],
-        "artifacts": [],
-        "warnings": [],
-        "errors": [],
-        "next_actions": [],
-        "error": None,
-    }
+    job = job_payload(
+        job_id=job_id,
+        kind=kind,
+        status="running",
+        started_at=timestamp(),
+        input_path=input_path,
+        output_path=output_path,
+        total=total,
+    )
     with JOBS_LOCK:
         JOBS[job_id] = job
     return job_id
@@ -3229,6 +3120,7 @@ def build_agent_handoff_bundle_payload(batch_results: Path, *, max_review_items:
         "artifact_summary": inspection.get("artifact_summary") or {},
         "next_actions": inspection.get("next_actions") or [],
         "artifacts": inspection.get("artifacts") or [],
+        "consumer_contract": material_consumer_contract(),
         "review_items": inspection.get("review_items") or [],
     }
     bundle["handoff_ready"] = bool(validation.get("ok")) and not bool(attention.get("needs_attention"))
@@ -3631,93 +3523,6 @@ def agent_batch_human_summary(payload: dict[str, Any], next_actions: list[dict[s
     if attention.get("needs_attention"):
         parts.append(f"attention={','.join(attention.get('reasons') or [])}")
     return "; ".join(parts)
-
-
-def infer_artifact_type(path: Path) -> str:
-    suffix = path.suffix.lower()
-    name = path.name.lower()
-    if suffix in {".md", ".markdown"}:
-        if "agent-handoff-bundle" in name:
-            return "agent_handoff_bundle_markdown"
-        if "agent-smoke-summary" in name:
-            return "agent_smoke_summary_markdown"
-        return "markdown"
-    if suffix == ".jsonl":
-        if "ocr-blocks" in name or "ocr_blocks" in name:
-            return "ocr_blocks_jsonl"
-        if "location" in name:
-            return "location_index_jsonl"
-        return "pages_jsonl"
-    if suffix == ".json":
-        if "agent-handoff-bundle" in name:
-            return "agent_handoff_bundle_json"
-        if "agent-smoke-summary" in name:
-            return "agent_smoke_summary_json"
-        if "agent-batch-results" in name:
-            return "agent_batch_results"
-        if "layout-table-review-bundle" in name:
-            return "layout_table_review_bundle_json"
-        if "backend-scorecard" in name:
-            return "optional_backend_scorecard_json"
-        if "candidate-benchmark-plan" in name or "candidate-plan" in name:
-            return "candidate_benchmark_plan_json"
-        if "review-decisions" in name:
-            return "review_decisions_json"
-        if "review-checklist" in name:
-            return "review_json"
-        if "summary" in name:
-            return "summary_json"
-        if "environment-report" in name:
-            return "environment_json"
-        if "environment-lock-compare" in name:
-            return "environment_lock_compare_json"
-        if "environment-lock" in name:
-            return "environment_lock"
-        if "benchmark-quality-comparison" in name:
-            return "quality_comparison_json"
-        if "quality-improvement-queue" in name:
-            return "quality_improvement_queue_json"
-        if "visual_check_result" in name:
-            return "visual_check_json"
-        if "visual_blocks" in name:
-            return "visual_blocks_json"
-        if "ocr-provider-comparison" in name or "ocr_provider_comparison" in name:
-            return "ocr_provider_comparison_json"
-        if "external-wrapper-result" in name:
-            return "external_wrapper_result_json"
-        if "layout_candidates" in name or "layout-candidates" in name:
-            return "layout_candidates_json"
-        if "table_candidates" in name or "table-candidates" in name:
-            return "table_candidates_json"
-        if "formula_candidates" in name or "formula-candidates" in name:
-            return "formula_candidates_json"
-        if "document-vlm-result" in name or "document_vlm_result" in name:
-            return "document_vlm_result_json"
-        if "image_positions" in name:
-            return "image_positions_json"
-        if "pypdf-metadata" in name or "pdf-metadata" in name:
-            return "pdf_metadata_json"
-        if "pypdf-outline" in name or "pdf-outline" in name:
-            return "pdf_outline_json"
-        if "layout-evidence" in name or "layout_evidence" in name or "pdf-layout-evidence" in name:
-            return "pdf_layout_evidence_json"
-        if "report" in name:
-            return "conversion_report"
-        if "cluster" in name:
-            return "clusters_json"
-        if "structure" in name:
-            return "structure_json"
-        return "json"
-
-    if suffix in {".hocr"}:
-        return "hocr"
-    if suffix in {".tsv"}:
-        return "tsv"
-    if suffix in {".log", ".txt"}:
-        return "text"
-    if suffix in {".html", ".htm"}:
-        return "html"
-    return suffix.lstrip(".") or "artifact"
 
 
 def parse_jsonl_preview(lines: list[str]) -> list[dict[str, Any]]:

@@ -26,14 +26,15 @@ BACKEND = "dots_mocr"
 
 
 def build_command(args: argparse.Namespace, tool_output: Path) -> list[str]:
-    root = Path(args.dots_root).expanduser() if args.dots_root else Path("<dots-ocr-root>")
+    root = Path(args.dots_root).expanduser() if args.dots_root else Path("<dots-mocr-root>")
     command = [
         args.python_executable or sys.executable,
-        str(root / "dots_ocr" / "parser.py"),
-        "--input_path",
+        str(root / "dots_mocr" / "parser.py"),
         str(Path(args.input)),
-        "--output_dir",
+        "--output",
         str(tool_output),
+        "--protocol",
+        urlparse(args.server).scheme or "http",
         "--ip",
         urlparse(args.server).hostname or "127.0.0.1",
         "--port",
@@ -50,17 +51,17 @@ def build_command(args: argparse.Namespace, tool_output: Path) -> list[str]:
 
 def health(args: argparse.Namespace) -> dict[str, object]:
     root = Path(args.dots_root).expanduser() if args.dots_root else None
-    weights = root / "weights" / "DotsOCR" if root else None
+    weights = root / "weights" / "DotsMOCR" if root else None
     parsed = urlparse(args.server)
     checks = [
         check_path("dots_root", root, "dir"),
-        check_path("parser_py", root / "dots_ocr" / "parser.py" if root else None),
+        check_path("parser_py", root / "dots_mocr" / "parser.py" if root else None),
         check_path("weights", weights, "dir"),
         {"name": "server_url", "url": args.server, "ok": bool(parsed.scheme and parsed.netloc)},
     ]
     if args.use_hf and not (weights and weights.exists()):
         status = "needs_weights"
-    elif root and not (root / "dots_ocr" / "parser.py").is_file():
+    elif root and not (root / "dots_mocr" / "parser.py").is_file():
         status = "needs_env"
     elif not (parsed.scheme and parsed.netloc):
         status = "planned_only"
@@ -102,7 +103,7 @@ def run() -> dict[str, object]:
     parser.add_argument("--dots-root")
     parser.add_argument("--python-executable")
     parser.add_argument("--server", default="http://127.0.0.1:8000/v1")
-    parser.add_argument("--model", default="dots-mocr")
+    parser.add_argument("--model", default="model")
     parser.add_argument("--use-hf", action="store_true")
     parser.add_argument("--num-thread", type=int, default=1)
     parser.add_argument("--max-pages", type=int, default=20)

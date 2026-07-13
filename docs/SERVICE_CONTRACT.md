@@ -2,11 +2,11 @@
 
 This document is the source of truth for discovering and starting the service-facing entry points of the Graphic-Text Material Converter.
 
-Last reviewed: 2026-06-19 07:45 Asia/Shanghai by Codex.
+Last reviewed: 2026-07-10 Asia/Shanghai by Codex.
 
 ## Status Summary
 
-- Current status for dispatch: `on-demand`.
+- Current status for dispatch when HTTP is not listening: `stopped-by-design`.
 - HTTP `8765` is not the current contract port.
 - The current HTTP port is read from `config/http.env`; at this review it is `9241`.
 - The HTTP bridge is not expected to be always-on unless an operator or automation explicitly starts it.
@@ -35,7 +35,13 @@ Do not hard-code `8765`, `9241`, or any other port in dispatch prompts, desktop 
 
 No. The HTTP bridge is an on-demand transport adapter for Docker-hosted or cross-process agents. It is useful when an agent cannot use Windows stdio MCP directly.
 
-If neither `127.0.0.1:9241` nor the configured port is listening, treat that as `needs_manual_start` for HTTP only, not as a converter outage.
+If neither `127.0.0.1:9241` nor the configured port is listening, report `stopped-by-design` when HTTP is optional. Report `needs_manual_start` only when the current job explicitly requires HTTP.
+
+## MinerU Backend Service
+
+The optional MinerU backend has a separate fixed localhost service contract in [MINERU_API_SERVICE.md](MINERU_API_SERVICE.md). Its endpoint comes only from `config/mineru-api.env`. The conversion pipeline always passes `--api-url`; a stopped MinerU API triggers the documented local PDF fallback or a real failed report, never MinerU's implicit temporary API.
+
+Use `mineru_api.cmd status|start|health|stop`. This service is also on demand and is not auto-started by discovery, HTTP, MCP, UI, or conversion jobs.
 
 ## Entry Point Priority
 
@@ -61,7 +67,7 @@ Get-Content .\config\http.env
 Get-NetTCPConnection -LocalPort <EBOOK_CONVERTER_HTTP_PORT> -ErrorAction SilentlyContinue
 ```
 
-No result means the HTTP bridge is not running. That is expected for on-demand mode.
+No result means the HTTP bridge is not running. That is expected and must be reported as `stopped-by-design`; do not auto-start it.
 
 ### Check MCP Without Starting HTTP
 
@@ -122,6 +128,7 @@ If HTTP is not listening:
 - For local automation: call the CLI or Python helper examples directly.
 - For Docker agents: report `needs_manual_start` for the HTTP bridge and either ask the operator to start it or switch to a host-side CLI batch/handoff flow.
 - Do not mark the whole converter as down if MCP and CLI checks pass.
+- Do not auto-start HTTP from discovery, health checks, OpenClaw dispatch, or Telegram automation.
 
 If the configured HTTP port is occupied:
 
@@ -139,7 +146,7 @@ If `/health` responds but optional backends are missing:
 OpenClaw or local-tools checks should classify this project as:
 
 - `ready` when MCP or CLI health checks pass and no HTTP bridge is required for the current job.
-- `on-demand` when HTTP is not listening but `config/http.env`, MCP, and CLI checks pass.
+- `stopped-by-design` when HTTP is not listening but `config/http.env`, MCP, and CLI checks pass; `http.auto_start=false`.
 - `needs_manual_start` when Docker/OpenClaw specifically requires HTTP and the bridge is not running.
 - `degraded` when minimal checks pass but the requested optional backend is missing or slow/risky.
 - `blocked` only when the required entry point for the requested job fails and no fallback is acceptable.
@@ -157,9 +164,9 @@ This project should not directly modify the global port registry from inside con
 If an external dispatch system tracks ports, it should record:
 
 - service: `ebook_markdown_pipeline`
-- mode: `on-demand HTTP bridge`
+- mode: `on-demand HTTP bridge` with `stopped-by-design` idle state
 - config source: `<project-path>\config\http.env`
 - current configured URL: `http://127.0.0.1:9241`
-- status when not listening: `on-demand` or `needs_manual_start`, not `regression`
+- status when not listening: `stopped-by-design` when optional, or `needs_manual_start` when explicitly required; never `regression`
 
 Any future port change should be made in `config/http.env` first, then verified through `scripts/test_http_config.py` and `/health` after startup.
