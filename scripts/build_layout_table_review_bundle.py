@@ -33,10 +33,11 @@ def main() -> int:
     parser.add_argument("--external-wrapper-root", type=Path, action="append", default=[], help="Directory to scan for external-wrapper-result.json artifacts.")
     parser.add_argument("--scorecard", type=Path, action="append", default=[], help="Optional backend-scorecard.json files with promotion_gate decisions to merge into the review bundle.")
     parser.add_argument("--candidate-plan", type=Path, action="append", default=[], help="Optional candidate-benchmark-plan JSON files with sample review questions and run previews.")
+    parser.add_argument("--quality-evaluation", type=Path, action="append", default=[], help="Optional document-quality-evaluation.json files to attach as offline review evidence.")
     parser.add_argument("--sample-id", help="Optional sample id to match inside candidate benchmark plans.")
     args = parser.parse_args()
 
-    payload = build_review_bundle(args.artifact, args.external_wrapper_root, source=args.source, output=args.output, scorecards=args.scorecard, candidate_plans=args.candidate_plan, sample_id=args.sample_id)
+    payload = build_review_bundle(args.artifact, args.external_wrapper_root, source=args.source, output=args.output, scorecards=args.scorecard, candidate_plans=args.candidate_plan, quality_evaluations=args.quality_evaluation, sample_id=args.sample_id)
     write_bundle(args.output, payload)
     print(json.dumps({"status": "ok", "output": str(args.output), "artifact_count": len(payload["artifact_summaries"])}, ensure_ascii=False))
     return 0
@@ -50,6 +51,7 @@ def build_review_bundle(
     output: Path | None = None,
     scorecards: list[Path] | None = None,
     candidate_plans: list[Path] | None = None,
+    quality_evaluations: list[Path] | None = None,
     sample_id: str | None = None,
 ) -> dict[str, Any]:
     paths = collect_artifact_paths(artifacts, roots)
@@ -57,13 +59,14 @@ def build_review_bundle(
     summaries = [item for item in summaries if item]
     scorecard_backends = collect_scorecard_backends(scorecards or [])
     promotion_reviews = promotion_reviews_for_bundle(summaries, scorecard_backends)
+    quality_evaluation_rows = collect_quality_evaluations(quality_evaluations or [])
     benchmark_context = collect_benchmark_context(candidate_plans or [], source=source, sample_id=sample_id)
     benchmark_context = attach_expected_artifact_coverage(benchmark_context, summaries)
     review_pages = build_review_pages(summaries, source=source)
     table_review_matrix = build_table_review_matrix(review_pages)
     formula_review_matrix = build_formula_review_matrix(review_pages)
     review_questions = merge_review_questions(benchmark_context, REVIEW_QUESTIONS)
-    counts = summarize_counts(summaries, promotion_reviews, benchmark_context, review_pages, table_review_matrix, formula_review_matrix)
+    counts = summarize_counts(summaries, promotion_reviews, benchmark_context, review_pages, table_review_matrix, formula_review_matrix, quality_evaluation_rows)
     return {
         "schema_version": SCHEMA_VERSION,
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -75,6 +78,7 @@ def build_review_bundle(
         "artifact_summaries": summaries,
         "scorecard_count": len(scorecards or []),
         "candidate_plan_count": len(candidate_plans or []),
+        "quality_evaluations": quality_evaluation_rows,
         "benchmark_context": benchmark_context,
         "review_pages": review_pages,
         "table_review_matrix": table_review_matrix,
@@ -82,6 +86,26 @@ def build_review_bundle(
         "promotion_reviews": promotion_reviews,
         "next_actions": next_actions_for_bundle(summaries, promotion_reviews, benchmark_context, review_pages, table_review_matrix, formula_review_matrix),
     }
+
+
+def collect_quality_evaluations(paths: list[Path]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for path in paths:
+        if not path.exists() or not path.is_file():
+            continue
+        key = str(path.resolve())
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict) or payload.get("schema_version") != "document-quality-evaluation-v1":
+            continue
+        rows.append({"path": str(path), "summary": summarize_known_artifact_json(payload, "document_quality_evaluation_json"), "backend_evaluations": payload.get("backend_evaluations") or []})
+    return rows
 
 
 def collect_benchmark_context(paths: list[Path], *, source: Path | None, sample_id: str | None) -> dict[str, Any]:
@@ -771,7 +795,7 @@ def summarize_artifact(path: Path) -> dict[str, Any]:
     }
 
 
-def summarize_counts(items: list[dict[str, Any]], promotion_reviews: list[dict[str, Any]] | None = None, benchmark_context: dict[str, Any] | None = None, review_pages: list[dict[str, Any]] | None = None, table_review_matrix: list[dict[str, Any]] | None = None, formula_review_matrix: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def summarize_counts(items: list[dict[str, Any]], promotion_reviews: list[dict[str, Any]] | None = None, benchmark_context: dict[str, Any] | None = None, review_pages: list[dict[str, Any]] | None = None, table_review_matrix: list[dict[str, Any]] | None = None, formula_review_matrix: list[dict[str, Any]] | None = None, quality_evaluations: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     counts: dict[str, int] = {}
     gate_counts: dict[str, int] = {}
     backends: set[str] = set()

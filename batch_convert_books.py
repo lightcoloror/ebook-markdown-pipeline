@@ -2506,6 +2506,7 @@ def run_docling_convert(
         )
         run_docling_fallback_convert(source, output_path, args, progress_callback, progress_index, progress_total)
         return
+    record_docling_sidecar(args, source, output_path, result)
     markdown = result["markdown"]
     if args.output_format == "markdown":
         output_path.write_text(markdown, encoding="utf-8", newline="\n")
@@ -2526,6 +2527,39 @@ def run_docling_convert(
         temp_md = Path(tmpdir) / f"{source.stem}.md"
         temp_md.write_text(markdown, encoding="utf-8", newline="\n")
         convert_markdown_file(temp_md, output_path, args, progress_callback, source, progress_index, progress_total)
+
+
+def docling_sidecar_path(output_path: Path) -> Path:
+    return output_path.with_name(f"{output_path.stem}.docling-document.json")
+
+
+def record_docling_sidecar(args: argparse.Namespace, source: Path, output_path: Path, result: dict[str, object]) -> None:
+    """Persist structured Docling evidence without changing conversion success."""
+    sidecars = getattr(args, "_docling_sidecars", None)
+    if not isinstance(sidecars, dict):
+        sidecars = {}
+        args._docling_sidecars = sidecars
+    document = result.get("document")
+    if not isinstance(document, dict):
+        sidecars[str(output_path)] = {"status": "not_available", "reason": "Docling result contained no serializable document."}
+        return
+    path = docling_sidecar_path(output_path)
+    payload = {
+        "schema_version": "docling-document-sidecar-v1",
+        "backend": "Docling",
+        "status": "ok",
+        "source": str(source),
+        "output": str(output_path),
+        "provenance": result.get("provenance") if isinstance(result.get("provenance"), dict) else {},
+        "document": document,
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+        sidecars[str(output_path)] = {"status": "written", "path": str(path), "schema_version": payload["schema_version"]}
+    except OSError as exc:
+        sidecars[str(output_path)] = {"status": "failed", "path": str(path), "error": str(exc)}
+        getattr(args, "_docling_diagnostics", []).append({"tool": "Docling sidecar", "source": str(source), "output": str(path), "status": "failed", "error": str(exc)})
 
 
 def run_markitdown_convert(
@@ -5017,6 +5051,9 @@ def conversion_artifact_refs(results: list[ConversionResult], args: argparse.Nam
             artifacts.append(artifact("markdown" if media_type == "text/markdown" else "text", output_path, media_type=media_type))
         if result.report and Path(result.report).is_file():
             artifacts.append(artifact("conversion_report", result.report, media_type="application/json"))
+        sidecar = (getattr(args, "_docling_sidecars", {}) or {}).get(str(result.output))
+        if isinstance(sidecar, dict) and sidecar.get("status") == "written" and Path(str(sidecar.get("path") or "")).is_file():
+            artifacts.append(artifact("docling_document_json", Path(str(sidecar["path"])), label="Docling structured document", media_type="application/json"))
     report_root = conversion_report_root(args)
     for name, artifact_type, media_type in (
         ("summary.md", "summary_report", "text/markdown"),
@@ -5071,7 +5108,7 @@ def write_cli_job_result(results: list[ConversionResult], args: argparse.Namespa
         next_actions=[
             {"action": "read_artifact", "arguments": {"path": item["path"], "artifact_type": item["type"]}}
             for item in conversion_artifact_refs(results, args)
-            if item.get("type") in {"markdown", "summary_report", "review_report"}
+            if item.get("type") in {"markdown", "summary_report", "review_report", "docling_document_json"}
         ],
         quality_summary={"status_counts": quality_counts, "review_count": quality_counts.get("review", 0) + quality_counts.get("poor", 0)},
     )
@@ -5128,6 +5165,9 @@ def write_conversion_report(result: ConversionResult, args: argparse.Namespace, 
     docling_diagnostics = getattr(args, "_docling_diagnostics", [])
     if docling_diagnostics:
         payload["docling_diagnostics"] = docling_diagnostics
+    docling_sidecar = (getattr(args, "_docling_sidecars", {}) or {}).get(str(output_path))
+    if isinstance(docling_sidecar, dict):
+        payload["docling_sidecar"] = docling_sidecar
     markitdown_diagnostics = getattr(args, "_markitdown_diagnostics", [])
     if markitdown_diagnostics:
         payload["markitdown_diagnostics"] = markitdown_diagnostics

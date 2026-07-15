@@ -282,6 +282,8 @@ def main() -> int:
         default=[],
         help="Recursively scan a directory for layout-table-review-bundle.json files.",
     )
+    parser.add_argument("--quality-evaluation", type=Path, action="append", default=[], help="Read one document-quality-evaluation.json and attach offline evidence to matching backends.")
+    parser.add_argument("--quality-evaluation-root", type=Path, action="append", default=[], help="Recursively scan a directory for document-quality-evaluation.json files.")
     args = parser.parse_args()
 
     options = normalize_command_options(default_options())
@@ -290,7 +292,8 @@ def main() -> int:
     wrapper_results = collect_external_wrapper_results(args.external_wrapper_result, args.external_wrapper_root)
     candidate_artifacts = collect_candidate_artifacts(args.candidate_artifact, [*args.candidate_artifact_root, *args.external_wrapper_root])
     review_bundle_evidence = collect_review_bundle_evidence(args.review_bundle, args.review_bundle_root)
-    payload = build_scorecard(checks, capabilities, output=args.output, wrapper_results=wrapper_results, candidate_artifacts=[*candidate_artifacts, *review_bundle_evidence])
+    quality_evaluation_evidence = collect_document_quality_evaluations(args.quality_evaluation, args.quality_evaluation_root)
+    payload = build_scorecard(checks, capabilities, output=args.output, wrapper_results=wrapper_results, candidate_artifacts=[*candidate_artifacts, *review_bundle_evidence, *quality_evaluation_evidence])
     write_scorecard(args.output, payload)
     print(json.dumps({"status": payload["summary"]["status"], "output": str(args.output), "backend_count": len(payload["backends"])}, ensure_ascii=False))
     return 0
@@ -422,6 +425,45 @@ def collect_candidate_artifacts(artifact_paths: list[Path], roots: list[Path]) -
         if loaded:
             results.append(loaded)
     return results
+
+
+def collect_document_quality_evaluations(paths: list[Path], roots: list[Path]) -> list[dict[str, Any]]:
+    candidates = [*paths]
+    for root in roots:
+        if root.exists() and root.is_file() and root.name == "document-quality-evaluation.json":
+            candidates.append(root)
+        elif root.exists() and root.is_dir():
+            candidates.extend(root.rglob("document-quality-evaluation.json"))
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path.resolve()) if path.exists() else str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        if not path.exists() or not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict) or payload.get("schema_version") != "document-quality-evaluation-v1":
+            continue
+        for evaluation in payload.get("backend_evaluations") or []:
+            if not isinstance(evaluation, dict) or not evaluation.get("backend"):
+                continue
+            dimensions = evaluation.get("dimensions") if isinstance(evaluation.get("dimensions"), dict) else {}
+            evaluated = [name for name, item in dimensions.items() if isinstance(item, dict) and item.get("status") == "evaluated"]
+            not_evaluated = [name for name, item in dimensions.items() if isinstance(item, dict) and item.get("status") == "not_evaluated"]
+            signals = {
+                "evidence_count": 1,
+                "quality_evaluation_count": 1,
+                "quality_dimension_evaluated_count": len(evaluated),
+                "quality_dimension_not_evaluated_count": len(not_evaluated),
+                **{f"has_{name}_quality_evaluation": name in evaluated for name in ("text", "table", "formula", "layout", "reading_order")},
+            }
+            rows.append({"path": str(path), "backend": evaluation["backend"], "mode": "offline_quality_evaluation", "status": evaluation.get("status") or "review", "artifact_type": "document_quality_evaluation_json", "schema_version": payload.get("schema_version"), "quality_signals": compact_quality_signals(signals)})
+    return rows
 
 
 def collect_review_bundle_evidence(bundle_paths: list[Path], roots: list[Path]) -> list[dict[str, Any]]:
@@ -746,6 +788,9 @@ def summarize_quality_signals(external_results: list[dict[str, Any]], candidate_
         "table_markdown_excerpt_count",
         "table_missing_evidence_count",
         "table_conflict_count",
+        "quality_evaluation_count",
+        "quality_dimension_evaluated_count",
+        "quality_dimension_not_evaluated_count",
     ):
         aggregate[key] = sum(int_or_zero((item.get("quality_signals") or {}).get(key) if isinstance(item.get("quality_signals"), dict) else item.get(key)) for item in [*external_results, *candidate_artifacts])
     aggregate["table_evidence_completeness"] = max((int_or_zero((item.get("quality_signals") or {}).get("table_evidence_completeness")) for item in [*external_results, *candidate_artifacts] if isinstance(item.get("quality_signals"), dict)), default=0)
@@ -772,6 +817,11 @@ def summarize_quality_signals(external_results: list[dict[str, Any]], candidate_
         "needs_formula_retention_review",
         "has_fallback_path",
         "command_present",
+        "has_text_quality_evaluation",
+        "has_table_quality_evaluation",
+        "has_formula_quality_evaluation",
+        "has_layout_quality_evaluation",
+        "has_reading_order_quality_evaluation",
     ):
         aggregate[key] = any(bool((item.get("quality_signals") or {}).get(key)) for item in [*external_results, *candidate_artifacts] if isinstance(item.get("quality_signals"), dict))
     return compact_quality_signals(aggregate)
@@ -970,6 +1020,7 @@ def promotion_gate_for_backend(profile: BackendProfile, backend_status: str, qua
             int_or_zero(quality_signals.get("formula_count")) > 0,
             int_or_zero(quality_signals.get("bbox_count")) > 0,
             int_or_zero(quality_signals.get("reading_order_count")) > 0,
+            int_or_zero(quality_signals.get("quality_dimension_evaluated_count")) > 0,
         ]
     )
     reasons: list[str] = []

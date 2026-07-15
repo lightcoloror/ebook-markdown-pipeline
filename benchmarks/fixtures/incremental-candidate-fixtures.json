@@ -1,0 +1,16 @@
+{
+  "schema_version": "benchmark-samples-v1",
+  "fixture_policy": "synthetic_or_public_design_only_no_download_no_model_execution",
+  "description": "Plan-only fixture inventory for incremental table and provenance candidates.",
+  "samples": [
+    {"id": "gmft-bordered", "category": "pdf_table", "path": "", "fixture_kind": "synthetic_text_layer_pdf", "scenario": "bordered_table", "expected": {"table_count": 1, "cell_grid": true}},
+    {"id": "gmft-borderless", "category": "pdf_table", "path": "", "fixture_kind": "synthetic_text_layer_pdf", "scenario": "borderless_table", "expected": {"table_count": 1, "cell_grid": true}},
+    {"id": "gmft-multi-header", "category": "pdf_table", "path": "", "fixture_kind": "synthetic_text_layer_pdf", "scenario": "multi_level_header", "expected": {"table_count": 1, "header_levels": 2}},
+    {"id": "gmft-spanning", "category": "pdf_table", "path": "", "fixture_kind": "synthetic_text_layer_pdf", "scenario": "spanning_cells", "expected": {"table_count": 1, "spanning_cells": true}},
+    {"id": "gmft-rotated", "category": "pdf_table", "path": "", "fixture_kind": "synthetic_text_layer_pdf", "scenario": "rotated_table", "expected": {"table_count": 1, "rotation": true}},
+    {"id": "gmft-card-negative", "category": "pdf_table", "path": "", "fixture_kind": "synthetic_text_layer_pdf", "scenario": "card_layout_not_table", "expected": {"table_count": 0, "negative_control": true}},
+    {"id": "odl-two-column", "category": "pdf_two_column", "path": "", "fixture_kind": "synthetic_digital_pdf", "scenario": "two_column_reading_order", "expected": {"reading_order": true}},
+    {"id": "odl-table", "category": "pdf_table", "path": "", "fixture_kind": "synthetic_digital_pdf", "scenario": "table_provenance", "expected": {"table_count": 1, "bbox": true}},
+    {"id": "odl-header-footer", "category": "pdf_text_layer", "path": "", "fixture_kind": "synthetic_digital_pdf", "scenario": "header_footer_separation", "expected": {"bbox": true, "reading_order": true}}
+  ]
+}

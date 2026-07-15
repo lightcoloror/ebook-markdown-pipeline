@@ -1,0 +1,50 @@
+{
+  "schema_version": "ebook-incremental-backend-discovery-proposal-v1",
+  "status": "proposal_only",
+  "apply": false,
+  "registry_write": false,
+  "review": "2026-07-15 incremental architecture and open-source review",
+  "reason": "gmft, OmniDocBench, and OpenDataLoader PDF are not deployed local tools. They must not be entered into the shared registry before source-ledger evidence, a stable local entrypoint, and benchmark promotion evidence exist.",
+  "proposed_project_discovery": {
+    "owner_tool": "ebook_markdown_pipeline",
+    "read_only_actions": [
+      "show_backend_capabilities",
+      "show_candidate_readiness",
+      "show_latest_quality_gate"
+    ],
+    "candidate_notes": [
+      {
+        "key": "gmft_table",
+        "state": "proposal_only",
+        "role": "text-layer PDF table benchmark candidate",
+        "requirements": ["explicit dependency/model preparation", "text-layer preflight", "output resolver"],
+        "no_auto_install": true,
+        "no_auto_start": true,
+        "no_default_route_change": true
+      },
+      {
+        "key": "omnidocbench_adapter",
+        "state": "proposal_only",
+        "role": "offline quality-evaluation adapter, not a parser or service",
+        "requirements": ["fixture manifest", "explicit metric availability", "scorecard integration"],
+        "no_auto_install": true,
+        "no_default_route_change": true
+      },
+      {
+        "key": "opendataloader_pdf_fast",
+        "state": "proposal_only",
+        "role": "Java 11 fast-mode Markdown/JSON provenance comparison",
+        "requirements": ["Java 11 preflight", "fast mode only", "no hybrid service"],
+        "no_auto_start": true,
+        "no_default_route_change": true
+      }
+    ]
+  },
+  "promotion_preconditions": [
+    "source-ledger record with official-source evidence",
+    "stable local command or Python adapter",
+    "health, plan, execute, and explicit output-resolver contracts",
+    "artifact schema and benchmark scorecard evidence",
+    "explicit approval before any default-route or shared-registry change"
+  ]
+}

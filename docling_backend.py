@@ -42,12 +42,35 @@ def convert_with_docling(source: Path) -> dict[str, Any]:
         raise RuntimeError(f"Docling returned no document for {source}")
 
     markdown = document.export_to_markdown()
+    document_payload = serialize_docling_value(document)
     return {
         "markdown": markdown,
         "heading_candidates": extract_docling_heading_candidates(document),
+        "document": document_payload,
+        "provenance": summarize_docling_provenance(document_payload),
         "status": str(getattr(result, "status", "")),
         "errors": serialize_docling_errors(getattr(result, "errors", [])),
         "timings": serialize_docling_value(getattr(result, "timings", None)),
+    }
+
+
+def summarize_docling_provenance(document: Any) -> dict[str, int]:
+    """Return a compact, version-tolerant view of serialized Docling evidence."""
+    if not isinstance(document, dict):
+        return {"text_item_count": 0, "page_count": 0, "bbox_count": 0}
+    texts = [item for item in document.get("texts") or [] if isinstance(item, dict)]
+    pages: set[int] = set()
+    bbox_count = 0
+    for item in texts:
+        page = docling_page_number(item)
+        if page is not None:
+            pages.add(page)
+        if docling_bbox(item) is not None:
+            bbox_count += 1
+    return {
+        "text_item_count": len(texts),
+        "page_count": len(pages),
+        "bbox_count": bbox_count,
     }
 
 

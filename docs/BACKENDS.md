@@ -33,6 +33,8 @@ The converter is local-first and tool-first. Backends are optional specialist to
 | DocLayout-YOLO | Layout detector baseline for bbox/overlay evidence | Candidate only | Medium/Heavy | Layout evidence only, not Markdown conversion. Use for selected pages in inspect/benchmark flows. |
 | pdf_table | External table-page worker plan | Candidate only | Heavy | Table pages only. Compare with Camelot/Tabula/pdfplumber before using as a recommendation. |
 | table_to_xlsx | Photo/scanned table to editable XLSX worker plan | Candidate only | Medium/Heavy | Uses PaddleOCR TableRecognitionPipelineV2, img2table, or RapidTable as explicit future backends. Current safe path exports existing table evidence to an `.xlsx` draft without installing models. |
+| gmft_table | Digital text-layer PDF table structure baseline | Candidate only | Medium/Heavy | Plan/fake only. Requires manually prepared gmft/Table Transformer runtime; no model download or execution path exists in this project. |
+| opendataloader_pdf_fast | Java 11 fast-mode Markdown/JSON provenance comparison | Candidate only | Medium | Plan/fake only. Hybrid, OCR, and service modes are forbidden; no runtime is installed by this project. |
 | Unlimited-OCR | Long-horizon VLM OCR candidate for multi-page images/PDF pages | Not integrated; candidate only | Heavy | Do not install or route by default. Consider only if fixture/real-sample scorecards prove a clear quality gain and it can replace an existing heavy VLM/OCR module rather than add another large model. |
 
 ## Routing Defaults

@@ -104,10 +104,10 @@ def candidate_run_preview(profile: CandidateBackendProfile, *, capability: str =
 
 def candidate_readiness_contract(profile: CandidateBackendProfile) -> dict[str, Any]:
     key = normalize_backend_name(profile.key)
-    external_repo_keys = {"monkeyocr", "dots_mocr", "doclayout_yolo", "pdf_table", "table_to_xlsx"}
+    external_repo_keys = {"monkeyocr", "dots_mocr", "doclayout_yolo", "pdf_table", "table_to_xlsx", "gmft_table", "opendataloader_pdf_fast"}
     service_keys = {"dots_mocr"}
-    model_cache_keys = {"tesseract", "doctr", "monkeyocr", "dots_mocr", "doclayout_yolo", "pdf_table", "table_to_xlsx"}
-    gpu_or_heavy_keys = {"doctr", "monkeyocr", "dots_mocr", "doclayout_yolo", "pdf_table", "table_to_xlsx"}
+    model_cache_keys = {"tesseract", "doctr", "monkeyocr", "dots_mocr", "doclayout_yolo", "pdf_table", "table_to_xlsx", "gmft_table"}
+    gpu_or_heavy_keys = {"doctr", "monkeyocr", "dots_mocr", "doclayout_yolo", "pdf_table", "table_to_xlsx", "gmft_table"}
     model_cache_hints = {
         "tesseract": ["TESSDATA_PREFIX", "external Tesseract language data directory"],
         "doctr": ["docTR model cache outside this repository"],
@@ -116,6 +116,8 @@ def candidate_readiness_contract(profile: CandidateBackendProfile) -> dict[str, 
         "doclayout_yolo": ["DOCLAYOUT_YOLO_MODEL", "external YOLO/DocLayout model cache"],
         "pdf_table": ["PDF_TABLE_MODEL_DIR", "external pdf_table/Paddle table model cache"],
         "table_to_xlsx": ["PADDLEOCR_MODEL_DIR", "IMG2TABLE_HOME", "RAPIDTABLE_MODEL_DIR", "external table-recognition model cache"],
+        "gmft_table": ["GMFT_MODEL_CACHE", "manually prepared Table Transformer weights", "PyTorch runtime outside this repository"],
+        "opendataloader_pdf_fast": ["OPENDATALOADER_PDF_ROOT", "Java 11 runtime", "fast mode only; no hybrid service"],
     }
     missing_states = ["planned_only"]
     if key in external_repo_keys:
@@ -312,7 +314,30 @@ CANDIDATE_BACKENDS: tuple[CandidateBackendProfile, ...] = (
         risk="Excel output is an editable draft; formulas, formatting, filters, colors, and exact column widths are not reliably recovered",
         sample_classes=("pdf_table", "infographic_image", "image_set"),
     ),
-)
+    CandidateBackendProfile(
+        key="gmft_table", display_name="gmft_table", module="scripts/gmft_table_worker.py",
+        health_names=("gmft table worker",), capability_names=("text_layer_table_baseline",),
+        role="text-layer PDF table structure baseline plan",
+        best_for="digital PDF table pages with an existing text layer; compare row/column and multi-header evidence before any recommendation",
+        install_cost="medium/heavy", gpu_or_model="external gmft/PyTorch environment and manually prepared Table Transformer weights; no automatic download",
+        license_note="personal-use candidate; keep upstream runtime and weights outside this repository",
+        default_policy="candidate-only plan/fake baseline; never default routing",
+        command_hint="python scripts/gmft_table_worker.py --input <text-layer-pdf> --output <run-dir> --mode plan",
+        artifact_contract=("table_markdown", "table_html", "table_cells_json", "table_overlay_image", "table_candidates_json", "external_wrapper_result_json"),
+        risk="text-layer PDF only; execute is intentionally refused until an approved, manually prepared runtime exists", sample_classes=("pdf_table",),
+    ),
+    CandidateBackendProfile(
+        key="opendataloader_pdf_fast", display_name="opendataloader_pdf_fast", module="scripts/opendataloader_pdf_worker.py",
+        health_names=("OpenDataLoader PDF fast worker",), capability_names=("pdf_fast_provenance_baseline",),
+        role="Java 11 fast-mode Markdown/JSON provenance comparison plan",
+        best_for="digital PDFs where local Markdown, JSON bbox, and reading-order evidence need comparison without OCR or a service",
+        install_cost="medium", gpu_or_model="manually prepared OpenDataLoader PDF runtime plus Java 11; no model weights or service start",
+        license_note="personal-use candidate; keep upstream runtime outside this repository",
+        default_policy="candidate-only plan/fake comparison; never default routing; hybrid/OCR/server modes are forbidden",
+        command_hint="python scripts/opendataloader_pdf_worker.py --input <digital-pdf> --output <run-dir> --mode plan",
+        artifact_contract=("markdown", "document_provenance_json", "html", "external_wrapper_result_json"),
+        risk="fast local digital-PDF comparison only; execute is intentionally refused and hybrid mode is never invoked", sample_classes=("pdf_text_layer", "pdf_two_column"),
+    ),)
 
 
 _BY_KEY = {normalize_backend_name(profile.key): profile for profile in CANDIDATE_BACKENDS}

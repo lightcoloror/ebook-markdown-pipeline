@@ -2160,6 +2160,9 @@ def conversion_artifacts(results: list[Any], options: argparse.Namespace) -> lis
         report = getattr(result, "report", None)
         if report and Path(report).exists():
             artifacts.append(artifact("conversion_report", report, label=f"Conversion report: {Path(report).name}", media_type="application/json"))
+        sidecar = (getattr(options, "_docling_sidecars", {}) or {}).get(str(output))
+        if isinstance(sidecar, dict) and sidecar.get("status") == "written" and Path(str(sidecar.get("path") or "")).is_file():
+            artifacts.append(artifact("docling_document_json", Path(str(sidecar["path"])), label="Docling structured document", media_type="application/json"))
 
     report_root = conversion_report_root(options)
     for path, artifact_type, label, media_type in [
@@ -2769,6 +2772,10 @@ def summarize_known_artifact_json(value: dict[str, Any], artifact_type: str) -> 
             "warnings_preview": warnings[:5],
             "next_actions_preview": next_actions[:5],
         }
+    if artifact_type == "docling_document_json" or schema == "docling-document-sidecar-v1":
+        return summarize_docling_document_json(value)
+    if artifact_type == "document_quality_evaluation_json" or schema == "document-quality-evaluation-v1":
+        return summarize_document_quality_evaluation_json(value)
     if artifact_type in {"layout_candidates_json", "table_candidates_json", "formula_candidates_json", "document_vlm_result_json"}:
         return summarize_candidate_json(value, artifact_type)
     if artifact_type == "layout_table_review_bundle_json" or schema == "layout-table-review-bundle-v1":
@@ -2794,6 +2801,36 @@ def summarize_known_artifact_json(value: dict[str, Any], artifact_type: str) -> 
     if artifact_type in {"pdf_metadata_json", "pdf_outline_json", "pdf_layout_evidence_json"}:
         return summarize_diagnostic_json(value, artifact_type)
     return {}
+
+
+def summarize_docling_document_json(value: dict[str, Any]) -> dict[str, Any]:
+    document = value.get("document") if isinstance(value.get("document"), dict) else {}
+    provenance = value.get("provenance") if isinstance(value.get("provenance"), dict) else {}
+    return {
+        "kind": "docling_document",
+        "schema_version": value.get("schema_version"),
+        "backend": value.get("backend"),
+        "status": value.get("status"),
+        "source": value.get("source"),
+        "text_item_count": int(provenance.get("text_item_count") or len(document.get("texts") or [])),
+        "page_count": int(provenance.get("page_count") or len(document.get("pages") or [])),
+        "bbox_count": int(provenance.get("bbox_count") or 0),
+    }
+
+
+def summarize_document_quality_evaluation_json(value: dict[str, Any]) -> dict[str, Any]:
+    summary = value.get("summary") if isinstance(value.get("summary"), dict) else {}
+    evaluations = [item for item in value.get("backend_evaluations") or [] if isinstance(item, dict)]
+    return {
+        "kind": "document_quality_evaluation",
+        "schema_version": value.get("schema_version"),
+        "execution_policy": value.get("execution_policy"),
+        "backend_count": int(summary.get("backend_count") or len(evaluations)),
+        "evaluated_dimension_count": int(summary.get("evaluated_dimension_count") or 0),
+        "not_evaluated_dimension_count": int(summary.get("not_evaluated_dimension_count") or 0),
+        "has_overall_score": bool(value.get("overall_score")),
+        "backends": [item.get("backend") for item in evaluations if item.get("backend")],
+    }
 
 
 def summarize_visual_check_json(value: dict[str, Any]) -> dict[str, Any]:
