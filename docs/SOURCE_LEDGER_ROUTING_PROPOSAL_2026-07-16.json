@@ -1,0 +1,36 @@
+{
+  "schema_version": "source-ledger-proposal-v1",
+  "status": "proposal_only",
+  "apply": false,
+  "reason": "The shared SOURCE_INVENTORY has no gmft, Table Transformer, or OpenDataLoader PDF entry. Do not clone; link the existing project review first.",
+  "evidence_doc": "D:\\used-by-codex\\ebook_markdown_pipeline\\docs\\INCREMENTAL_ARCHITECTURE_OPEN_SOURCE_REVIEW_2026-07-15.md",
+  "proposed_entries": [
+    {
+      "name": "gmft",
+      "aliases": ["gmft", "conjuncts/gmft"],
+      "repo_url": "https://github.com/conjuncts/gmft.git",
+      "local_path": null,
+      "review_status": "reviewed_candidate_no_local_clone",
+      "integration_status": "candidate_plan_fake_only",
+      "next_action": "Reuse the existing review and worker contract; prepare runtime/model only after explicit approval."
+    },
+    {
+      "name": "Table Transformer",
+      "aliases": ["table-transformer", "microsoft/table-transformer"],
+      "repo_url": "https://github.com/microsoft/table-transformer.git",
+      "local_path": null,
+      "review_status": "dependency_reference_no_local_clone",
+      "integration_status": "not_integrated_model_dependency",
+      "next_action": "Treat as a GMFT dependency; no download while local storage is constrained."
+    },
+    {
+      "name": "OpenDataLoader PDF",
+      "aliases": ["opendataloader-pdf", "opendataloader-project/opendataloader-pdf"],
+      "repo_url": "https://github.com/opendataloader-project/opendataloader-pdf.git",
+      "local_path": null,
+      "review_status": "reviewed_candidate_no_local_clone",
+      "integration_status": "candidate_plan_fake_only",
+      "next_action": "Keep Java fast-mode candidate-only and reuse the existing plan/fake worker."
+    }
+  ]
+}

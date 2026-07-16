@@ -55,6 +55,14 @@ Use this order for normal operations:
 
 ## Availability Checks
 
+### Unified Dispatch Status Without Starting Services
+
+```powershell
+python scripts\check_dispatch_contract.py
+```
+
+This emits `ebook-dispatch-contract-v1` with configured HTTP status, legacy `8765` classification, entrypoint fallbacks, effective module readiness, deterministic material routes, OpenClaw/Telegram/Local Tools guidance, and manual review gates. It never starts HTTP or MinerU, downloads models, or converts a document. See [SERVICE_AND_MODULE_ROUTING_2026-07-16.md](SERVICE_AND_MODULE_ROUTING_2026-07-16.md).
+
 ### Read The Config
 
 ```powershell

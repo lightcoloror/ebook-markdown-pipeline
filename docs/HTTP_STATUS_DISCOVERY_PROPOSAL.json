@@ -1,5 +1,5 @@
 {
-  "schema_version": "ebook-http-discovery-proposal-v1",
+  "schema_version": "ebook-http-discovery-proposal-v2",
   "status": "proposal_only",
   "apply": false,
   "queue_id": "RFQ-F355DEE60F08",
@@ -11,11 +11,18 @@
     "auto_start": false
   },
   "proposed_discovery_fields": {
+    "dispatch_contract": "ebook-dispatch-contract-v1",
+    "dispatch_command": "python scripts\\check_dispatch_contract.py",
     "cli_status": "health-check-v2.minimal_ok",
-    "http_runtime_status": "listener plus PID evidence",
-    "optional_backend_status": "health-check-v2 capability matrix",
-    "minimal_output_status": "offline-stage-quality-v1 route"
+    "http_runtime_status": "listener plus configured port evidence",
+    "optional_backend_status": "health-check-v2 capability matrix plus fixed MinerU API status",
+    "route_status": "effective module state plus deterministic fallback and review gates"
   },
-  "registry_patch_required": false,
-  "reason": "The registry already declares stopped-by-design, auto_start=false, and config/http.env. Keep runtime composition project-local until a shared registry change is separately approved."
+  "registry_patch_recommended": true,
+  "proposed_registry_merge": {
+    "tools.ebook_markdown_pipeline.cli.dispatch_status": "python scripts\\check_dispatch_contract.py",
+    "tools.ebook_markdown_pipeline.contracts.dispatch_schema": "ebook-dispatch-contract-v1",
+    "tools.ebook_markdown_pipeline.contracts.dispatch_documentation": "docs\\SERVICE_AND_MODULE_ROUTING_2026-07-16.md"
+  },
+  "reason": "The registry already has the correct config source and stopped-by-design semantics. Add only the stable project-local dispatch CLI after Local Tools owner review; do not duplicate runtime state in the shared registry."
 }

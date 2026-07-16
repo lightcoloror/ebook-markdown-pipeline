@@ -21,6 +21,8 @@ CLI, MCP, and HTTP conversion jobs use `schema_version=ebook-job-v1` and `artifa
 
 Service discovery, HTTP `stopped-by-design` status, port configuration, and MCP/HTTP/CLI fallback rules are documented in [SERVICE_CONTRACT.md](SERVICE_CONTRACT.md). Dispatchers should read that document before treating a missing HTTP listener as a converter outage.
 
+For one machine-readable snapshot, run `python scripts\check_dispatch_contract.py`. Its `ebook-dispatch-contract-v1` payload combines entrypoint status, effective backend readiness, deterministic fallback routes, and OpenClaw/Telegram/Local Tools consumer guidance without starting services or downloading models. The matching Chinese architecture note is [SERVICE_AND_MODULE_ROUTING_2026-07-16.md](SERVICE_AND_MODULE_ROUTING_2026-07-16.md).
+
 MinerU uses the operator-managed localhost service in [MINERU_API_SERVICE.md](MINERU_API_SERVICE.md). Agents must call `mineru_api.cmd status` and use the configured `--api-url`; they must never invoke MinerU's implicit temporary API path.
 
 The architecture diagrams and module boundaries are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
