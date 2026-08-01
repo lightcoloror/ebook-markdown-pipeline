@@ -65,6 +65,7 @@ def main() -> int:
                 "start_location_index",
                 "query_location_index",
                 "export_location_review_pack",
+                "rebuild_chat_screenshots",
                 "rebuild_image_book",
                 "start_image_book_rebuild",
                 "rebuild_image_book_from_order",

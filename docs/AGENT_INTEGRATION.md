@@ -416,6 +416,12 @@ OCR provider selection:
 - `ocr_provider=umi`: use the configured Umi-OCR/PaddleOCR-json backend.
 - `ocr_provider=rapidocr`: use the optional Python-native RapidOCR backend. Install `requirements-rapidocr.txt` first.
 
+### `rebuild_chat_screenshots`
+
+Reuses the image-book OCR and ordering layer, then separates simple private-chat screenshots by geometry: left-side messages are the other speaker, right-side messages are the local speaker, while timestamps and explicit system notices remain neutral.
+
+Outputs `chat.md`, message-level `chat.jsonl`, `review.md`, and traceable `pages.jsonl`. Uncertain speaker assignments are preserved as `unknown` rather than guessed. See [CHAT_SCREENSHOT_REBUILDER.md](CHAT_SCREENSHOT_REBUILDER.md) for CLI usage and current limitations.
+
 ### `start_image_book_rebuild`
 
 Starts `rebuild_image_book` as a background job and returns `job_id`.
@@ -429,6 +435,7 @@ Use this for large screenshot folders or OCR-enabled image-book rebuilding. Poll
 - Use `build_location_index` instead of full conversion when the user only needs to find which page/image contains a keyword.
 - Use `start_location_index` instead of `build_location_index` for long or OCR-heavy indexing.
 - Use `rebuild_image_book` when the user has unordered screenshots and wants a single Markdown draft with review artifacts.
+- Use `rebuild_chat_screenshots` when the user explicitly wants chat screenshots organized by speaker. It is optimized for left/right private chats; group chats require review.
 - Use `start_image_book_rebuild` instead of `rebuild_image_book` for long screenshot folders.
 - For PDFs, keep `pdf_pipeline_mode=auto` unless the user explicitly chooses another mode.
 - Use `pdf_pipeline_mode=olmocr` only for explicit GPU/remote VLM OCR benchmark runs; it is not an auto route and may require `olmocr_server`, `olmocr_model`, and a local API-key environment variable name.

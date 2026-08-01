@@ -44,6 +44,7 @@ REQUIRED_TOOLS = {
     "start_location_index",
     "query_location_index",
     "export_location_review_pack",
+    "rebuild_chat_screenshots",
     "start_image_book_rebuild",
     "rebuild_image_book_from_order",
 }

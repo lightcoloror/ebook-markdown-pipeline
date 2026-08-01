@@ -49,6 +49,7 @@ from ebook_markdown_pipeline.batch_convert_books import suggest_review_next_acti
 from ebook_markdown_pipeline.document_locator import build_location_index, export_location_review_pack, query_location_index  # noqa: E402
 from ebook_markdown_pipeline.document_inspector import inspect_document  # noqa: E402
 from ebook_markdown_pipeline.environment_report import compare_environment_lock, export_environment_report  # noqa: E402
+from ebook_markdown_pipeline.chat_screenshot_rebuilder import rebuild_chat_screenshots  # noqa: E402
 from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book, rebuild_image_book_from_order  # noqa: E402
 from ebook_markdown_pipeline.local_env import project_env_status  # noqa: E402
 from ebook_markdown_pipeline.online_providers import (  # noqa: E402
@@ -641,6 +642,24 @@ def tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "rebuild_chat_screenshots",
+            "description": "OCR chat screenshots, infer left/right speakers, remove cross-screenshot overlap, and write chat.md/chat.jsonl plus a review report.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"},
+                    "output": {"type": "string"},
+                    "recursive": {"type": "boolean", "default": True},
+                    "ocr_provider": {"type": "string", "enum": ["auto", "umi", "rapidocr"], "default": "auto"},
+                    "title": {"type": "string", "default": "聊天记录"},
+                    "my_label": {"type": "string", "default": "我"},
+                    "other_label": {"type": "string", "default": "对方"},
+                    "speaker_mode": {"type": "string", "enum": ["auto", "left-right"], "default": "auto"},
+                },
+                "required": ["input", "output"],
+            },
+        },
+        {
             "name": "rebuild_image_book",
             "description": "OCR a folder of screenshots/images, deduplicate near-repeats, infer order, and write a structured Markdown draft plus review files.",
             "inputSchema": {
@@ -756,6 +775,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return query_location_index_tool(arguments)
     if name == "export_location_review_pack":
         return export_location_review_pack_tool(arguments)
+    if name == "rebuild_chat_screenshots":
+        return rebuild_chat_screenshots_tool(arguments)
     if name == "rebuild_image_book":
         return rebuild_image_book_tool(arguments)
     if name == "start_image_book_rebuild":
@@ -3703,6 +3724,19 @@ def rebuild_image_book_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         ocr_provider=str(arguments.get("ocr_provider") or "auto"),
         umi_paddle_exe=arguments.get("umi_paddle_exe"),
         umi_paddle_module=arguments.get("umi_paddle_module"),
+    )
+
+
+def rebuild_chat_screenshots_tool(arguments: dict[str, Any]) -> dict[str, Any]:
+    return rebuild_chat_screenshots(
+        input_path=Path(arguments["input"]),
+        output_dir=Path(arguments["output"]),
+        recursive=bool(arguments.get("recursive", True)),
+        ocr_provider=str(arguments.get("ocr_provider") or "auto"),
+        title=str(arguments.get("title") or "聊天记录"),
+        my_label=str(arguments.get("my_label") or "我"),
+        other_label=str(arguments.get("other_label") or "对方"),
+        speaker_mode=str(arguments.get("speaker_mode") or "auto"),
     )
 
 

@@ -62,6 +62,8 @@ JSON_ARTIFACT_KEYS = (
 
 READABLE_NON_JSON_ARTIFACT_KEYS = (
     "markdown",
+    "chat_markdown",
+    "chat_jsonl",
     "agent_handoff_bundle_markdown",
     "agent_batch_run_summary",
     "agent_batch_summary",
@@ -92,6 +94,8 @@ def _json_profile(key: str) -> ArtifactTypeProfile:
 def _readable_profile(key: str) -> ArtifactTypeProfile:
     media_types = {
         "markdown": "text/markdown",
+        "chat_markdown": "text/markdown",
+        "chat_jsonl": "application/x-ndjson",
         "agent_handoff_bundle_markdown": "text/markdown",
         "agent_smoke_summary_markdown": "text/markdown",
         "html": "text/html",
@@ -129,12 +133,16 @@ def infer_artifact_type(path: Path) -> str:
     suffix = path.suffix.lower()
     name = path.name.lower()
     if suffix in {".md", ".markdown"}:
+        if name == "chat.md":
+            return "chat_markdown"
         if "agent-handoff-bundle" in name:
             return "agent_handoff_bundle_markdown"
         if "agent-smoke-summary" in name:
             return "agent_smoke_summary_markdown"
         return "markdown"
     if suffix == ".jsonl":
+        if name == "chat.jsonl":
+            return "chat_jsonl"
         if "ocr-blocks" in name or "ocr_blocks" in name:
             return "ocr_blocks_jsonl"
         if "location" in name:
