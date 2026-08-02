@@ -13,7 +13,11 @@ from typing import Any
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
-from ebook_markdown_pipeline.ebook_converter_http import build_handler  # noqa: E402
+from ebook_markdown_pipeline.ebook_converter_http import (  # noqa: E402
+    MIN_REMOTE_API_TOKEN_LENGTH,
+    build_handler,
+    validate_http_bind_security,
+)
 from ebook_markdown_pipeline.http_config import default_http_url  # noqa: E402
 
 
@@ -24,6 +28,8 @@ def main() -> int:
     parser.add_argument("--input", default=str(Path(__file__).resolve().parents[1] / "requirements.txt"))
     parser.add_argument("--output", default=str(Path(__file__).resolve().parents[1] / "_http_api_test_output"))
     args = parser.parse_args()
+
+    assert_http_security_boundaries()
 
     server: ThreadingHTTPServer | None = None
     url = args.url
@@ -231,7 +237,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
 
 
 def start_local_server(token: str) -> ThreadingHTTPServer:
-    server = ThreadingHTTPServer(("127.0.0.1", 0), build_handler(token))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), build_handler(token, bind_host="127.0.0.1", bind_port=0))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     url = f"http://127.0.0.1:{server.server_port}/contract"
@@ -245,6 +251,39 @@ def start_local_server(token: str) -> ThreadingHTTPServer:
     server.shutdown()
     server.server_close()
     raise RuntimeError("In-process HTTP server did not expose /contract in time.")
+
+
+def assert_http_security_boundaries() -> None:
+    strong_token = "test-token-0123456789abcdef"
+    if len(strong_token) < MIN_REMOTE_API_TOKEN_LENGTH:
+        raise AssertionError("HTTP security test token is unexpectedly short.")
+    if not validate_http_bind_security("127.0.0.1", "")[0]:
+        raise AssertionError("Loopback HTTP without a token should remain available.")
+    for token in ("", "change-me", "replace-with-a-local-token", "too-short"):
+        if validate_http_bind_security("0.0.0.0", token)[0]:
+            raise AssertionError(f"Non-local HTTP accepted an unsafe token: {token!r}")
+    if not validate_http_bind_security("0.0.0.0", strong_token)[0]:
+        raise AssertionError("Non-local HTTP rejected a sufficiently strong explicit token.")
+    try:
+        build_handler("change-me", bind_host="0.0.0.0")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Embedded HTTP handler accepted the Docker placeholder token.")
+
+    server = start_local_server(strong_token)
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        for headers in ({}, {"Authorization": "Bearer wrong-token"}, {"X-Api-Token": "wrong-token"}):
+            denied = request_json(f"{base}/contract", headers=headers, allow_http_error=True)
+            if denied.get("code") != "unauthorized":
+                raise AssertionError(f"HTTP authorization rejection branch failed: {denied}")
+        accepted = request_json(f"{base}/contract", headers={"Authorization": f"Bearer {strong_token}"})
+        if accepted.get("schema_version") != "ebook-http-contract-v1":
+            raise AssertionError(f"Strong-token HTTP authorization failed: {accepted}")
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def request_json(

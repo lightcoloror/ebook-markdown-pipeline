@@ -14,6 +14,7 @@ from ebook_markdown_pipeline.shared_vkp_gateway import (  # noqa: E402
     SharedVkpGateway,
     SharedVkpGatewayError,
     execution_remote_requests_made,
+    find_credential_fields,
     redacted_json,
     shared_provider_catalog,
     shared_vkp_gateway_fast_health,
@@ -39,6 +40,10 @@ def main() -> int:
         raise AssertionError(f"Shared gateway must never expose or copy API keys: {health}")
     if health.get("remote_requests_made") is not False:
         raise AssertionError(f"Health must be read-only: {health}")
+    for label, payload in (("health", health), ("fast_health", fast_health)):
+        scan = payload.get("credential_artifact_scan") or {}
+        if scan.get("performed") is not True or scan.get("passed") is not True or scan.get("matched_field_count") != 0:
+            raise AssertionError(f"{label} lacks runtime credential-scan evidence: {scan}")
     catalog = health.get("shared_provider_catalog") or {}
     if catalog.get("provider_count", 0) < 1 or catalog.get("api_keys_copied") is not False:
         raise AssertionError(f"Shared provider catalog is missing or unsafe: {catalog}")
@@ -88,6 +93,31 @@ def main() -> int:
         pass
     else:
         raise AssertionError("Structured credential fields must fail closed.")
+    for field in (
+        "access_token",
+        "client_secret",
+        "x-api-key",
+        "bearer",
+        "private_key",
+        "credentials",
+        "github_refresh_token",
+    ):
+        try:
+            redacted_json({field: "must-not-be-written"})
+        except SharedVkpGatewayError:
+            pass
+        else:
+            raise AssertionError(f"Credential field must fail closed: {field}")
+    safe_metadata = {
+        "api_keys_exposed": False,
+        "api_keys_copied": False,
+        "credential_status_available": True,
+        "credential_ready_profile_count": 3,
+        "max_tokens": 1000,
+        "token_budget": 2000,
+    }
+    if find_credential_fields(safe_metadata):
+        raise AssertionError(f"Credential metadata produced false positives: {find_credential_fields(safe_metadata)}")
 
     fast_fixture = PROJECT_DIR / ".tmp-shared-vkp-fast"
     shutil.rmtree(fast_fixture, ignore_errors=True)
@@ -247,6 +277,11 @@ def main() -> int:
         assert result["pages"][0]["page_number"] == 1
         assert result["api_keys_exposed"] is False
         assert result["api_keys_copied"] is False
+        assert result["credential_artifact_scan"] == {
+            "performed": True,
+            "passed": True,
+            "matched_field_count": 0,
+        }
         assert consent_arguments["max_retries_per_call"] == 0
         assert consent_arguments["max_calls"] == 1
         assert consent_arguments["allowed_roots_env"] == str(artifact.resolve())

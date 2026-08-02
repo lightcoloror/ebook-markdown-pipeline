@@ -1,10 +1,13 @@
 # 在线大模型 API 接入设计
 
 <!-- Documentation update: 2026-08-01 23:35:28 | Codex (GPT-5) | Added and synchronized the explicit online-only/shared-VKP mode. -->
+<!-- Documentation update: 2026-08-02 09:37:26 | Codex (GPT-5) | Recorded completed synthetic supplier smoke and provider ownership boundaries. -->
 
 本项目现在同时支持两类在线能力：`run_online_enhancement` 对既有结果做显式二次补强；`online_only` 把整份材料的 OCR、视觉理解和结构推理交给远程模型。接入原则仍是统一 provider/gateway 抽象，不在 MinerU、PaddleOCR、截图成书、`structure_repair` 等具体管道里分别写供应商 API 调用。
 
 当前状态：`online_providers.py` 保留 fake/OpenAI-compatible 的独立增强接口；`online_document_pipeline.py` 提供完整纯在线主管道；`shared_vkp_gateway.py` 复用同机 VKP 的供应商路由、LiteLLM gateway、DPAPI 凭据库、数据导出 consent 和费用上限。CLI、MCP、HTTP 和桌面 UI 已共用这套核心逻辑。默认仍为 `local_first`，不会自动调用远程 API。完整架构和源码复用证据见 [ONLINE_ONLY_MODE_ARCHITECTURE_AND_SOURCE_REUSE_2026-08-01.md](ONLINE_ONLY_MODE_ARCHITECTURE_AND_SOURCE_REUSE_2026-08-01.md)。
+
+针对 commit b79f8fb 的外部安全与契约审查逐项处置见 [EXTERNAL_REVIEW_REMEDIATION_2026-08-02.md](EXTERNAL_REVIEW_REMEDIATION_2026-08-02.md)。
 
 ## 核心原则
 
@@ -149,7 +152,7 @@ python scripts\run_remote_ocr_vlm_eval.py --execute --fake --output benchmarks\r
 4. 已完成：数据导出确认、费用上限、版本化输出、stage/source manifest、失败续跑和无网络 fake 回归。
 5. 已完成：CLI、MCP、HTTP、`process_material` 和桌面 UI 入口。
 6. 已完成：在线 OCR、自动疑难页 VLM 和文本结构三阶段；真实 VKP connector 与真实 LiteLLM 本地闭环均验证三条独立共享路由。
-7. 待显式人工验证：用非敏感小样本做一次真实供应商 smoke，核对 Mistral OCR、视觉 route 和 text route 的实际响应形状与粗略费用。
+7. 已完成显式人工验证：在用户授权和 0.10 美元整次费用上限下，仅外发程序生成的非敏感单页测试图，Mistral OCR、视觉 route 和 text route 三阶段均返回真实远程证据；该 smoke 不授权上传用户材料。
 8. 待优化：VKP 增加专门的 `document_structure` task 后，替换当前封装在 adapter 内的通用 text task 映射。
 9. 待评测：根据公开 fixture 比较 hybrid 与 online-only 的结构质量、速度和成本，不把纯在线模式自动提升为默认。
 10. 候选暂缓：Unlimited-OCR 等新重后端继续按 scorecard 决策；没有明显质量替代证据就不增加本地模型空间。

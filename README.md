@@ -1,6 +1,7 @@
 # 图文材料转换器
 
 <!-- Documentation update: 2026-08-01 23:35:28 | Codex (GPT-5) | Added and synchronized the explicit online-only/shared-VKP mode. -->
+<!-- Documentation update: 2026-08-02 09:37:26 | Codex (GPT-5) | Replaced placeholder HTTP credentials with generated random-token guidance. -->
 
 Graphic-Text Material Converter is a local-first converter for ebooks, PDFs, Office documents, screenshots, image sets, and web archives. It turns mixed graphic/text materials into Markdown and reviewable artifacts, with automatic routing, fallback, quality reports, and agent-friendly APIs.
 
@@ -377,7 +378,9 @@ python scripts\test_mcp_stdio.py --convert
 Docker 里的 OpenClaw / Hermes Agent 这类容器无法直接执行 Windows 路径的 stdio MCP 时，可以启动 HTTP bridge：
 
 ```powershell
-$env:EBOOK_CONVERTER_API_TOKEN = "replace-with-a-local-token"
+$bytes = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+$env:EBOOK_CONVERTER_API_TOKEN = [Convert]::ToBase64String($bytes)
 python ebook_converter_http.py --host 0.0.0.0
 ```
 

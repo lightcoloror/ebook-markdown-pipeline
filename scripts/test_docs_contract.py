@@ -479,6 +479,43 @@ def main() -> int:
     decision_fields = {"intent", "decision", "reason", "evidence", "scope"}
     if any(not decision_fields.issubset(item) for item in sources):
         raise AssertionError("Every reviewed source requires intent/decision/reason/evidence/scope.")
+    if source_manifest.get("local_review_path_base") != "workspace_root":
+        raise AssertionError("Source-review paths must declare workspace_root as their resolution base.")
+    if source_manifest.get("updated_by") != "Codex (GPT-5)":
+        raise AssertionError("Source-review manifest must record its latest documentation actor.")
+    if source_manifest.get("local_review_worktrees_committed") is not False:
+        raise AssertionError("Local source-review worktrees must stay outside the public repository.")
+    if any(Path(str(item.get("local_review_subdir") or "")).is_absolute() for item in sources):
+        raise AssertionError("Source-review manifest paths must remain public-safe relative paths.")
+
+    tool_contract = (PROJECT_DIR / "docs" / "TOOL_CONTRACT.md").read_text(encoding="utf-8")
+    expected_entrypoints = '"entrypoints": ["process_material", "start_online_conversion", "get_job_status", "read_artifact"]'
+    if expected_entrypoints not in tool_contract:
+        raise AssertionError("HTTP contract example is missing the online conversion entrypoint.")
+
+    remediation = (PROJECT_DIR / "docs" / "EXTERNAL_REVIEW_REMEDIATION_2026-08-02.md").read_text(encoding="utf-8")
+    for phrase in ("R1", "R14", "fail-closed", "workspace root", "normalize_agent_next_actions", "vkp_shared"):
+        if phrase not in remediation:
+            raise AssertionError(f"External review remediation is missing contract evidence: {phrase}")
+
+    dockerfile = (PROJECT_DIR / "Dockerfile").read_text(encoding="utf-8")
+    if "EBOOK_CONVERTER_API_TOKEN=change-me" in dockerfile:
+        raise AssertionError("Dockerfile must not ship a default API token.")
+    if "USER appuser" not in dockerfile:
+        raise AssertionError("Dockerfile must run the HTTP bridge as a non-root user.")
+    dockerignore = (PROJECT_DIR / ".dockerignore").read_text(encoding="utf-8")
+    for ignored in (".env", ".local", ".pytest_cache", "benchmarks/runs"):
+        if ignored not in dockerignore:
+            raise AssertionError(f".dockerignore is missing public-safety exclusion: {ignored}")
+    compose = (PROJECT_DIR / "docker-compose.example.yml").read_text(encoding="utf-8")
+    if "Set a random token with at least 24 characters" not in compose:
+        raise AssertionError("Docker Compose must fail closed when an explicit strong token is missing.")
+    docker_docs = (PROJECT_DIR / "docs" / "DOCKER_USAGE.md").read_text(encoding="utf-8")
+    if "replace-with-a-local-token" in docker_docs:
+        raise AssertionError("Docker docs must not recommend a fixed placeholder credential.")
+    service_contract = (PROJECT_DIR / "docs" / "SERVICE_CONTRACT.md").read_text(encoding="utf-8")
+    if "at least 24 characters" not in service_contract or "placeholder tokens are rejected" not in service_contract:
+        raise AssertionError("Service contract must document fail-closed remote authentication.")
     print("Docs contract smoke test passed.")
     return 0
 

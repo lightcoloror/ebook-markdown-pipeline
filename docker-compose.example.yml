@@ -8,7 +8,7 @@ services:
     ports:
       - "${EBOOK_CONVERTER_HTTP_PORT:?Load config/http.env}:${EBOOK_CONVERTER_HTTP_PORT:?Load config/http.env}"
     environment:
-      EBOOK_CONVERTER_API_TOKEN: "replace-with-a-local-token"
+      EBOOK_CONVERTER_API_TOKEN: "${EBOOK_CONVERTER_API_TOKEN:?Set a random token with at least 24 characters}"
     volumes:
       - ./data/input:/data/input
       - ./data/output:/data/output

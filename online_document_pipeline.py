@@ -1130,6 +1130,10 @@ def safety_payload(options: OnlinePipelineOptions) -> dict[str, Any]:
         "credential_source": "vkp_windows_dpapi" if options.provider_mode == "vkp_shared" else "none_fake",
         "api_keys_copied": False,
         "api_keys_persisted_in_artifacts": False,
+        "credential_artifact_scan": {
+            "enforced": options.provider_mode == "vkp_shared",
+            "evidence_source": "shared_vkp_gateway_runtime_payloads" if options.provider_mode == "vkp_shared" else "not_applicable_fake_provider",
+        },
         "source_files_overwritten": False,
         "output_policy": "explicit overwrite uses .online.md; default uses versioned run suffix",
         "local_ai_inference": False,

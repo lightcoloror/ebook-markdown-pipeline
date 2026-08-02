@@ -117,7 +117,7 @@ def shared_provider_catalog(
                 "selected_stages": sorted(row["selected_stages"]),
             }
         )
-    return {
+    return credential_safe_payload({
         "schema_version": "ebook-shared-vkp-provider-catalog-v1",
         "source": "vkp_model_api_settings",
         "provider_count": len(providers),
@@ -128,11 +128,9 @@ def shared_provider_catalog(
         "providers": providers,
         "selected_route_providers": sorted(selected_by_provider),
         "credential_store": "vkp_windows_dpapi",
-        "api_keys_exposed": False,
-        "api_keys_copied": False,
         "remote_requests_made": False,
         "selection_policy": "Change VKP route bindings; ebook inherits them without duplicating supplier credentials.",
-    }
+    })
 
 
 @dataclass(frozen=True)
@@ -254,7 +252,7 @@ def shared_vkp_gateway_fast_health(vkp_root: str | Path | None = None) -> dict[s
     missing_optional = [name for name in missing if name not in REQUIRED_ONLINE_ONLY_STAGES]
     provider_catalog = shared_provider_catalog(profiles, route_status)
     status = "ready" if listening and not missing_required else ("on_demand" if not missing_required else "degraded")
-    return {
+    return credential_safe_payload({
         "schema_version": SCHEMA_VERSION,
         "status": status,
         "ready": listening and not missing_required,
@@ -275,11 +273,9 @@ def shared_vkp_gateway_fast_health(vkp_root: str | Path | None = None) -> dict[s
         "missing_required_stages": missing_required,
         "missing_optional_stages": missing_optional,
         "credential_store": "vkp_windows_dpapi",
-        "api_keys_exposed": False,
-        "api_keys_copied": False,
         "remote_requests_made": False,
         "fallback": "MCP/CLI planning remains available; start the VKP gateway only for confirmed remote execution.",
-    }
+    })
 
 
 class SharedVkpGateway:
@@ -337,7 +333,7 @@ class SharedVkpGateway:
         ready = bool(gateway.get("ready")) and not missing_required
         status = "ready" if ready else ("on_demand" if not missing_required and not gateway.get("ready") else "degraded")
         provider_catalog = shared_provider_catalog(public_settings.get("profiles"), route_status)
-        return {
+        return credential_safe_payload({
             "schema_version": SCHEMA_VERSION,
             "status": status,
             "ready": ready,
@@ -352,11 +348,9 @@ class SharedVkpGateway:
             "missing_required_stages": missing_required,
             "missing_optional_stages": missing_optional,
             "credential_store": "vkp_windows_dpapi",
-            "api_keys_exposed": False,
-            "api_keys_copied": False,
             "remote_requests_made": False,
             "fallback": "MCP/CLI planning remains available; start the VKP gateway only for confirmed remote execution.",
-        }
+        })
 
     def ensure_gateway(
         self,
@@ -462,7 +456,7 @@ class SharedVkpGateway:
                 expected_route_revision=str(route.get("route_revision") or ""),
                 write=True,
             )
-        return {
+        return credential_safe_payload({
             "schema_version": SCHEMA_VERSION,
             "stage": stage,
             "connector_task": connector_task,
@@ -478,13 +472,11 @@ class SharedVkpGateway:
                 "logical_calls": logical_calls,
                 "authorized_attempts": max_calls,
             },
-            "api_keys_exposed": False,
-            "api_keys_copied": False,
             "remote_requests_made": execution_remote_requests_made(execution, route=route),
             "execution": execution,
             "markdown": extract_markdown_from_execution(execution),
             "pages": extract_ocr_pages(execution),
-        }
+        })
 
     def _resolve_route(self, capability: str) -> dict[str, Any]:
         with self._configured_paths():
@@ -654,20 +646,104 @@ def safe_slug(value: str) -> str:
 
 def redacted_json(payload: dict[str, Any]) -> str:
     """Serialize artifacts only when structured credential fields are absent."""
-    if contains_credential_value(payload):
-        raise SharedVkpGatewayError("Credential-like value was found in a shared gateway artifact.")
+    findings = find_credential_fields(payload)
+    if findings:
+        raise SharedVkpGatewayError(
+            "Credential-like fields were found in a shared gateway artifact: " + ", ".join(findings)
+        )
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-def contains_credential_value(value: Any) -> bool:
+SAFE_CREDENTIAL_METADATA_KEYS = frozenset(
+    {
+        "api_keys_exposed",
+        "api_keys_copied",
+        "api_keys_persisted_in_artifacts",
+        "credential_artifact_scan",
+        "credential_ready_profile_count",
+        "credential_status_available",
+        "credential_store",
+        "max_tokens",
+        "token_budget",
+        "token_count",
+    }
+)
+CREDENTIAL_FIELD_NAMES = frozenset(
+    {
+        "access_token",
+        "accesstoken",
+        "api_key",
+        "apikey",
+        "auth_token",
+        "authorization",
+        "authtoken",
+        "bearer",
+        "client_secret",
+        "clientsecret",
+        "credentials",
+        "password",
+        "private_key",
+        "privatekey",
+        "refresh_token",
+        "refreshtoken",
+        "secret",
+        "token",
+        "x_api_key",
+        "xapikey",
+    }
+)
+CREDENTIAL_FIELD_SUFFIXES = (
+    "_access_token",
+    "_api_key",
+    "_auth_token",
+    "_client_secret",
+    "_id_token",
+    "_private_key",
+    "_refresh_token",
+    "_secret",
+)
+
+
+def is_credential_field_name(key: Any) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", "_", str(key or "").strip().lower()).strip("_")
+    if not normalized or normalized in SAFE_CREDENTIAL_METADATA_KEYS:
+        return False
+    compact = normalized.replace("_", "")
+    if normalized in CREDENTIAL_FIELD_NAMES or compact in CREDENTIAL_FIELD_NAMES:
+        return True
+    return normalized.endswith(CREDENTIAL_FIELD_SUFFIXES)
+
+
+def find_credential_fields(value: Any, *, path: str = "$") -> list[str]:
+    findings: list[str] = []
     if isinstance(value, dict):
         for key, item in value.items():
-            if re.fullmatch(r"(?:api[_-]?key|token|authorization|password|secret)", str(key), re.I):
-                if item not in (None, "", False, [], {}):
-                    return True
-            if contains_credential_value(item):
-                return True
-        return False
-    if isinstance(value, list):
-        return any(contains_credential_value(item) for item in value)
-    return False
+            child_path = f"{path}.{key}"
+            if is_credential_field_name(key) and item not in (None, "", False, [], {}):
+                findings.append(child_path)
+            findings.extend(find_credential_fields(item, path=child_path))
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            findings.extend(find_credential_fields(item, path=f"{path}[{index}]"))
+    return sorted(set(findings))
+
+
+def contains_credential_value(value: Any) -> bool:
+    return bool(find_credential_fields(value))
+
+
+def credential_safe_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    findings = find_credential_fields(payload)
+    if findings:
+        raise SharedVkpGatewayError(
+            "Credential-like fields were found before returning a shared gateway payload: " + ", ".join(findings)
+        )
+    result = dict(payload)
+    result["credential_artifact_scan"] = {
+        "performed": True,
+        "passed": True,
+        "matched_field_count": 0,
+    }
+    result["api_keys_exposed"] = False
+    result["api_keys_copied"] = False
+    return result

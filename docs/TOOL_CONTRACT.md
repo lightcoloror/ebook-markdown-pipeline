@@ -1,6 +1,7 @@
 # 图文材料转换器 Agent Tool Contract
 
 <!-- Documentation update: 2026-08-01 23:35:28 | Codex (GPT-5) | Added and synchronized the explicit online-only/shared-VKP mode. -->
+<!-- Documentation update: 2026-08-02 09:37:26 | Codex (GPT-5) | Synchronized the HTTP online-conversion entrypoint example. -->
 
 This document defines the stable calling contract for AI agents using 图文材料转换器 as a general document/image material recognition tool.
 
@@ -363,7 +364,7 @@ HTTP `/contract` returns the stable transport contract for HTTP-native agents:
   "schema_version": "ebook-http-contract-v1",
   "transport": "http",
   "artifact_schema_version": "artifact-schema-v1",
-  "entrypoints": ["process_material", "get_job_status", "read_artifact"],
+  "entrypoints": ["process_material", "start_online_conversion", "get_job_status", "read_artifact"],
   "supports_async_jobs": true,
   "supports_artifacts": true,
   "tools": [],

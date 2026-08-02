@@ -2,7 +2,7 @@
 
 This document is the source of truth for discovering and starting the service-facing entry points of the Graphic-Text Material Converter.
 
-Last reviewed: 2026-07-10 Asia/Shanghai by Codex.
+Last reviewed: 2026-08-02 09:37:26 Asia/Shanghai by Codex (GPT-5).
 
 ## Status Summary
 
@@ -114,11 +114,13 @@ python ebook_converter_http.py
 Start for Docker agent access only when a local API token is set:
 
 ```powershell
-$env:EBOOK_CONVERTER_API_TOKEN = "replace-with-a-local-token"
+$bytes = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+$env:EBOOK_CONVERTER_API_TOKEN = [Convert]::ToBase64String($bytes)
 python ebook_converter_http.py --host 0.0.0.0
 ```
 
-The server reads the default host and port from `config/http.env`. Binding to a non-local host without a token is refused by `ebook_converter_http.py`.
+The server reads the default host and port from `config/http.env`. Binding to a non-local host without a unique token of at least 24 characters is refused; placeholder tokens are rejected by `ebook_converter_http.py`.
 
 After startup, verify:
 

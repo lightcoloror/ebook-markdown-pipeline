@@ -1,6 +1,7 @@
 # 图文材料转换器 Agent Integration
 
 <!-- Documentation update: 2026-08-01 23:35:28 | Codex (GPT-5) | Added and synchronized the explicit online-only/shared-VKP mode. -->
+<!-- Documentation update: 2026-08-02 09:37:26 | Codex (GPT-5) | Documented fail-closed random-token HTTP authentication. -->
 
 用户可见名称是“图文材料转换器 / Graphic-Text Material Converter”。稳定机器 ID 仍是 `ebook-markdown-pipeline`，用于兼容已有 MCP 配置、HTTP bridge、Docker smoke 和脚本调用。
 
@@ -156,7 +157,9 @@ Docker packaging and volume conventions are documented in [DOCKER_USAGE.md](DOCK
 Host-side startup:
 
 ```powershell
-$env:EBOOK_CONVERTER_API_TOKEN = "replace-with-a-local-token"
+$bytes = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+$env:EBOOK_CONVERTER_API_TOKEN = [Convert]::ToBase64String($bytes)
 python ebook_converter_http.py --host 0.0.0.0
 ```
 
@@ -165,7 +168,7 @@ The HTTP port is read from `config/http.env` unless explicitly overridden.
 Container-side health check:
 
 ```bash
-curl -H "Authorization: Bearer replace-with-a-local-token" "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/health"
+curl -H "Authorization: Bearer ${EBOOK_CONVERTER_API_TOKEN}" "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/health"
 ```
 
 The health response includes `schema_version`, `tool_count`, `tools`, `supports_async_jobs`, `supports_artifacts`, `http_config`, `config_sources`, `local_env_exists`, `local_env_loaded_keys`, `pipeline_capabilities`, `provider_status`, `backend_status`, `capability_status`, `minimal_ok`, `optional_missing_is_ok`, and `risk_status`. Agents should use it for capability discovery before making tool calls and should read `http_config.config_path` and `config_sources.local_env` instead of guessing ports or local override files. `local_env_loaded_keys` contains key names only; it must not expose environment variable values. Missing optional heavy backends should not block the default local recognition route when `minimal_ok=true`. Soft environment risks such as `media_helper` and `python_dependency_consistency` may be `degraded` without blocking EPUB/TXT/text-layer-PDF conversion.
@@ -173,19 +176,19 @@ The health response includes `schema_version`, `tool_count`, `tools`, `supports_
 For a smaller capability-only payload, call:
 
 ```bash
-curl -H "Authorization: Bearer replace-with-a-local-token" "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/capabilities"
+curl -H "Authorization: Bearer ${EBOOK_CONVERTER_API_TOKEN}" "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/capabilities"
 ```
 
 For HTTP-native agents, `/contract` is the one-shot discovery endpoint. It returns `schema_version=ebook-http-contract-v1`, preferred entrypoints, specialist tools, full tool schemas, artifact/error contract versions, HTTP config, and docs pointers:
 
 ```bash
-curl -H "Authorization: Bearer replace-with-a-local-token" "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/contract"
+curl -H "Authorization: Bearer ${EBOOK_CONVERTER_API_TOKEN}" "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/contract"
 ```
 
 Container-side tool call:
 
 ```bash
-curl -H "Authorization: Bearer replace-with-a-local-token" \
+curl -H "Authorization: Bearer ${EBOOK_CONVERTER_API_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"name":"scan_books","arguments":{"input":".\\sample-materials\\books","output":".\\agent-output\\books-md","recursive":true}}' \
   "http://host.docker.internal:${EBOOK_CONVERTER_HTTP_PORT}/call"

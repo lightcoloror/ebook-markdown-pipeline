@@ -235,8 +235,10 @@ def audit_source_reuse(project_dir: Path, workspace_dir: Path) -> dict[str, Any]
     except (OSError, json.JSONDecodeError):
         manifest = {}
     rows = manifest.get("sources") if isinstance(manifest.get("sources"), list) else []
+    path_base = str(manifest.get("local_review_path_base") or "")
+    worktrees_committed = manifest.get("local_review_worktrees_committed")
     evidence: list[dict[str, Any]] = []
-    all_valid = len(rows) >= 5
+    all_valid = len(rows) >= 5 and path_base == "workspace_root" and worktrees_committed is False
     for row in rows:
         if not isinstance(row, dict):
             all_valid = False
@@ -275,6 +277,8 @@ def audit_source_reuse(project_dir: Path, workspace_dir: Path) -> dict[str, Any]
         "passed": all_valid,
         "evidence": {
             "source_count": len(rows),
+            "local_review_path_base": path_base,
+            "local_review_worktrees_committed": worktrees_committed,
             "sources": evidence,
             "global_ledger_registration_status": global_ledger.get("registration_status"),
             "global_ledger_fail_closed": global_ledger.get("decision"),

@@ -1,5 +1,7 @@
 # Installation
 
+<!-- Documentation update: 2026-08-02 09:37:26 | Codex (GPT-5) | Replaced placeholder HTTP credentials with generated random-token guidance. -->
+
 This project is local-first and modular. You do not need to install every backend before using it. Start with the smallest useful setup, then add heavier PDF/OCR/VLM/Agent pieces only when your materials need them.
 
 ## 1. Minimal Setup
@@ -379,7 +381,9 @@ python scripts\test_mcp_stdio.py
 HTTP bridge:
 
 ```powershell
-$env:EBOOK_CONVERTER_API_TOKEN = "replace-with-a-local-token"
+$bytes = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+$env:EBOOK_CONVERTER_API_TOKEN = [Convert]::ToBase64String($bytes)
 python ebook_converter_http.py --host 0.0.0.0
 ```
 
@@ -388,7 +392,7 @@ The default HTTP host/port is read from `config/http.env`. Do not duplicate host
 HTTP health check:
 
 ```powershell
-curl -H "Authorization: Bearer replace-with-a-local-token" `
+curl -H "Authorization: Bearer $env:EBOOK_CONVERTER_API_TOKEN" `
   "http://127.0.0.1:9241/health"
 ```
 

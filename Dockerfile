@@ -2,7 +2,6 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV EBOOK_CONVERTER_API_TOKEN=change-me
 
 WORKDIR /app
 
@@ -15,7 +14,11 @@ RUN apt-get update \
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY . /app/ebook_markdown_pipeline
+RUN groupadd --gid 10001 appuser \
+    && useradd --uid 10001 --gid appuser --create-home appuser
+
+COPY --chown=appuser:appuser . /app/ebook_markdown_pipeline
 WORKDIR /app
+USER appuser
 
 CMD ["python", "-m", "ebook_markdown_pipeline.ebook_converter_http", "--host", "0.0.0.0"]

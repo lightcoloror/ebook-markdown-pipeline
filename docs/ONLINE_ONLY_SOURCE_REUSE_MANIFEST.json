@@ -1,7 +1,10 @@
 {
   "schema_version": "ebook-online-only-source-reuse-v1",
-  "updated_at": "2026-08-02 01:29:09",
+  "updated_at": "2026-08-02 09:37:26",
+  "updated_by": "Codex (GPT-5)",
   "evidence_document": "docs/ONLINE_ONLY_MODE_ARCHITECTURE_AND_SOURCE_REUSE_2026-08-01.md",
+  "local_review_path_base": "workspace_root",
+  "local_review_worktrees_committed": false,
   "global_source_ledger": {
     "registry_tool_id": "ebook_markdown_pipeline",
     "inventory_entry_present": false,

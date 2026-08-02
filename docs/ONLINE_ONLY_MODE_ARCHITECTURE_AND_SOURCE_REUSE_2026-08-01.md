@@ -24,6 +24,8 @@
 
 真实输出围栏归一化修复：2026-08-02 08:40:28 | Codex（GPT-5）
 
+外部代码审查安全收口：2026-08-02 09:37:26 | Codex（GPT-5）
+
 执行者：Codex（GPT-5）
 
 ## 结论
@@ -117,8 +119,10 @@ flowchart LR
 | OAPI-029 | 用真实供应商证明纯在线三阶段闭环 | 在用户明确批准后，仅上传程序生成的非敏感单页测试图，并把整次执行的估算费用上限固定为 0.10 美元 | fake 和本地 loopback 能证明契约，但不能证明当前供应商凭据、模型路由和公网链路实际可用 | smoke `supplier-smoke-20260802-082616-743c4a` 通过：Mistral OCR 1 页、SiliconFlow VLM 1 页、Gemini 文本结构 2 块均记录 `remote_requests_made=true`；源文件未覆盖，API key 未复制或写日志 | 仅该合成 fixture 的一次验收；不授权上传用户文件，不改变 local-first 默认值，后续真实调用仍需逐次确认与正数费用上限 |
 | OAPI-030 | 防止本地 smoke 和测试 artifact 被误提交 | 在项目 `.gitignore` 增加 `.local/` 与 `.pytest_cache/` | 真实 smoke 的脱敏报告、consent、模型结果和质量输出应作为本地验收证据保留，但不属于公开源码；未忽略目录还会产生 ACL 与长路径状态噪音 | `git check-ignore` 能命中真实 smoke JSON，`git status` 不再枚举 `.local/` 或 `.pytest_cache/` | 仅 Git 跟踪边界；不删除本地证据，不改变转换、供应商调用、费用或运行时配置 |
 | OAPI-031 | 结构模型的 Markdown 外层围栏不能污染最终文档 | 在结构响应归一化层仅剥离覆盖整个响应的 ````markdown`/````md` 围栏，保留正文内部其他语言代码块；恢复旧任务时也应用并记录 `outer_markdown_fence_removed` | 真实 smoke 三阶段虽成功，但第二个结构 chunk 被 Gemini 包进 Markdown 围栏，最终拼接文件因此出现伪代码块 | 真实本地 artifact 离线复核确认围栏可精确移除；工具函数和 fake `run_structure_stage` 回归均通过，未再次调用供应商 | online-only 文本结构输出与恢复 artifact；不改变 OCR/VLM、源内容、费用、安全门禁或 local-first 路由 |
-
-
+| OAPI-032 | HTTP/Docker 公开部署默认拒绝弱认证 | 删除镜像内置占位 token，非本地绑定要求至少 24 字符的非占位随机 token，比较使用恒定时间函数，容器改为非 root，并用 dockerignore 排除本地环境和缓存 | 固定 change-me 与 0.0.0.0 组合会让误部署直接暴露转换接口，COPY 全仓也可能带入未跟踪的本地配置 | HTTP 回归覆盖无 token、错误 Bearer、错误 X-Api-Token、占位 token 和短 token 拒绝分支；正确 token 通过 | HTTP bridge 与 Docker 包装层；本地 loopback 无 token 调试保持兼容 |
+| OAPI-033 | 凭据不得进入共享网关返回值或 artifact | 所有共享 provider catalog、health 和执行结果在返回前递归扫描凭据字段；命中即 fail-closed，并返回不含值的扫描证据 | 旧扫描只覆盖少量字段名，access_token、client_secret、x-api-key 等常见变体可能漏检 | 单测覆盖常见字段、后缀变体、空值和预算/token 计数元数据，Shared VKP gateway 测试通过 | shared_vkp_gateway 的结构化 JSON 返回和持久化边界；不扫描普通正文字符串 |
+| OAPI-034 | 源码证据和 provider 边界必须可复核 | manifest 明确 local_review_subdir 以 workspace_root 为基准且审查工作树不提交；online_only 只用 VKP 单一凭据源，online_providers.py 仅服务独立显式二次增强 | 外部审查把工作区相对路径按项目根解析，并把两种 provider 模式混为一谈，产生不存在和双凭据源的误报 | 五个固定 commit 的源码目录在 workspace source-reviews 下存在；completion audit 按 workspace 根验证；架构和 provider 文档保持两条路径分离 | 源码复用证据、公开文档与在线 provider 责任边界 |
+| OAPI-035 | 费用与 Agent action 责任不能靠推断 | ebook 只分配整次费用上限到 source/stage，VKP consent/trusted connector 负责授权调用次数与供应商费用边界；process_material 返回前统一规范化 next_actions | 重复实现实际计费账本会与 VKP 漂移；只看局部 action 构造会漏掉最终规范化步骤 | shared gateway 测试验证 max_calls 和费用上限传递；Agent contract 测试验证 tool、arguments、safe_default、destructive 四字段 | shared 在线执行与 Agent Contract；实际供应商账单仍由 VKP/供应商侧核对 |
 
 ## 验证结果（2026-08-02 08:28:42 | Codex GPT-5）
 

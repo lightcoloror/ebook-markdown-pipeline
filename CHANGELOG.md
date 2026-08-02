@@ -13,6 +13,7 @@
 <!-- Documentation update: 2026-08-02 02:34:59 | Codex (GPT-5) | Added a no-network goal-level completion audit for the online-only/shared-VKP mode. -->
 <!-- Documentation update: 2026-08-02 08:28:42 | Codex (GPT-5) | Recorded the authorized synthetic real-supplier smoke and bounded shared-gateway startup readiness fix. -->
 <!-- Documentation update: 2026-08-02 08:40:28 | Codex (GPT-5) | Normalized provider-added outer Markdown fences found by the real supplier smoke. -->
+<!-- Documentation update: 2026-08-02 09:37:26 | Codex (GPT-5) | Closed external-review HTTP, Docker, credential-artifact, and evidence-boundary findings. -->
 
 All notable public-facing changes should be recorded here. This project keeps optional heavy backends separate from the minimal local workflow, so release notes should distinguish core behavior from optional enhancements.
 
@@ -40,6 +41,11 @@ All notable public-facing changes should be recorded here. This project keeps op
 - `build_quality_improvement_queue` MCP/HTTP tool and desktop UI advanced action for opening quality queues as review workbenches.
 
 ### Changed
+
+- HTTP/Docker remote binds now fail closed on missing, short, or placeholder API tokens; authentication uses constant-time comparison, the image runs non-root, and local secrets/caches are excluded from the build context.
+- Shared VKP catalog, health, and execution payloads now receive runtime credential-field scans before return or persistence, with fail-closed tests for common token/key/secret variants.
+- Online-only source-review path semantics, provider ownership, cost-boundary ownership, and normalized Agent next-action evidence are now explicit in the architecture contract.
+
 
 - Release quality gate now includes the optional backend scorecard.
 - Dragging image-only batches into the UI defaults to image-book recognition instead of location indexing.

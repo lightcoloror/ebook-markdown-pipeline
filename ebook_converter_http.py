@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import os
 import sys
@@ -29,6 +30,25 @@ from ebook_markdown_pipeline.http_config import HttpConfig, load_http_config  # 
 from ebook_markdown_pipeline.service_readiness import service_readiness_payload  # noqa: E402
 
 
+LOCAL_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+UNSAFE_API_TOKENS = frozenset({"change-me", "changeme", "replace-me", "replace-with-a-local-token", "default"})
+MIN_REMOTE_API_TOKEN_LENGTH = 24
+
+
+def validate_http_bind_security(host: str, token: str) -> tuple[bool, str]:
+    normalized_host = str(host or "").strip().lower()
+    normalized_token = str(token or "").strip()
+    if normalized_token.lower() in UNSAFE_API_TOKENS:
+        return False, "Refusing a placeholder API token. Generate a unique random token."
+    if normalized_host in LOCAL_BIND_HOSTS:
+        return True, "local_bind"
+    if not normalized_token:
+        return False, "Refusing non-local bind without --token or EBOOK_CONVERTER_API_TOKEN."
+    if len(normalized_token) < MIN_REMOTE_API_TOKEN_LENGTH:
+        return False, f"Refusing non-local bind with an API token shorter than {MIN_REMOTE_API_TOKEN_LENGTH} characters."
+    return True, "authenticated_non_local_bind"
+
+
 def main() -> int:
     config = load_http_config()
     parser = argparse.ArgumentParser(description="HTTP bridge for Docker/remote agent access.")
@@ -37,11 +57,12 @@ def main() -> int:
     parser.add_argument("--token", default=os.environ.get("EBOOK_CONVERTER_API_TOKEN", ""))
     args = parser.parse_args()
 
-    if args.host not in {"127.0.0.1", "localhost", "::1"} and not args.token:
-        print("Refusing non-local bind without --token or EBOOK_CONVERTER_API_TOKEN.", file=sys.stderr)
+    allowed, reason = validate_http_bind_security(args.host, args.token)
+    if not allowed:
+        print(reason, file=sys.stderr)
         return 2
 
-    handler = build_handler(args.token, config=config, bind_host=args.host, bind_port=args.port)
+    handler = build_handler(args.token.strip(), config=config, bind_host=args.host, bind_port=args.port)
     server = ThreadingHTTPServer((args.host, args.port), handler)
     print(f"{SERVER_DISPLAY_NAME} ({SERVER_NAME}) HTTP bridge listening on http://{args.host}:{args.port}", flush=True)
     try:
@@ -56,6 +77,11 @@ def main() -> int:
 def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: str | None = None, bind_port: int | None = None):
     started_at = time.time()
     http_config = config or load_http_config()
+    effective_host = bind_host or http_config.host
+    allowed, reason = validate_http_bind_security(effective_host, token)
+    if not allowed:
+        raise ValueError(reason)
+    token = str(token or "").strip()
     capability_cache: dict[str, Any] = {"time": 0.0, "payload": None}
 
     class Handler(BaseHTTPRequestHandler):
@@ -186,7 +212,12 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
             if not token:
                 return True
             header = self.headers.get("Authorization", "")
-            return header == f"Bearer {token}" or self.headers.get("X-Api-Token", "") == token
+            bearer = header[7:].strip() if header.lower().startswith("bearer ") else ""
+            api_token = self.headers.get("X-Api-Token", "")
+            expected = token.encode("utf-8")
+            return hmac.compare_digest(bearer.encode("utf-8"), expected) or hmac.compare_digest(
+                api_token.encode("utf-8"), expected
+            )
 
         def read_json(self) -> dict[str, Any]:
             length = int(self.headers.get("Content-Length") or "0")
@@ -263,6 +294,11 @@ def http_contract_payload(config: HttpConfig | None = None, *, bind_host: str | 
         ],
         "supports_async_jobs": True,
         "supports_artifacts": True,
+        "authentication": {
+            "required_for_non_local_bind": True,
+            "minimum_token_length": MIN_REMOTE_API_TOKEN_LENGTH,
+            "placeholder_tokens_rejected": True,
+        },
         "service_readiness": readiness,
         "capability_endpoints": ["/health", "/capabilities", "/contract"],
         "operating_context": operating_context,
