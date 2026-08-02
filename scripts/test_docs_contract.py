@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
@@ -77,6 +78,13 @@ def main() -> int:
             "online_providers.example.json",
             "EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG",
             "online_provider_health",
+            "test_online_supported_format_matrix.py",
+            "output_disambiguator",
+            "run_online_supplier_smoke.py",
+            "online-supplier-smoke.json/md",
+            "audit_online_mode_completion.py",
+            "ready_for_live_smoke",
+            "--supplier-smoke-report",
             "candidate_enhancements",
             "candidate-run-preview-v1",
             "candidate-readiness-contract-v1",
@@ -190,6 +198,9 @@ def main() -> int:
             "project-readiness.json/md",
             "test_minimal_entrypoints.py",
             "公开 TXT fixture",
+            "audit_online_mode_completion.py",
+            "ready_for_live_smoke",
+            "--supplier-smoke-report",
         ],
         "docs/RELEASE_CHECKLIST.md": [
             "python scripts\\run_quality_gate.py --profile release",
@@ -457,6 +468,17 @@ def main() -> int:
         missing = [needle for needle in needles if needle not in text]
         if missing:
             raise AssertionError(f"{relative} missing required contract text: {missing}")
+    source_manifest = json.loads(
+        (PROJECT_DIR / "docs" / "ONLINE_ONLY_SOURCE_REUSE_MANIFEST.json").read_text(encoding="utf-8")
+    )
+    if source_manifest.get("schema_version") != "ebook-online-only-source-reuse-v1":
+        raise AssertionError("Online-only source reuse manifest schema drifted.")
+    sources = source_manifest.get("sources") or []
+    if len(sources) != 5 or any(not item.get("commit") for item in sources):
+        raise AssertionError("Online-only source reuse manifest must pin all five reviewed repositories.")
+    decision_fields = {"intent", "decision", "reason", "evidence", "scope"}
+    if any(not decision_fields.issubset(item) for item in sources):
+        raise AssertionError("Every reviewed source requires intent/decision/reason/evidence/scope.")
     print("Docs contract smoke test passed.")
     return 0
 

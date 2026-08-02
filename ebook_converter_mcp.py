@@ -59,6 +59,15 @@ from ebook_markdown_pipeline.online_providers import (  # noqa: E402
     openai_compatible_provider,
     provider_registry_health,
 )
+from ebook_markdown_pipeline.online_document_pipeline import (  # noqa: E402
+    OnlinePipelineOptions,
+    collect_online_sources,
+    run_online_document_pipeline,
+)
+from ebook_markdown_pipeline.shared_vkp_gateway import (  # noqa: E402
+    SharedVkpGateway,
+    shared_vkp_gateway_fast_health,
+)
 from ebook_markdown_pipeline.process_web_archive import process_web_archive as process_web_archive_core  # noqa: E402
 from ebook_markdown_pipeline.quality_improvement_queue import (  # noqa: E402
     build_quality_improvement_queue as build_quality_improvement_queue_payload,
@@ -311,7 +320,7 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "recursive": {"type": "boolean", "default": True},
                     "include_hidden": {"type": "boolean", "default": False},
                     "sample_pages": {"type": "integer", "default": 8},
-                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto"], "default": "local"},
+                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto", "online_only"], "default": "local"},
                     "use_tika": {"type": "boolean", "default": False},
                     "use_grobid": {"type": "boolean", "default": False},
                 },
@@ -339,7 +348,7 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "olmocr_workers": {"type": "integer"},
                     "olmocr_max_concurrent_requests": {"type": "integer"},
                     "olmocr_pages_per_group": {"type": "integer"},
-                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto"], "default": "local"},
+                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto", "online_only"], "default": "local"},
                     "use_grobid": {"type": "boolean", "default": False},
                     "image_book_threshold": {"type": "integer", "default": 8},
                     "sample_pages": {"type": "integer", "default": 8},
@@ -352,10 +361,24 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "mineru_segment_min_pages": {"type": "integer"},
                     "mineru_segment_pages": {"type": "integer"},
                     "output_name_suffix": {"type": "string"},
-                    "provider_mode": {"type": "string", "enum": ["fake", "openai_compatible"], "default": "fake"},
+                    "provider_mode": {"type": "string", "enum": ["fake", "openai_compatible", "vkp_shared"], "default": "fake"},
                     "provider": {"type": "string"},
                     "online_providers_config": {"type": "string"},
                     "allow_remote": {"type": "boolean", "default": False},
+                    "execute": {"type": "boolean", "default": False},
+                    "confirm_data_export": {"type": "boolean", "default": False},
+                    "max_estimated_cost_usd": {"type": "number", "minimum": 0},
+                    "start_shared_gateway": {"type": "boolean", "default": False},
+                    "vkp_root": {"type": "string"},
+                    "structure_pass": {"type": "boolean", "default": True},
+                    "embedded_image_ocr": {"type": "boolean", "default": True},
+                    "vlm_mode": {"type": "string", "enum": ["auto", "always", "never"], "default": "auto"},
+                    "vlm_max_pages": {"type": "integer", "minimum": 0, "default": 12},
+                    "vlm_min_ocr_chars": {"type": "integer", "minimum": 1, "default": 80},
+                    "max_chunk_chars": {"type": "integer", "default": 12000},
+                    "render_dpi": {"type": "integer", "default": 160},
+                    "request_interval_seconds": {"type": "number", "default": 0.25},
+                    "resume_manifest": {"type": "string"},
                 },
                 "required": ["input", "output"],
             },
@@ -374,13 +397,43 @@ def tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "start_online_conversion",
+            "description": "Plan or start an online-only conversion. Reuses VKP LiteLLM routes and DPAPI-protected supplier keys; real calls require explicit data-export confirmation and a positive cost ceiling.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"},
+                    "output": {"type": "string"},
+                    "provider_mode": {"type": "string", "enum": ["fake", "vkp_shared"], "default": "vkp_shared"},
+                    "execute": {"type": "boolean", "default": False},
+                    "confirm_data_export": {"type": "boolean", "default": False},
+                    "max_estimated_cost_usd": {"type": "number", "minimum": 0},
+                    "start_shared_gateway": {"type": "boolean", "default": False},
+                    "vkp_root": {"type": "string"},
+                    "recursive": {"type": "boolean", "default": True},
+                    "include_hidden": {"type": "boolean", "default": False},
+                    "overwrite": {"type": "boolean", "default": False},
+                    "structure_pass": {"type": "boolean", "default": True},
+                    "embedded_image_ocr": {"type": "boolean", "default": True},
+                    "vlm_mode": {"type": "string", "enum": ["auto", "always", "never"], "default": "auto"},
+                    "vlm_max_pages": {"type": "integer", "minimum": 0, "default": 12},
+                    "vlm_min_ocr_chars": {"type": "integer", "minimum": 1, "default": 80},
+                    "max_chunk_chars": {"type": "integer", "default": 12000},
+                    "render_dpi": {"type": "integer", "default": 160},
+                    "request_interval_seconds": {"type": "number", "default": 0.25},
+                    "resume_manifest": {"type": "string"}
+                },
+                "required": ["input", "output"]
+            }
+        },
+        {
             "name": "run_online_enhancement",
             "description": "Explicit optional provider-backed enhancement for OCR layout, VLM layout, text structure, table repair, or embeddings. Defaults to fake provider; real remote calls require allow_remote=true.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "task": {"type": "string", "enum": ["ocr_layout", "vlm_layout", "text_structure", "table_repair", "embedding"]},
-                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto"], "default": "local"},
+                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto", "online_only"], "default": "local"},
                     "provider_mode": {"type": "string", "enum": ["fake", "openai_compatible"], "default": "fake"},
                     "provider": {"type": "string"},
                     "config": {"type": "string"},
@@ -405,7 +458,7 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "input": {"type": "string"},
                     "output": {"type": "string"},
                     "source_kind": {"type": "string", "default": "markdown"},
-                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto"], "default": "local"},
+                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto", "online_only"], "default": "local"},
                     "provider_mode": {"type": "string", "enum": ["fake", "openai_compatible"], "default": "fake"},
                     "provider": {"type": "string"},
                     "config": {"type": "string"},
@@ -425,7 +478,7 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "artifact_type": {"type": "string", "default": "markdown"},
                     "output": {"type": "string"},
                     "source_kind": {"type": "string", "default": "markdown"},
-                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto"], "default": "local"},
+                    "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto", "online_only"], "default": "local"},
                     "provider_mode": {"type": "string", "enum": ["fake", "openai_compatible"], "default": "fake"},
                     "provider": {"type": "string"},
                     "config": {"type": "string"},
@@ -735,6 +788,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return process_material(arguments)
     if name == "process_web_archive":
         return process_web_archive_tool(arguments)
+    if name == "start_online_conversion":
+        return start_online_conversion(arguments)
     if name == "run_online_enhancement":
         return run_online_enhancement(arguments)
     if name == "enhance_markdown_structure":
@@ -799,7 +854,7 @@ def agent_contract_payload(*, transport: str = "mcp-stdio") -> dict[str, Any]:
         "transport": transport,
         "protocol_version": PROTOCOL_VERSION if transport == "mcp-stdio" else "",
         "artifact_schema_version": "artifact-schema-v1",
-        "entrypoints": ["process_material", "get_job_status", "read_artifact"],
+        "entrypoints": ["process_material", "start_online_conversion", "get_job_status", "read_artifact"],
         "process_material_contract": process_material_contract_payload(),
         "specialist_tools": [
             "health_check",
@@ -945,12 +1000,12 @@ def process_material_contract_payload() -> dict[str, Any]:
             "recommended_followup",
         ],
         "next_action_required_fields": ["tool", "arguments", "safe_default", "destructive"],
-        "safe_default": "Recognition/conversion is local-first. Location indexing requires intent=locate or query.",
+        "safe_default": "Recognition/conversion is local-first. online_only is explicit and requires data-export confirmation plus a positive cost ceiling. Location indexing requires intent=locate or query.",
     }
 
 
-def agent_operating_context() -> dict[str, Any]:
-    capabilities = safe_pipeline_capabilities()
+def agent_operating_context(capabilities: dict[str, Any] | None = None) -> dict[str, Any]:
+    capabilities = capabilities or safe_pipeline_capabilities()
     env_status = project_env_status()
     return {
         "config_sources": {
@@ -970,6 +1025,7 @@ def agent_operating_context() -> dict[str, Any]:
         "risk_status": agent_risk_status(capabilities),
         "route_defaults": {
             "process_material": "recognize_or_convert",
+            "online_only": "start_online_conversion",
             "documents": "start_conversion",
             "pdf": "start_conversion",
             "images": "start_image_book_rebuild",
@@ -980,7 +1036,7 @@ def agent_operating_context() -> dict[str, Any]:
         "long_task_guidance": {
             "prefer_async_tools": True,
             "poll_tool": "get_job_status",
-            "heavy_routes": ["mineru", "marker", "umi", "docling", "pdfcraft", "olmocr", "pix2text", "surya", "got-ocr", "deepseek-ocr", "paddleocr-vl", "qwen-vl"],
+            "heavy_routes": ["mineru", "marker", "umi", "docling", "pdfcraft", "olmocr", "pix2text", "surya", "got-ocr", "deepseek-ocr", "paddleocr-vl", "qwen-vl", "online_only"],
             "baseline_routes": ["markitdown"],
             "safe_pdf_default": "auto preflight, fallback diagnostics, versioned outputs",
             "large_pdf_advice": "Use page ranges or pipeline comparison before forcing whole-document heavy OCR/VLM.",
@@ -1071,9 +1127,24 @@ def health_check(arguments: dict[str, Any]) -> dict[str, Any]:
     if getattr(options, "input", None):
         _, sources = resolve_sources_and_root(options)
     checks = dependency_health_report(sources, options, fast=fast)
-    capability_checks = dependency_health_report([], options, fast=fast)
+    capability_checks = checks if not sources else dependency_health_report([], options, fast=fast)
     capabilities = environment_capability_summary(capability_checks)
     online_health = provider_registry_health(arguments.get("online_providers_config") or arguments.get("online_models_config"))
+    try:
+        shared_vkp_health = (
+            shared_vkp_gateway_fast_health(arguments.get("vkp_root") or None)
+            if fast
+            else SharedVkpGateway(arguments.get("vkp_root") or None).health()
+        )
+    except Exception as exc:  # noqa: BLE001
+        shared_vkp_health = {
+            "schema_version": "ebook-shared-vkp-gateway-v1",
+            "status": "degraded",
+            "ready": False,
+            "error": str(exc),
+            "api_keys_exposed": False,
+            "remote_requests_made": False,
+        }
     ready = [item["name"] for item in capabilities if item.get("status") == "ok"]
     degraded = [item["name"] for item in capabilities if item.get("status") == "degraded"]
     missing = [item["name"] for item in capabilities if item.get("status") == "missing"]
@@ -1085,6 +1156,14 @@ def health_check(arguments: dict[str, Any]) -> dict[str, Any]:
         "capability_checks": capability_checks,
         "capabilities": capabilities,
         "online_provider_health": online_health,
+        "shared_vkp_gateway": shared_vkp_health,
+        "online_only_mode": {
+            "available": shared_vkp_health.get("status") in {"ready", "on_demand"},
+            "status": shared_vkp_health.get("status"),
+            "default_provider_mode": "vkp_shared",
+            "requires_explicit_data_export_confirmation": True,
+            "requires_positive_cost_ceiling": True,
+        },
         "provider_status": online_health,
         "candidate_backend_registry": candidate_backend_registry_payload(),
         "candidate_artifact_schemas": candidate_artifact_schema_payload(),
@@ -1337,6 +1416,51 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
         model_mode=str(arguments.get("model_mode") or "local"),
         use_grobid=bool(arguments.get("use_grobid", False)),
     )
+
+    model_mode = str(arguments.get("model_mode") or "local")
+    if model_mode == "online_only" and intent != "locate" and not query:
+        online_arguments = dict(arguments)
+        online_arguments["provider_mode"] = str(arguments.get("provider_mode") or "vkp_shared")
+        delegated = start_online_conversion(online_arguments)
+        if delegated.get("error"):
+            return {
+                "schema_version": "process-material-v2",
+                "status": "failed",
+                "route": "start_online_conversion",
+                "inspection": inspection,
+                "delegated": delegated,
+                "job_id": None,
+                "artifacts": [],
+                "quality_summary": {"status": "failed", "reason": delegated.get("code") or "online_conversion_rejected"},
+                "warnings": inspection.get("warnings", []),
+                "errors": [str(delegated.get("message") or "online conversion rejected")],
+                "next_actions": normalize_agent_next_actions(delegated.get("next_actions") or []),
+                "recommended_followup": delegated.get("recommended_followup") or {},
+            }
+        job_id = delegated.get("job_id")
+        next_actions = normalize_agent_next_actions([
+            {
+                "after_job_status": "done",
+                "tool": "get_job_status",
+                "arguments": {"job_id": job_id},
+                "why": "poll the online-only conversion and read exact artifact paths",
+            }
+        ])
+        return {
+            "schema_version": "process-material-v2",
+            "status": "routed",
+            "route": "start_online_conversion",
+            "inspection": inspection,
+            "online_enhancement": {"mode": "online_only", "provider_mode": online_arguments["provider_mode"]},
+            "delegated": delegated,
+            "job_id": job_id,
+            "artifacts": delegated.get("artifacts") or [],
+            "quality_summary": delegated.get("quality_summary") or pending_quality_summary("start_online_conversion", job_id),
+            "warnings": inspection.get("warnings", []),
+            "errors": [],
+            "next_actions": next_actions,
+            "recommended_followup": recommended_followup_for_route("start_online_conversion", next_actions, job_id=job_id),
+        }
 
     route = choose_material_route(inspection, intent=intent, query=query, image_book_threshold=image_book_threshold)
     delegated_arguments = dict(arguments)
@@ -2081,6 +2205,179 @@ def choose_pdf_pipeline_mode(inspection: dict[str, Any], requested: str) -> str:
         return "mineru"
     recommended = str(preflight.get("recommended_pipeline") or "auto")
     return recommended if recommended in {"marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown", "ocrmypdf", "pdfcraft", "olmocr"} else "auto"
+
+
+def start_online_conversion(arguments: dict[str, Any]) -> dict[str, Any]:
+    input_path = Path(str(arguments.get("input") or "")).expanduser().resolve()
+    output_path = Path(str(arguments.get("output") or "")).expanduser().resolve()
+    provider_mode = str(arguments.get("provider_mode") or "vkp_shared")
+    execute = bool(arguments.get("execute", False))
+    confirm_data_export = bool(arguments.get("confirm_data_export", False))
+    max_cost = float(arguments.get("max_estimated_cost_usd") or 0)
+    if provider_mode == "vkp_shared" and execute and not confirm_data_export:
+        return {
+            "error": True,
+            "code": "data_export_confirmation_required",
+            "message": "online_only execution requires confirm_data_export=true.",
+            "next_actions": [
+                {
+                    "action": "retry_with_explicit_data_export_confirmation",
+                    "tool": "start_online_conversion",
+                    "arguments": {**arguments, "confirm_data_export": True},
+                    "safe_default": False,
+                    "destructive": False,
+                }
+            ],
+        }
+    if provider_mode == "vkp_shared" and execute and max_cost <= 0:
+        return {
+            "error": True,
+            "code": "cost_limit_required",
+            "message": "online_only execution requires a positive max_estimated_cost_usd.",
+            "next_actions": [],
+        }
+    sources = collect_online_sources(
+        input_path,
+        recursive=bool(arguments.get("recursive", True)),
+        include_hidden=bool(arguments.get("include_hidden", False)),
+    )
+    if not sources:
+        return {"error": True, "code": "no_supported_files", "message": "No supported files found."}
+
+    job_id = create_job("online_conversion", input_path=input_path, output_path=output_path, total=len(sources))
+    options = OnlinePipelineOptions(
+        provider_mode=provider_mode,
+        execute=execute,
+        confirm_data_export=confirm_data_export,
+        max_estimated_cost_usd=max_cost,
+        start_shared_gateway=bool(arguments.get("start_shared_gateway", False)),
+        vkp_root=str(arguments.get("vkp_root") or ""),
+        recursive=bool(arguments.get("recursive", True)),
+        include_hidden=bool(arguments.get("include_hidden", False)),
+        overwrite=bool(arguments.get("overwrite", False)),
+        structure_pass=bool(arguments.get("structure_pass", True)),
+        embedded_image_ocr=bool(arguments.get("embedded_image_ocr", True)),
+        vlm_mode=str(arguments.get("vlm_mode") or "auto"),
+        vlm_max_pages=max(0, int(arguments.get("vlm_max_pages") if arguments.get("vlm_max_pages") is not None else 12)),
+        vlm_min_ocr_chars=max(1, int(arguments.get("vlm_min_ocr_chars") or 80)),
+        max_chunk_chars=max(1000, int(arguments.get("max_chunk_chars") or 12000)),
+        render_dpi=max(72, int(arguments.get("render_dpi") or 160)),
+        request_interval_seconds=max(0.0, float(arguments.get("request_interval_seconds") or 0.25)),
+        resume_manifest=str(arguments.get("resume_manifest") or ""),
+    )
+
+    def progress_callback(event, source, index, total, result) -> None:
+        append_job_event(
+            job_id,
+            {
+                "event": event,
+                "source": str(source),
+                "index": index,
+                "total": total,
+                "result": serialize_result(result),
+            },
+        )
+
+    def worker() -> None:
+        try:
+            result = run_online_document_pipeline(
+                input_path,
+                output_path,
+                options=options,
+                progress_callback=progress_callback,
+            )
+            pipeline_status = str(result.get("status") or "failed")
+            job_status = "done" if pipeline_status in {"planned", "ok", "partial"} else "failed"
+            errors = []
+            if result.get("error"):
+                errors.append(str(result.get("message") or result.get("code") or "online conversion failed"))
+            errors.extend(
+                str(item.get("message") or "")
+                for item in result.get("results") or []
+                if isinstance(item, dict) and item.get("status") == "failed"
+            )
+            update_job(
+                job_id,
+                status=job_status,
+                finished_at=timestamp(),
+                completed=len(result.get("results") or []) if execute else 0,
+                result=result,
+                results=result.get("results") or [],
+                artifacts=online_pipeline_artifacts(result),
+                warnings=[
+                    str(warning)
+                    for item in result.get("results") or []
+                    if isinstance(item, dict)
+                    for warning in item.get("warnings") or []
+                ],
+                errors=[item for item in errors if item],
+                quality_summary=result.get("quality_summary") or {
+                    "status": "planned" if pipeline_status == "planned" else pipeline_status
+                },
+                next_actions=normalize_agent_next_actions(result.get("next_actions") or []),
+            )
+        except Exception as exc:  # noqa: BLE001
+            update_job(
+                job_id,
+                status="failed",
+                finished_at=timestamp(),
+                error=str(exc),
+                errors=[str(exc)],
+                traceback=traceback.format_exc(),
+            )
+
+    threading.Thread(target=worker, daemon=True).start()
+    with JOBS_LOCK:
+        job = dict(JOBS[job_id])
+    job["next_actions"] = normalize_agent_next_actions(
+        [
+            {
+                "action": "poll_online_conversion",
+                "tool": "get_job_status",
+                "arguments": {"job_id": job_id},
+                "safe_default": True,
+                "destructive": False,
+            }
+        ]
+    )
+    return {
+        key: job[key]
+        for key in (
+            "schema_version",
+            "artifact_schema_version",
+            "job_id",
+            "kind",
+            "status",
+            "started_at",
+            "input",
+            "output",
+            "total",
+            "completed",
+            "artifacts",
+            "warnings",
+            "errors",
+            "next_actions",
+        )
+    }
+
+
+def online_pipeline_artifacts(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in payload.get("artifacts") or []:
+        if not isinstance(item, dict):
+            continue
+        path = Path(str(item.get("path") or ""))
+        if not path.is_file():
+            continue
+        rows.append(
+            artifact(
+                str(item.get("type") or infer_artifact_type(path)),
+                path,
+                label=str(item.get("label") or path.name),
+                media_type=output_media_type(path),
+            )
+        )
+    return rows
 
 
 def start_conversion(arguments: dict[str, Any]) -> dict[str, Any]:

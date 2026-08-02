@@ -2,7 +2,7 @@
 
 日期：2026-07-10
 状态：已完成源码与外部项目调查，作为后续 patch 的决策基线
-项目：`D:\used-by-codex\ebook_markdown_pipeline`
+项目：repository root
 边界：本轮未安装模型、未启动服务、未处理真实私有文档、未改动运行代码
 
 ## 结论先行
@@ -324,3 +324,5 @@ flowchart TB
 - 新解析项目只优先推进 `gmft`、OmniDocBench adapter、Docling structured artifact、GLM-OCR provider、OpenDataLoader candidate。
 - `dots.mocr` 先修契约；`pdf_table` 降级；OCRFlux/Chandra/MonkeyOCR 保持重型显式对比。
 - 本轮不安装任何模型。下一次代码修改应从 Phase 0 的纯契约/测试 patch 开始。
+
+<!-- Documentation update: 2026-08-02 02:07:18 | Codex (GPT-5) | Replaced private absolute paths with portable repository/workspace references; historical conclusions unchanged. -->

@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
-import tempfile
 import threading
 import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import fitz
 
@@ -104,9 +106,19 @@ ARTIFACT_FIELDS = {"type", "path", "label", "media_type"}
 ERROR_FIELDS = {"ok", "error", "code", "message", "retryable", "transport", "schema_version"}
 
 
+@contextmanager
+def writable_test_directory(prefix: str):
+    path = PROJECT_DIR / f"{prefix}{uuid4().hex[:10]}"
+    path.mkdir(parents=True, exist_ok=False)
+    try:
+        yield str(path)
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def main() -> int:
     assert_tools()
-    with tempfile.TemporaryDirectory(prefix="ebook-agent-contract-") as tmp:
+    with writable_test_directory(".tmp-agent-contract-") as tmp:
         tmpdir = Path(tmp)
         image_dir = tmpdir / "images"
         output_dir = tmpdir / "out"

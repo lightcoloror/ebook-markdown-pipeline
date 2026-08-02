@@ -11,7 +11,7 @@ The single configuration source is `config/mineru-api.env`:
 - bind host: `127.0.0.1` only;
 - configured port: `8000`;
 - command: `mineru-api`, resolved to the installed `tools/mineru-venv` entry when absent from `PATH`;
-- state root: `D:\used-by-codex\.local\mineru-api`;
+- state root: `<workspace>/.local/mineru-api`;
 - fixed subdirectories: `data`, `temp`, `client-temp`, `logs`, and `run`.
 
 On Windows, a configured `mineru-api.exe` console entry point is normalized to
@@ -47,7 +47,7 @@ When `/health` is unavailable:
 
 ## Windows Permissions
 
-The state root is under the existing `D:\used-by-codex\.local` boundary, which already grants the current user and `CodexSandboxUsers` Modify access. This implementation does not change system TEMP, grant `Everyone`, or require an elevated Agent.
+The state root is under the existing `<workspace>/.local` boundary, which already grants the current user and `CodexSandboxUsers` Modify access. This implementation does not change system TEMP, grant `Everyone`, or require an elevated Agent.
 
 If permissions are rebuilt later, scope changes to the MinerU state root and grant Modify only to the current user and `CodexSandboxUsers`; retain normal Administrator/SYSTEM semantics.
 
@@ -71,3 +71,5 @@ Local acceptance on 2026-07-13 used the original 18-page failure PDF:
 Regression evidence: `check_project_readiness.py` passed 42/42,
 `test_batch_control_flow.py` passed, `test_service_readiness.py` passed, and
 the targeted pytest compatibility check passed.
+
+<!-- Documentation update: 2026-08-02 02:07:18 | Codex (GPT-5) | Replaced private absolute paths with portable repository/workspace references; historical conclusions unchanged. -->

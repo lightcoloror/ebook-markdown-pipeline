@@ -68,7 +68,7 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
             if self.path == "/health":
                 tools = tool_schemas()
                 capabilities = cached_capability_summary(capability_cache)
-                operating_context = agent_operating_context()
+                operating_context = agent_operating_context(capabilities)
                 minimal_status = minimal_capability_status(capabilities)
                 readiness = service_readiness_payload(config=http_config)
                 self.write_json(
@@ -125,7 +125,7 @@ def build_handler(token: str, *, config: HttpConfig | None = None, bind_host: st
                 return
             if self.path == "/capabilities":
                 capabilities = cached_capability_summary(capability_cache)
-                operating_context = agent_operating_context()
+                operating_context = agent_operating_context(capabilities)
                 minimal_status = minimal_capability_status(capabilities)
                 self.write_json(
                     {
@@ -248,7 +248,7 @@ def http_contract_payload(config: HttpConfig | None = None, *, bind_host: str | 
         "version": SERVER_VERSION,
         "transport": "http",
         "artifact_schema_version": SCHEMA_VERSION,
-        "entrypoints": ["process_material", "get_job_status", "read_artifact"],
+        "entrypoints": ["process_material", "start_online_conversion", "get_job_status", "read_artifact"],
         "process_material_contract": process_material_contract_payload(),
         "specialist_tools": [
             "health_check",

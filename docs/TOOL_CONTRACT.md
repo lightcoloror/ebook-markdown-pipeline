@@ -1,5 +1,7 @@
 # 图文材料转换器 Agent Tool Contract
 
+<!-- Documentation update: 2026-08-01 23:35:28 | Codex (GPT-5) | Added and synchronized the explicit online-only/shared-VKP mode. -->
+
 This document defines the stable calling contract for AI agents using 图文材料转换器 as a general document/image material recognition tool.
 
 The stable machine-readable server id remains `ebook-markdown-pipeline` for compatibility. User-facing surfaces should display `图文材料转换器` / `Graphic-Text Material Converter`.
@@ -21,7 +23,7 @@ Agents should not directly parse PDFs, images, temporary directories, SQLite fil
 
 Agents should also not call online model providers directly for document recognition. Online API support must remain behind this project's provider abstraction so that privacy, cost, retry, fallback, artifact schema, and report logging stay consistent.
 
-`get_agent_contract` and `health_check` expose `online_provider_health` when `config/online_providers.example.json`, legacy `config/online_models.example.json`, `EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG`, or legacy `EBOOK_CONVERTER_ONLINE_MODELS_CONFIG` is readable. `get_agent_contract`, `health_check`, `list_candidate_backends`, and `scripts/list_candidate_backends.py` expose `candidate_backend_registry` so agents can discover MonkeyOCR, dots.mocr, DocLayout-YOLO, pdf_table, gmft_table, and opendataloader_pdf_fast candidate-only wrapper plans without parsing prose. Candidate JSON artifacts are described by `candidate_artifact_schemas` with `schema_version=candidate-artifact-schemas-v1`. `list_candidate_backends` returns `schema_version=candidate-backend-list-v1`, filterable candidate-only backend rows, `run_preview`, `readiness_contract`, supported artifacts, sample classes, and safe `next_actions` without starting services or installing models. Lightweight diagnostic artifacts are described by `diagnostic_artifact_schemas` with `schema_version=diagnostic-artifact-schemas-v1`, including pypdf metadata/outline evidence, pdfminer/PDF text-layout evidence, normalized OCR block JSONL, Docling structured-document sidecars, and document-quality-evaluation evidence. This is configuration health only: it reports provider names, types, models, configured base URLs, key environment variable names, and missing-key status without making remote API calls.
+`get_agent_contract` and `health_check` expose `online_provider_health` when `config/online_providers.example.json`, legacy `config/online_models.example.json`, `EBOOK_CONVERTER_ONLINE_PROVIDERS_CONFIG`, or legacy `EBOOK_CONVERTER_ONLINE_MODELS_CONFIG` is readable. `get_agent_contract`, `health_check`, `list_candidate_backends`, and `scripts/list_candidate_backends.py` expose `candidate_backend_registry` so agents can discover MonkeyOCR, dots.mocr, DocLayout-YOLO, pdf_table, gmft_table, and opendataloader_pdf_fast candidate-only wrapper plans without parsing prose. Candidate JSON artifacts are described by `candidate_artifact_schemas` with `schema_version=candidate-artifact-schemas-v1`. `list_candidate_backends` returns `schema_version=candidate-backend-list-v1`, filterable candidate-only backend rows, `run_preview`, `readiness_contract`, supported artifacts, sample classes, and safe `next_actions` without starting services or installing models. Lightweight diagnostic artifacts are described by `diagnostic_artifact_schemas` with `schema_version=diagnostic-artifact-schemas-v1`, including pypdf metadata/outline evidence, pdfminer/PDF text-layout evidence, normalized OCR block JSONL, Docling structured-document sidecars, and document-quality-evaluation evidence. This is configuration health only: it reports provider names, types, models, configured base URLs, key environment variable names, and missing-key status without making remote API calls. Health also exposes `shared_vkp_gateway` and `online_only_mode`: configured routes, gateway `ready|on_demand|degraded` state, credential-store ownership, and fallback guidance, never key values.
 
 ## Main Router: `process_material`
 
@@ -43,13 +45,15 @@ Optional:
 - `pdf_pipeline_mode`: `auto`, `marker`, `mineru`, `umi`, `pymupdf4llm`, `docling`, `markitdown`, `ocrmypdf`, `pdfcraft`, or `olmocr`. Use `markitdown` only for explicit PDF baseline comparison; use `ocrmypdf` only when the caller wants searchable-PDF preprocessing before fast conversion; use `pdfcraft` only for explicit scanned-book reconstruction experiments; use `olmocr` only for explicit GPU/remote VLM OCR benchmark experiments.
 - `image_book_threshold`: retained for compatibility; auto routing now recognizes image folders by default.
 - `ocr`: `auto`, `always`, or `never`.
-- `model_mode`: `local`, `online`, `hybrid`, or `auto`. Current implementation uses this for recommendation/risk reporting only; default conversion remains local-first.
+- `model_mode`: `local`, `online`, `hybrid`, `auto`, or `online_only`. Default conversion remains local-first. `online_only` routes recognition to the full remote-inference job rather than silently changing the local pipeline.
 
-Online-model option:
+Online-model options:
 
-- `inspect_document` returns `online_enhancement` with `recommended`, `enabled_by_model_mode`, `remote_call_enabled`, `recommended_routes`, `estimated_pages`, `estimated_items`, `estimated_cost_risk`, `privacy_risk`, `reason`, and `next_step`.
-- `remote_call_enabled` is currently always `false` in inspection. The field exists so future provider-backed pipelines can become explicit and auditable.
-- Agents should not call vendor APIs directly even when `online_enhancement.recommended=true`; use `run_online_enhancement`, `enhance_markdown_structure`, or `enhance_job_artifact` only after the user or caller explicitly chooses online/hybrid enhancement.
+- `inspect_document` returns recommendation and privacy/cost risk only; inspection itself never calls a remote provider.
+- `run_online_enhancement` remains the explicit second-pass provider tool.
+- `start_online_conversion` is the full-material remote-inference tool. `process_material(model_mode=online_only)` delegates to it unless the intent is `locate` or a query is present.
+- A real shared run requires `provider_mode=vkp_shared`, `execute=true`, `confirm_data_export=true`, and a positive `max_estimated_cost_usd`.
+- Agents must not call vendor APIs directly. Shared provider execution reuses VKP routing and credential references; no key is returned or copied.
 
 Tika inspect option:
 
@@ -70,6 +74,7 @@ Routing rules:
 - Documents and ebooks route to `start_conversion`.
 - PDFs route to `start_conversion` with a PDF pipeline selected from preflight signals.
 - Single images and image folders route to `start_image_book_rebuild` by default so the output is recognized Markdown plus review artifacts.
+- With `model_mode=online_only`, recognition routes to `start_online_conversion` for all supported inputs; explicit locate/query requests keep using the location index.
 - `web-content-fetcher` archive folders with `rebuild_input/manifest.json` route to `process_web_archive`.
 - Any input with `intent=locate` or `query` routes to `start_location_index`, then returns a `next_actions` entry for `query_location_index` when a query is present.
 - Unsupported or missing inputs return `status=unsupported` and do not start a job.
@@ -176,6 +181,7 @@ Return shape:
 The following tools are long-running by design:
 
 - `start_conversion`
+- `start_online_conversion`
 - `start_location_index`
 - `start_image_book_rebuild`
 - `process_material` when it starts any of the above
@@ -537,6 +543,53 @@ Use pypdf/pdfminer.six worker plans only for metadata, outline, or text-layer de
 Pix2Text image/formula runs write Markdown as the primary output and `formula-candidates.json` (`schema_version=formula-candidates-v1`) under the wrapper output directory as review-only side evidence. Agents should read this artifact for LaTeX/bbox/confidence candidates when checking formula retention, but must not promote or rewrite final Markdown solely from it.
 
 Surya layout/table runs write Markdown as the primary output plus review-only side evidence under the wrapper output directory: `layout-candidates.json` (`schema_version=layout-candidates-v1`) for layout mode and `table-candidates.json` (`schema_version=table-candidates-v1`) for table mode. Agents should read these artifacts for bbox, confidence, reading-order, HTML, and cell evidence when comparing layout/table retention, but must not install models or promote Surya results into default Markdown routing without an explicit benchmark decision.
+
+## Full Online Conversion
+
+`start_online_conversion` is the explicit full-material remote-inference entry point. Planning defaults to `execute=false` and makes no provider request. A real shared run requires all of the following:
+
+- `provider_mode=vkp_shared`
+- `execute=true`
+- `confirm_data_export=true`
+- positive `max_estimated_cost_usd`
+
+Visual-stage controls:
+
+- `vlm_mode=auto|always|never`, default `auto`.
+- `vlm_max_pages`, default 12; `0` disables candidate selection even when the mode is not `never`.
+- `vlm_min_ocr_chars`, default 80; used with deterministic fragmented-block and table/grid rules.
+- `auto` always selects standalone images and only selected PDF pages. VLM is additive: failures preserve online OCR, and low-overlap output retains both OCR evidence and visual interpretation.
+- The per-source cost ceiling is split across online OCR, VLM, and text structure; no stage receives an additional ceiling outside the user-approved total.
+
+`start_shared_gateway=true` may start the already-configured loopback VKP LiteLLM gateway on demand. Provider selection, route revisions, consent, retries, cost ceilings, and credentials remain owned by VKP; this project receives no API key value.
+
+`health_check.shared_vkp_gateway.shared_provider_catalog` is the redacted shared-supplier inventory. It reports enabled provider/profile counts, ebook-eligible stages, and currently selected route providers; it never returns endpoint credentials, secret references, or API key values.
+
+The job writes versioned `*.online-<run-id>.md`, `.online-runs/<run-id>/manifest.json`, stage results, consent/execution evidence, and `run-summary.md`. It never overwrites the source by default. When different formats in the same relative directory share a cleaned stem, only those outputs receive a source-format disambiguator, for example `.epub.online-<run-id>.md` and `.azw3.online-<run-id>.md`; the manifest records `output_disambiguator`. Resume a failed run by passing `resume_manifest`.
+
+`python -B scripts\test_online_supported_format_matrix.py` is the public no-network contract test for all 17 supported document/ebook extensions plus 7 image extensions. It uses `provider_mode=fake`; success proves routing and artifact isolation, not supplier-model quality.
+`python scripts\run_online_supplier_smoke.py --output .\supplier-smoke` creates a versioned, synthetic, non-sensitive OCR/VLM/structure validation run. Its default is a no-network plan. Real execution must add `--execute`, `--confirm-data-export`, and a positive `--max-estimated-cost-usd`; the smoke passes only when all three online stages succeed and expose `remote_requests_made=true`. It writes `online-supplier-smoke.json/md` and never deletes or overwrites an existing user output directory.
+
+`python scripts\audit_online_mode_completion.py --json` is the no-network goal-level audit. It verifies all three shared routes, VKP-only DPAPI credential ownership, the redacted compatible-provider catalog, CLI/UI/HTTP/MCP entrypoints, pinned local source-review commits, and every OAPI five-field decision row. It returns `ready_for_live_smoke` until a valid real smoke JSON is supplied with `--supplier-smoke-report`; `--require-live-supplier-smoke` makes that final evidence mandatory for a zero exit code.
+
+Example:
+
+```json
+{
+  "name": "start_online_conversion",
+  "arguments": {
+    "input": "path/to/material.pdf",
+    "output": "out",
+    "provider_mode": "vkp_shared",
+    "execute": true,
+    "confirm_data_export": true,
+    "max_estimated_cost_usd": 1.0,
+    "vlm_mode": "auto",
+    "vlm_max_pages": 12,
+    "start_shared_gateway": true
+  }
+}
+```
 
 ## Online Enhancement
 

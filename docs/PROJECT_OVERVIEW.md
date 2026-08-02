@@ -1,5 +1,7 @@
 # Project Overview
 
+<!-- Documentation update: 2026-08-01 23:35:28 | Codex (GPT-5) | Added and synchronized the explicit online-only/shared-VKP mode. -->
+
 ## GitHub About Text
 
 English:
@@ -46,7 +48,7 @@ flowchart TD
     plan --> ebook["Ebook/document route\nPandoc / Calibre / Docling"]
     plan --> pdf["PDF route\nPyMuPDF4LLM / MinerU / Marker / Umi-OCR / pdf-craft / olmOCR"]
     plan --> image["Image route\nUmi-OCR / CnOCR / Pix2Text / Surya / GOT-OCR / DeepSeek-OCR / PaddleOCR-VL / Qwen-VL / MinerU VLM"]
-    plan --> online["Optional online providers\nOCR layout / VLM layout / text structure / table repair / embeddings"]
+    plan --> online["Optional online modes\nsecond pass / shared VKP online-only"]
     plan --> locator["Optional location index\nSQLite FTS page/image hits"]
 
     ebook --> normalize["Normalize Markdown\nTOC alignment / cleanup / structure repair"]

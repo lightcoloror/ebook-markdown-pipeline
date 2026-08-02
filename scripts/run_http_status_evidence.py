@@ -58,8 +58,8 @@ def build_evidence(fixture_path: Path) -> dict[str, Any]:
         "queue_id": QUEUE_ID,
         "fixture": {"path": str(fixture_path), "sha256": sha256_file(fixture_path)},
         "queue_evidence_refs": [
-            "D:/used-by-codex/docs/codex-session-index/local-tools-health-snapshot.json",
-            "D:/used-by-codex/docs/codex-session-index/infra-health-baseline-run2-2026-07-11.json",
+            "../docs/codex-session-index/local-tools-health-snapshot.json",
+            "../docs/codex-session-index/infra-health-baseline-run2-2026-07-11.json",
         ],
         "policy": {
             "local_only": True,

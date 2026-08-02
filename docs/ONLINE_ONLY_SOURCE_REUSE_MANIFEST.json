@@ -1,0 +1,81 @@
+{
+  "schema_version": "ebook-online-only-source-reuse-v1",
+  "updated_at": "2026-08-02 01:29:09",
+  "evidence_document": "docs/ONLINE_ONLY_MODE_ARCHITECTURE_AND_SOURCE_REUSE_2026-08-01.md",
+  "global_source_ledger": {
+    "registry_tool_id": "ebook_markdown_pipeline",
+    "inventory_entry_present": false,
+    "registration_status": "blocked_validation_failed",
+    "validation_issue_count": 107,
+    "validation_error_count": 12,
+    "decision": "Do not bypass the fail-closed workspace ledger or edit unrelated source records.",
+    "next_action": "Retry standard source-ledger registration after the workspace inventory validates."
+  },
+  "sources": [
+    {
+      "name": "openai-python",
+      "repo_url": "https://github.com/openai/openai-python.git",
+      "commit": "cbdc98b6c1e21df7ee43d13b5de7243c6ed1ee7f",
+      "local_review_subdir": "source-reviews/ebook-online-api-2026-08-01/openai-python",
+      "reviewed_modules": ["src/openai/_client.py", "src/openai/_base_client.py"],
+      "local_validation": "Client construction, base URL, timeout, and max_retries=0 smoke passed.",
+      "intent": "Reuse a mature OpenAI-compatible transport contract.",
+      "decision": "Keep as an optional direct-provider transport reference; shared mode uses VKP/LiteLLM.",
+      "reason": "VKP already owns retries, routing, consent, cost ceilings, and credentials.",
+      "evidence": "Pinned source was read and executed locally; no supplier request was made.",
+      "scope": "Transport architecture only; no duplicated SDK client in the online-only shared path."
+    },
+    {
+      "name": "mistral-client-python",
+      "repo_url": "https://github.com/mistralai/client-python.git",
+      "commit": "7749c848a3777f504f01f16fba61c61203afb810",
+      "local_review_subdir": "source-reviews/ebook-online-api-2026-08-01/mistral-client-python",
+      "reviewed_modules": ["src/mistralai/client/ocr.py", "src/mistralai/client/models/ocrresponse.py"],
+      "local_validation": "OCR client import and construction passed; request and response models were inspected.",
+      "intent": "Reuse the official OCR capability and response semantics.",
+      "decision": "Invoke Mistral-compatible OCR through the existing VKP OCR route.",
+      "reason": "One VKP credential and route source avoids a second Mistral key configuration.",
+      "evidence": "Local source inspection covered synchronous/asynchronous OCR, pages, tables, and confidence models.",
+      "scope": "Remote OCR stage through VKP; the ebook project does not persist a supplier key."
+    },
+    {
+      "name": "llama-cloud-services",
+      "repo_url": "https://github.com/run-llama/llama_cloud_services.git",
+      "commit": "f385e96ab82ddb88330277c34394546398c8bed0",
+      "local_review_subdir": "source-reviews/ebook-online-api-2026-08-01/llama-cloud-services",
+      "reviewed_modules": ["py/llama_cloud_services/parse/types.py", "py/llama_cloud_services/beta/sheets/client.py"],
+      "local_validation": "JobResult construction and result handling smoke passed.",
+      "intent": "Reuse proven asynchronous job, polling, and artifact ideas.",
+      "decision": "Adapt the job and resume contract without adding a separate LlamaParse key.",
+      "reason": "The shared-provider requirement is better served by the existing VKP gateway.",
+      "evidence": "Pinned source and job result types were run locally.",
+      "scope": "Online run manifest, status polling, and artifact recovery architecture."
+    },
+    {
+      "name": "unstructured-python-client",
+      "repo_url": "https://github.com/Unstructured-IO/unstructured-python-client.git",
+      "commit": "7ab4de9313bd3a6f265876b9036c8b04fd3d9684",
+      "local_review_subdir": "source-reviews/ebook-online-api-2026-08-01/unstructured-python-client",
+      "reviewed_modules": ["src/unstructured_client/_hooks/custom/split_pdf_hook.py", "src/unstructured_client/_hooks/custom/request_utils.py"],
+      "local_validation": "Partition parameters and PDF split/concurrency construction smoke passed.",
+      "intent": "Reuse page isolation, bounded concurrency, and partial-failure recovery patterns.",
+      "decision": "Adapt per-page artifacts and resume behavior; do not add the client as a default dependency.",
+      "reason": "A second remote parser would duplicate credentials and routing while increasing install cost.",
+      "evidence": "Pinned split-PDF hooks and request lifecycle code were inspected locally.",
+      "scope": "PDF/page recovery architecture, not the default runtime backend."
+    },
+    {
+      "name": "docling-serve",
+      "repo_url": "https://github.com/docling-project/docling-serve.git",
+      "commit": "7f2b890c5538d5ad511dce42a69af5840452b1c4",
+      "local_review_subdir": "source-reviews/ebook-online-api-2026-08-01/docling-serve",
+      "reviewed_modules": ["docling_serve/app.py", "docling_serve/auth.py"],
+      "local_validation": "Application, policy, response preparation, and compile smoke passed.",
+      "intent": "Reuse a mature remote conversion service and task-result contract.",
+      "decision": "Keep as a self-hosted remote parser candidate, not a default supplier route.",
+      "reason": "It requires a separately operated service and does not satisfy shared API-key routing by itself.",
+      "evidence": "Pinned task creation, status polling, result retrieval, and auth code were inspected locally.",
+      "scope": "Future self-hosted backend reference only."
+    }
+  ]
+}

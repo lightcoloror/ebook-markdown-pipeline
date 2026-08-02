@@ -1,5 +1,7 @@
 # 图文材料转换器 Agent Integration
 
+<!-- Documentation update: 2026-08-01 23:35:28 | Codex (GPT-5) | Added and synchronized the explicit online-only/shared-VKP mode. -->
+
 用户可见名称是“图文材料转换器 / Graphic-Text Material Converter”。稳定机器 ID 仍是 `ebook-markdown-pipeline`，用于兼容已有 MCP 配置、HTTP bridge、Docker smoke 和脚本调用。
 
 This project is designed for stable AI-agent invocation through a layered interface:
@@ -31,9 +33,11 @@ MCP-native agents can call `get_agent_contract` first to retrieve `schema_versio
 
 The contract and HTTP `/health` also expose operating context: config sources, pipeline capabilities, `risk_status`, recognition-first route defaults, and long-task guidance. Agents should inspect those fields before choosing heavy PDF/OCR/VLM routes.
 
-`inspect_document` and `process_material` accept `model_mode=local|online|hybrid|auto`. Inspection never calls remote providers. `process_material` can return an `enhance_job_artifact` next action when a completed Markdown artifact should receive a second-pass structure enhancement; that action remains versioned/non-overwriting and still requires `allow_remote=true` for real remote providers. Agents should treat `online_enhancement.remote_call_enabled=false` as a hard stop and must not call vendor APIs directly.
+`inspect_document` and `process_material` accept `model_mode=local|online|hybrid|auto|online_only`. Inspection never calls remote providers. Hybrid/online modes can suggest a versioned second-pass enhancement; `online_only` instead routes the entire input to `start_online_conversion`. Agents must not call vendor APIs directly.
 
-When an explicit online/fake enhancement is required, use `run_online_enhancement`. The tool supports `ocr_layout`, `vlm_layout`, `text_structure`, `table_repair`, and `embedding`. It defaults to `provider_mode=fake`; real OpenAI-compatible calls require `provider_mode=openai_compatible`, `model_mode=hybrid|online|auto`, and `allow_remote=true`.
+When an explicit online/fake enhancement is required, use `run_online_enhancement`. For full material recognition use `start_online_conversion`, or `process_material(model_mode=online_only)`. Shared execution uses `provider_mode=vkp_shared`; it reuses VKP route revisions, consent, cost ceilings, LiteLLM gateway, and DPAPI credential references without copying keys. Real execution requires `execute=true`, `confirm_data_export=true`, and a positive `max_estimated_cost_usd`. `vlm_mode=auto` is the safe visual default: standalone images and deterministic layout-heavy PDF candidates use the shared semantic-frame route, capped by `vlm_max_pages=12`; agents may use `always` or `never` only when explicitly justified.
+
+Read `health_check.shared_vkp_gateway.shared_provider_catalog` to discover every enabled VKP remote provider and the current `selected_stages`. Provider configuration remains owned by VKP; agents must change route bindings there rather than create a second key or supplier registry in this project.
 
 Pass `output` when the enhancement result should survive handoff to another agent or human reviewer. The tool writes `online-enhancement-<task>.json/md` artifacts and returns `next_actions` for reading them.
 
@@ -211,6 +215,8 @@ Use this as the default entry point for agents. In `intent=auto`, the router rec
 
 For `web-content-fetcher` archive folders, `process_material` routes to `process_web_archive` and returns `visual_check/` artifacts directly. It does not start a background job in that route.
 
+With `model_mode=online_only` and a recognition intent, documents, PDFs, and images route to `start_online_conversion`. The response remains asynchronous and returns a poll action. Location queries still route to the location index and never become remote merely because `model_mode=online_only` was supplied.
+
 Every `next_actions` entry is machine-actionable and includes `tool`, `arguments`, `safe_default`, and `destructive=false` unless the action is explicitly destructive. Prefer `recommended_followup` for the next single safe step, usually polling `get_job_status` for asynchronous routes.
 
 ### `process_web_archive`
@@ -304,6 +310,19 @@ Use it to decide the next tool:
 - PDF: returns page count, text-layer ratio, image/layout/table/two-column signals, scanned likelihood, and recommended PDF route.
 - Image: returns dimensions, hash, OCR risk warnings, and recognition-first next actions. Location indexing remains available for explicit locate/query tasks.
 - Folder: returns supported document/image counts and sample inspection results. Pure image folders default to image-book recognition unless the caller explicitly asks to locate a query.
+
+### `start_online_conversion`
+
+Starts a background full-material remote inference job and returns `job_id`. It supports the same document, ebook, PDF, and image extensions as the online-only core.
+
+Required safety arguments for a real shared run:
+
+- `provider_mode=vkp_shared`
+- `execute=true`
+- `confirm_data_export=true`
+- positive `max_estimated_cost_usd`
+
+Useful options include `start_shared_gateway`, `vkp_root`, `resume_manifest`, `structure_pass`, and `embedded_image_ocr`. Planning mode is offline. Real output is versioned and non-overwriting; agents poll `get_job_status`, then read the Markdown, manifest, and run-summary artifacts.
 
 ### `start_conversion`
 

@@ -2,14 +2,27 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
+from uuid import uuid4
 from typing import Any
 
 import fitz
+
+
+@contextmanager
+def writable_test_directory(root: Path, prefix: str):
+    path = root / f"{prefix}{uuid4().hex[:10]}"
+    path.mkdir(parents=True, exist_ok=False)
+    try:
+        yield str(path)
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def main() -> int:
@@ -21,7 +34,7 @@ def main() -> int:
     workspace_root = project_dir.parent
     server_module = "ebook_markdown_pipeline.ebook_converter_mcp"
 
-    with tempfile.TemporaryDirectory(prefix="ebook-mcp-smoke-") as tmp:
+    with writable_test_directory(project_dir, ".tmp-mcp-smoke-") as tmp:
         tmpdir = Path(tmp)
         input_file = tmpdir / "sample.txt"
         output_dir = tmpdir / "out"
@@ -77,21 +90,21 @@ def main() -> int:
             contract = call_tool(proc, 21, "get_agent_contract", {})
             if contract.get("schema_version") != "ebook-agent-contract-v1" or contract.get("transport") != "mcp-stdio":
                 raise RuntimeError(f"MCP agent contract failed: {contract}")
-            if contract.get("entrypoints")[:3] != ["process_material", "get_job_status", "read_artifact"]:
+            if not {"process_material", "start_online_conversion", "get_job_status", "read_artifact"}.issubset(set(contract.get("entrypoints") or [])):
                 raise RuntimeError(f"MCP agent contract entrypoints failed: {contract}")
             if not {"show_latest_quality_gate", "list_candidate_backends"}.issubset(set(contract.get("specialist_tools", []))):
                 raise RuntimeError(f"MCP contract should list candidate discovery and quality-gate tools as specialist tools: {contract}")
             pm_contract = contract.get("process_material_contract") or {}
             if pm_contract.get("schema_version") != "process-material-v2" or "recommended_followup" not in pm_contract.get("required_fields", []):
                 raise RuntimeError(f"MCP contract missing process_material v2 schema: {contract}")
-            if contract.get("route_defaults", {}).get("images") != "start_image_book_rebuild":
+            if contract.get("route_defaults", {}).get("images") != "start_image_book_rebuild" or contract.get("route_defaults", {}).get("online_only") != "start_online_conversion":
                 raise RuntimeError(f"MCP contract should expose recognition-first route defaults: {contract}")
             if not contract.get("pipeline_capabilities", {}).get("capabilities"):
                 raise RuntimeError(f"MCP contract missing pipeline capabilities: {contract}")
             if not contract.get("long_task_guidance", {}).get("prefer_async_tools"):
                 raise RuntimeError(f"MCP contract missing long task guidance: {contract}")
             contract_tool_names = {item.get("name") for item in contract.get("tools") or []}
-            if not {"process_material", "read_artifact", "list_candidate_backends", "build_agent_handoff_bundle"}.issubset(contract_tool_names):
+            if not {"process_material", "start_online_conversion", "read_artifact", "list_candidate_backends", "build_agent_handoff_bundle"}.issubset(contract_tool_names):
                 raise RuntimeError(f"MCP agent contract missing tool schemas: {contract}")
 
             scan = call_tool(

@@ -5,7 +5,7 @@
 
 ## 当前结论
 
-- 项目真实路径：`D:\used-by-codex\ebook_markdown_pipeline`。
+- 项目路径：repository root。
 - 当前 HTTP 配置源：`config/http.env`；配置 URL 为 `http://127.0.0.1:9241`。
 - `8765` 是过期契约观察值，不是当前权威端口。`8765` 未监听不能证明项目故障。
 - 本轮只读检查中，`8765` 与 `9241` 都未监听。HTTP 是按需 adapter 且 `auto_start=false`，普通本机任务状态为 `stopped-by-design`；只有 Docker/OpenClaw 明确需要 HTTP 时才是 `needs_manual_start`。
@@ -71,3 +71,5 @@ python scripts\check_dispatch_contract.py --require-http
 - `SOURCE_INVENTORY.json` 已有 MinerU、Docling、Marker、PaddleOCR、Surya、PyMuPDF4LLM 的本地源码记录，无需重复 clone。
 - 本轮未找到 GMFT、Table Transformer、OpenDataLoader PDF 的 ledger 条目；精确 proposal 在 `SOURCE_LEDGER_ROUTING_PROPOSAL_2026-07-16.json`，不直接写共享账本。
 - `tool-registry.json` 已正确声明项目路径、`config/http.env`、`stopped-by-design` 和 `auto_start=false`，但尚未登记统一 dispatch CLI。精确 proposal 在 `HTTP_STATUS_DISCOVERY_PROPOSAL.json`，由 Local Tools owner 决定是否合并。
+
+<!-- Documentation update: 2026-08-02 02:07:18 | Codex (GPT-5) | Replaced private absolute paths with portable repository/workspace references; historical conclusions unchanged. -->

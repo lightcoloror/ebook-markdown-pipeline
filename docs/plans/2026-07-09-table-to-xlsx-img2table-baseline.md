@@ -1,7 +1,7 @@
 # img2table Baseline: Photo/Scanned Table to XLSX
 
 Date: 2026-07-09
-Project: `D:\used-by-codex\ebook_markdown_pipeline`
+Project: repository root
 Worker: `scripts\table_to_xlsx_worker.py`
 Scope: local baseline only; no private documents and no model installation.
 
@@ -90,3 +90,5 @@ Practical next step before real documents:
 - Run `img2table` with `PYTHONNOUSERSITE=1` and `--ocr tesseract --ocr-lang chi_sim` on a non-private Chinese sample.
 - Add an English Tesseract language pack only if English screenshots or mixed-language samples are required.
 - Keep PaddleOCR model installation gated behind explicit approval.
+
+<!-- Documentation update: 2026-08-02 02:07:18 | Codex (GPT-5) | Replaced private absolute paths with portable repository/workspace references; historical conclusions unchanged. -->

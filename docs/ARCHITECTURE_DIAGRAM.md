@@ -1,5 +1,7 @@
 # Architecture Diagram
 
+<!-- Documentation update: 2026-08-01 23:35:28 | Codex (GPT-5) | Added and synchronized the explicit online-only/shared-VKP mode. -->
+
 This is the short, shareable architecture map for the repository. For module-level details, see [ARCHITECTURE.md](ARCHITECTURE.md). For reused tools, reference patterns, and license boundaries, see [REFERENCES_AND_REUSE.md](REFERENCES_AND_REUSE.md) and [../THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
 
 ## One-Page Map
@@ -14,7 +16,7 @@ flowchart TD
     ebook["Ebook and document tools\nPandoc / Calibre / Docling"]
     pdf["PDF tools\nPyMuPDF4LLM / MinerU / Marker / Umi-OCR / pdf-craft / olmOCR"]
     image["Image and screenshot tools\nUmi-OCR / CnOCR / Pix2Text / Surya / GOT-OCR / DeepSeek-OCR / PaddleOCR-VL / Qwen-VL / MinerU VLM"]
-    online["Optional online providers\nOCR layout / VLM layout / text structure / table repair / embeddings"]
+    online["Optional online modes\nsecond pass / shared VKP online-only"]
 
     normalize["Post-processing\nMarkdown cleanup / TOC alignment / structure repair"]
     quality["Quality evidence\nheading count / TOC-bookmark match / page noise / OCR chars / duration"]

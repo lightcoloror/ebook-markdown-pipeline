@@ -1,5 +1,7 @@
 # 图文材料转换器
 
+<!-- Documentation update: 2026-08-01 23:35:28 | Codex (GPT-5) | Added and synchronized the explicit online-only/shared-VKP mode. -->
+
 Graphic-Text Material Converter is a local-first converter for ebooks, PDFs, Office documents, screenshots, image sets, and web archives. It turns mixed graphic/text materials into Markdown and reviewable artifacts, with automatic routing, fallback, quality reports, and agent-friendly APIs.
 
 Stable internal id: `ebook-markdown-pipeline`. The Python package is still `ebook_markdown_pipeline` for compatibility with existing MCP, HTTP, CLI, Docker, and script integrations.
@@ -33,7 +35,7 @@ flowchart TD
     route --> ebook["Ebook and document tools\nPandoc / Calibre / Docling"]
     route --> pdf["PDF tools\nPyMuPDF4LLM / MinerU / Marker / Umi-OCR"]
     route --> image["Image tools\nUmi-OCR / PaddleOCR-VL / Qwen-VL / MinerU VLM"]
-    route --> online["Optional online providers\nVLM / structure repair / table repair"]
+    route --> online["Optional online modes\nsecond pass / shared VKP online-only"]
     ebook --> repair["Markdown cleanup\nTOC alignment / structure repair"]
     pdf --> repair
     image --> repair
@@ -59,6 +61,7 @@ For a concise repository overview that can be shared with new users or agents, s
 - Rebuilds screenshot/image books from unordered, duplicate, or partially overlapping screenshots.
 - Builds a lightweight page/image location index when you only need to know which PDF page or image contains a keyword.
 - Exposes the same core workflow through UI, CLI, MCP, and HTTP for OpenClaw, Hermes Agent, Codex, or other automation agents.
+- Offers an explicit `online_only` mode: all model inference is remote while deterministic format decoding stays local; provider routes and API keys are shared with VKP instead of duplicated.
 - Keeps third-party projects at the tool/API boundary: this repository provides orchestration, routing, UI, reports, recovery, and agent contracts rather than vendoring parser/OCR/model code.
 
 ## Referenced And Reused Tools
@@ -131,6 +134,54 @@ On Windows you can also double-click [start_ui.cmd](start_ui.cmd).
 
 Output Markdown files are written to the selected output folder. Reports, logs, and review checklists are written under `.reports/`.
 
+## Optional Pure Online API Mode
+
+The default remains local-first. If a sibling `video-knowledge-pipeline` installation already owns your provider routes and Windows DPAPI credential store, this project can reuse them without copying API keys.
+
+In the desktop UI, select `纯在线 API / Online only`. Before execution the UI checks shared routes, asks for a positive USD cost ceiling, explains what will be sent remotely, and asks for explicit confirmation. Outputs are versioned as `*.online-<run-id>.md`; source files are not overwritten.
+
+If one batch contains different source formats with the same cleaned filename, only those collisions gain a format suffix such as .epub.online-<run-id>.md or .azw3.online-<run-id>.md. This keeps artifacts unique without changing normal single-file names. A public fake-provider matrix verifies all 17 supported document/ebook extensions and 7 image extensions without making remote requests.
+
+Visual inputs use shared online OCR first, then `vlm_mode=auto` sends only standalone images and deterministic layout-heavy PDF candidates to the shared VKP semantic-frame route (up to 12 pages by default). Use `--vlm-mode always` for an explicit full-page comparison or `--vlm-mode never` to disable the additive VLM stage.
+
+`health_check` exposes a redacted `shared_vkp_gateway.shared_provider_catalog`: every enabled VKP remote provider remains discoverable, while `selected_stages` distinguishes the current OCR/VLM/text bindings. Change providers once in VKP and this project inherits the new bindings without copying API keys. The pinned source-review ledger is [docs/ONLINE_ONLY_SOURCE_REUSE_MANIFEST.json](docs/ONLINE_ONLY_SOURCE_REUSE_MANIFEST.json).
+
+CLI planning is offline and makes no provider request:
+
+```powershell
+python scripts\run_online_document_pipeline.py input.pdf output --provider-mode vkp_shared
+```
+
+A real run must opt into every safety boundary:
+
+```powershell
+python scripts\run_online_document_pipeline.py input.pdf output `
+  --provider-mode vkp_shared `
+  --execute `
+  --confirm-data-export `
+  --max-estimated-cost-usd 1.00 `
+  --vlm-mode auto `
+  --vlm-max-pages 12 `
+  --start-shared-gateway
+```
+
+Agents use `start_online_conversion`, or `process_material` with `model_mode=online_only`, then poll `get_job_status`. See [docs/ONLINE_ONLY_MODE_ARCHITECTURE_AND_SOURCE_REUSE_2026-08-01.md](docs/ONLINE_ONLY_MODE_ARCHITECTURE_AND_SOURCE_REUSE_2026-08-01.md).
+Before spending money on a real provider, generate a strict synthetic OCR/VLM/structure smoke plan. This default command makes no supplier request:
+
+```powershell
+python scripts\run_online_supplier_smoke.py --output .\supplier-smoke
+```
+
+Real execution additionally requires `--execute --confirm-data-export --max-estimated-cost-usd <positive>`. Each run is versioned under `.supplier-smoke-runs/` and passes only when OCR, VLM layout, and text structure all report successful remote-request evidence.
+
+Audit the full goal without reading keys or contacting suppliers:
+
+```powershell
+python scripts\audit_online_mode_completion.py --json
+```
+
+`ready_for_live_smoke` means all local contracts, shared VKP routes, compatible provider discovery, pinned source worktrees, and five-field decision records pass; only the explicitly authorized real-supplier smoke remains. Pass its JSON report with `--supplier-smoke-report` to obtain `complete`.
+
 ## Install Levels
 
 You do not need to install every backend on day one.
@@ -147,6 +198,7 @@ You do not need to install every backend on day one.
 | Table diagnostics | PDF enhanced + `requirements-tabula.txt` | text-layer PDF tables | Tabula is optional and needs Java; use it as a fallback beside pdfplumber/Camelot, not as a main converter. |
 | OCR/Layout | OCRmyPDF, Umi-OCR, MinerU, Marker | scanned PDF, long PDF, complex layout | Larger downloads; may need more disk and RAM. |
 | Vision-heavy | Pix2Text / Surya / GOT-OCR / DeepSeek-OCR / PaddleOCR-VL / Qwen-VL / olmOCR wrappers | screenshots, formulas, infographics, image books, VLM OCR benchmarks | Optional backends; Pix2Text and Surya are tried before heavier VLM wrappers when installed; GOT-OCR, DeepSeek-OCR, and olmOCR are explicit-only. |
+| Shared online-only | Sibling VKP route registry + LiteLLM gateway | machines that prefer remote OCR/VLM/text inference and one shared key configuration | Explicit opt-in only; requires data-export confirmation and a positive cost ceiling. |
 
 ## What To Use When
 
@@ -156,7 +208,7 @@ You do not need to install every backend on day one.
 - **Only need "which page/image contains this keyword"**: use `定位索引 / Location Index`, pass `intent=locate`, or include a `query`; otherwise PDF/image inputs default to recognition/conversion, not location indexing.
 - **Messy screenshot set**: use `截图成书 / Image Book` or `image_book_rebuilder.py`.
 - **Agent integration**: call `process_material` first, then poll `get_job_status`, then read artifacts with `read_artifact`.
-- **Online model API integration**: see [docs/ONLINE_MODEL_API_INTEGRATION.md](docs/ONLINE_MODEL_API_INTEGRATION.md) for the planned provider abstraction.
+- **Online model API integration**: use `online_only` for an entire material or `run_online_enhancement` for a second pass; see [docs/ONLINE_MODEL_API_INTEGRATION.md](docs/ONLINE_MODEL_API_INTEGRATION.md).
 
 ## Quality Gate
 

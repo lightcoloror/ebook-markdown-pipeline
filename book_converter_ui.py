@@ -34,6 +34,12 @@ try:
     )
     from ebook_markdown_pipeline.environment_report import compare_environment_lock, export_environment_report  # noqa: E402
     from ebook_markdown_pipeline.image_book_rebuilder import rebuild_image_book_from_sources  # noqa: E402
+    from ebook_markdown_pipeline.online_document_pipeline import (  # noqa: E402
+        OnlinePipelineOptions,
+        collect_online_sources,
+        run_online_document_pipeline,
+    )
+    from ebook_markdown_pipeline.shared_vkp_gateway import shared_vkp_gateway_fast_health  # noqa: E402
     from ebook_markdown_pipeline.quality_improvement_queue import (  # noqa: E402
         build_quality_improvement_queue,
         load_benchmark_results,
@@ -72,6 +78,12 @@ except ModuleNotFoundError:
     )
     from environment_report import compare_environment_lock, export_environment_report  # noqa: E402
     from image_book_rebuilder import rebuild_image_book_from_sources  # noqa: E402
+    from online_document_pipeline import (  # noqa: E402
+        OnlinePipelineOptions,
+        collect_online_sources,
+        run_online_document_pipeline,
+    )
+    from shared_vkp_gateway import shared_vkp_gateway_fast_health  # noqa: E402
     from quality_improvement_queue import (  # noqa: E402
         build_quality_improvement_queue,
         load_benchmark_results,
@@ -156,6 +168,12 @@ class BookConverterUI:
         self.output_var = tk.StringVar()
         self.history_var = tk.StringVar()
         self.output_format_var = tk.StringVar(value="markdown")
+        self.processing_mode_var = tk.StringVar(value="local_first")
+        self.online_cost_limit_var = tk.StringVar()
+        self.online_start_gateway_var = tk.BooleanVar(value=True)
+        self.online_vkp_root_var = tk.StringVar(
+            value=str(Path(__file__).resolve().parent.parent / "video-knowledge-pipeline")
+        )
         self.document_mode_var = tk.StringVar(value="auto")
         self.pdf_mode_var = tk.StringVar(value="auto")
         self.recursive_var = tk.BooleanVar(value=True)
@@ -247,6 +265,25 @@ class BookConverterUI:
             row=0, column=4, sticky="w", padx=8
         )
         ttk.Button(settings, text="高级设置 / Advanced", command=self.open_advanced_tools).grid(row=0, column=5, sticky="w", padx=8)
+
+        ttk.Label(settings, text="处理模式 / Mode").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Radiobutton(
+            settings,
+            text="本地优先 / Local first",
+            variable=self.processing_mode_var,
+            value="local_first",
+        ).grid(row=1, column=1, sticky="w", padx=8, pady=(4, 0))
+        ttk.Radiobutton(
+            settings,
+            text="纯在线 API / Online only",
+            variable=self.processing_mode_var,
+            value="online_only",
+        ).grid(row=1, column=2, sticky="w", padx=8, pady=(4, 0))
+        ttk.Label(
+            settings,
+            text="纯在线会把页面、图片或文本块发送给 VKP 已配置的远程供应商；启动前会再次确认费用和数据外发。",
+            wraplength=620,
+        ).grid(row=1, column=3, columnspan=3, sticky="w", padx=8, pady=(4, 0))
 
         actions = ttk.Frame(container)
         actions.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
@@ -495,15 +532,36 @@ class BookConverterUI:
         ttk.Label(frame, text="对比页码 / Pages").grid(row=4, column=0, sticky="w", pady=3)
         ttk.Entry(frame, textvariable=self.compare_page_ranges_var, width=18).grid(row=4, column=1, sticky="w", padx=6)
 
-        ttk.Label(frame, text="历史批次 / History").grid(row=5, column=0, sticky="w", pady=3)
+        ttk.Label(frame, text="VKP 项目 / VKP root").grid(row=5, column=0, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=self.online_vkp_root_var).grid(
+            row=5, column=1, columnspan=3, sticky="ew", padx=6
+        )
+        ttk.Checkbutton(
+            frame,
+            text="按需启动共享网关 / Start gateway on demand",
+            variable=self.online_start_gateway_var,
+        ).grid(row=5, column=4, columnspan=2, sticky="w", padx=6)
+        ttk.Label(frame, text="在线费用上限(USD) / Cost cap").grid(row=6, column=0, sticky="w", pady=3)
+        ttk.Entry(frame, textvariable=self.online_cost_limit_var, width=12).grid(
+            row=6, column=1, sticky="w", padx=6
+        )
+        ttk.Button(frame, text="检查共享 API / Shared API", command=self.check_shared_api_health).grid(
+            row=6, column=2, sticky="w", padx=6
+        )
+        ttk.Label(
+            frame,
+            text="留空时每次启动都会询问；key 只由 VKP 的 DPAPI 凭据库管理。",
+        ).grid(row=6, column=3, columnspan=3, sticky="w", padx=6)
+
+        ttk.Label(frame, text="历史批次 / History").grid(row=7, column=0, sticky="w", pady=3)
         self.history_combo = ttk.Combobox(frame, textvariable=self.history_var, state="readonly")
-        self.history_combo.grid(row=5, column=1, columnspan=3, sticky="ew", padx=6)
+        self.history_combo.grid(row=7, column=1, columnspan=3, sticky="ew", padx=6)
         self.history_combo.bind("<<ComboboxSelected>>", lambda _event: self.open_selected_history())
-        ttk.Button(frame, text="打开 / Open", command=self.open_selected_history).grid(row=5, column=4, sticky="w", padx=6)
-        ttk.Button(frame, text="只看问题 / Problems", command=self.open_selected_history_problems).grid(row=5, column=5, sticky="w", padx=6)
+        ttk.Button(frame, text="打开 / Open", command=self.open_selected_history).grid(row=7, column=4, sticky="w", padx=6)
+        ttk.Button(frame, text="只看问题 / Problems", command=self.open_selected_history_problems).grid(row=7, column=5, sticky="w", padx=6)
         if not hasattr(self, "history_detail_var"):
             self.history_detail_var = tk.StringVar()
-        ttk.Label(frame, textvariable=self.history_detail_var).grid(row=6, column=1, columnspan=5, sticky="ew", padx=6, pady=(2, 0))
+        ttk.Label(frame, textvariable=self.history_detail_var).grid(row=8, column=1, columnspan=5, sticky="ew", padx=6, pady=(2, 0))
         self.update_history_combo()
 
     def add_advanced_group(
@@ -743,7 +801,90 @@ class BookConverterUI:
             return str(input_path.parent)
         return ""
 
+    def resolve_online_sources(self) -> tuple[Path, list[Path]]:
+        if self.selected_input_files:
+            sources: list[Path] = []
+            for selected in self.selected_input_files:
+                sources.extend(
+                    collect_online_sources(
+                        selected,
+                        recursive=self.recursive_var.get(),
+                        include_hidden=self.include_hidden_var.get(),
+                    )
+                )
+            sources = merge_input_paths([], sources)
+            return common_input_root(sources), sources
+
+        input_text = self.input_var.get().strip()
+        if not input_text:
+            return Path(), []
+        input_path = Path(input_text).expanduser()
+        sources = collect_online_sources(
+            input_path,
+            recursive=self.recursive_var.get(),
+            include_hidden=self.include_hidden_var.get(),
+        )
+        input_root = input_path if input_path.is_dir() else input_path.parent
+        return input_root, sources
+
+    def scan_online_inputs(self) -> None:
+        input_root, sources = self.resolve_online_sources()
+        if not sources:
+            messagebox.showerror(
+                "缺少输入 / Input missing",
+                "请选择支持的文档、PDF 或图片。/ Choose supported documents, PDFs, or images.",
+            )
+            return
+        if not self.output_var.get().strip():
+            self.apply_default_output_from_sources(sources)
+        if not self.output_var.get().strip():
+            messagebox.showerror("缺少输出 / Output missing", "请选择输出文件夹。/ Choose an output folder.")
+            return
+
+        output_path = Path(self.output_var.get().strip())
+        self.plan_rows = sources
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for source in sources:
+            visual = source.suffix.lower() in IMAGE_EXTENSIONS or source.suffix.lower() == ".pdf"
+            note = (
+                "页面/图片发送到共享远程 OCR，随后在线修复结构。"
+                if visual
+                else "本地仅做确定性格式解包，文本块发送到共享远程结构模型。"
+            )
+            self.tree.insert(
+                "",
+                "end",
+                values=(
+                    str(source),
+                    self.detect_format_from_path(str(source)),
+                    "online-api",
+                    "",
+                    "确认数据外发和费用后识别 / Confirm remote run",
+                    note,
+                    "markdown",
+                    str(output_path / f"{source.stem}.online-<run-id>.md"),
+                ),
+            )
+        self.write_log(
+            f"已扫描纯在线输入 {len(sources)} 个。启动前会确认数据外发与费用上限；"
+            "输出使用版本化文件名，不覆盖原文件。/ "
+            f"Scanned {len(sources)} online-only input(s); execution requires confirmation and writes versioned outputs."
+        )
+        try:
+            health = shared_vkp_gateway_fast_health(self.online_vkp_root_var.get().strip() or None)
+            self.write_log(
+                "共享 VKP API / Shared VKP API: "
+                f"{health.get('status')}; configured={health.get('configured_stages')}; "
+                f"missing={health.get('missing_stages')}"
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.write_log(f"共享 VKP API 不可用 / Shared VKP API unavailable: {exc}")
+
     def scan(self) -> None:
+        if self.processing_mode_var.get() == "online_only":
+            self.scan_online_inputs()
+            return
         options = self.build_options()
         input_root, sources = self.resolve_sources(options)
         if not sources:
@@ -852,6 +993,28 @@ class BookConverterUI:
             f"已扫描图片识别输入 {len(sources)} 张，默认将生成 Markdown。/ "
             f"Scanned {len(sources)} image recognition input(s); default output is Markdown."
         )
+
+    def check_shared_api_health(self) -> None:
+        try:
+            health = shared_vkp_gateway_fast_health(self.online_vkp_root_var.get().strip() or None)
+        except Exception as exc:  # noqa: BLE001
+            self.write_log(f"共享 VKP API 检查失败 / Shared VKP API check failed: {exc}")
+            messagebox.showerror("共享 API 不可用 / Shared API unavailable", str(exc))
+            return
+        routes = health.get("routes") or {}
+        route_lines = [
+            f"{stage}: {item.get('status')} ({item.get('capability')})"
+            for stage, item in routes.items()
+            if isinstance(item, dict)
+        ]
+        detail = (
+            f"状态 / Status: {health.get('status')}\n"
+            f"网关 / Gateway: {'listening' if health.get('ready') else 'on-demand or unavailable'}\n"
+            + "\n".join(route_lines)
+            + "\n\nAPI key 仍只存放在 VKP 的 Windows DPAPI 凭据库中。"
+        )
+        self.write_log(detail.replace("\n", " | "))
+        messagebox.showinfo("共享 API 状态 / Shared API status", detail)
 
     def health_check(self) -> None:
         options = self.build_options()
@@ -1807,6 +1970,9 @@ class BookConverterUI:
         if not input_text or not output_text:
             messagebox.showerror("缺少路径 / Missing paths", "请选择输入和输出路径。/ Please choose both input and output paths.")
             return
+        if self.processing_mode_var.get() == "online_only":
+            self.start_online_convert()
+            return
 
         output_path = Path(output_text)
         options = self.build_options()
@@ -1874,6 +2040,212 @@ class BookConverterUI:
                 self.queue.put(("done", results))
             except Exception as exc:  # noqa: BLE001
                 self.queue.put(("error", str(exc)))
+
+        self.worker = threading.Thread(target=worker, daemon=True)
+        self.worker.start()
+
+    def prompt_online_cost_limit(self) -> float | None:
+        raw = self.online_cost_limit_var.get().strip()
+        if raw:
+            try:
+                value = float(raw)
+            except ValueError:
+                value = 0.0
+            if value > 0:
+                return value
+        value = simpledialog.askfloat(
+            "在线费用上限 / Remote cost cap",
+            "请输入本批次允许的最高估算费用（USD，必须大于 0）。\n"
+            "This is a hard consent ceiling, not a guaranteed charge.",
+            minvalue=0.01,
+            parent=self.root,
+        )
+        if value is None:
+            return None
+        self.online_cost_limit_var.set(f"{float(value):g}")
+        return float(value)
+
+    def start_online_convert(self) -> None:
+        if self.worker and self.worker.is_alive():
+            messagebox.showinfo("忙碌 / Busy", "已有转换任务正在运行。/ A conversion task is already running.")
+            return
+        input_root, sources = self.resolve_online_sources()
+        if not sources:
+            messagebox.showerror(
+                "没有文件 / No files",
+                "未找到纯在线模式支持的文档、PDF 或图片。/ No supported online-only inputs were found.",
+            )
+            return
+        if not self.output_var.get().strip():
+            self.apply_default_output_from_sources(sources)
+        output_text = self.output_var.get().strip()
+        if not output_text:
+            messagebox.showerror("缺少输出 / Output missing", "请选择输出文件夹。/ Choose an output folder.")
+            return
+
+        cost_limit = self.prompt_online_cost_limit()
+        if cost_limit is None:
+            return
+        vkp_root = self.online_vkp_root_var.get().strip()
+        try:
+            gateway_health = shared_vkp_gateway_fast_health(vkp_root or None)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("共享 API 不可用 / Shared API unavailable", str(exc))
+            self.write_log(f"共享 VKP API 初始化失败 / Shared VKP API init failed: {exc}")
+            return
+        missing_stages = gateway_health.get("missing_required_stages") or []
+        if missing_stages:
+            messagebox.showerror(
+                "远程路由缺失 / Remote routes missing",
+                "VKP 尚未配置以下能力："
+                + ", ".join(str(item) for item in missing_stages)
+                + "\n请先在 VKP 中配置供应商；本项目不会复制或另存 API key。",
+            )
+            return
+
+        start_gateway = self.online_start_gateway_var.get()
+        if not gateway_health.get("ready") and not start_gateway:
+            start_gateway = messagebox.askyesno(
+                "共享网关未启动 / Shared gateway is on-demand",
+                "VKP 远程路由已配置，但本地 LiteLLM 网关未监听。\n"
+                "是否由本次任务按需启动共享网关？\n"
+                "No model request is made until the confirmed conversion starts.",
+            )
+            if not start_gateway:
+                return
+            self.online_start_gateway_var.set(True)
+
+        names = "\n".join(f"- {path.name}" for path in sources[:6])
+        if len(sources) > 6:
+            names += f"\n- ... 另有 / plus {len(sources) - 6} file(s)"
+        confirmed = messagebox.askyesno(
+            "确认纯在线识别 / Confirm online-only conversion",
+            f"将处理 {len(sources)} 个文件：\n{names}\n\n"
+            "PDF 页面、图片、嵌入图片或确定性解包后的文本块会发送给 VKP 已配置的远程供应商。\n"
+            f"本批次费用上限：USD {cost_limit:g}\n"
+            "输出将写成带 online 时间戳的新 Markdown，不覆盖原文件。\n\n"
+            "是否继续？ / Continue with remote data export?",
+            parent=self.root,
+        )
+        if not confirmed:
+            return
+
+        output_path = Path(output_text)
+        self.scan_online_inputs()
+        self.write_log(
+            f"开始纯在线转换 {len(sources)} 个文件；共享供应商配置来自 VKP，费用上限 USD {cost_limit:g}。/ "
+            f"Starting online-only conversion for {len(sources)} file(s)."
+        )
+        self.set_running_state(True)
+        self.total_files = len(sources)
+        self.file_start_times.clear()
+        self.file_estimates.clear()
+        self.progress.configure(maximum=max(len(sources), 1), value=0)
+        self.status_var.set(f"纯在线准备 / Online ready 0/{len(sources)}")
+        self.current_stage_var.set("等待共享网关和远程供应商 / Waiting for shared gateway")
+
+        def worker() -> None:
+            try:
+                output_path.mkdir(parents=True, exist_ok=True)
+                budget_per_source = cost_limit / max(len(sources), 1)
+                runs: list[dict] = []
+                combined_results: list[dict] = []
+                combined_artifacts: list[dict] = []
+                for global_index, source in enumerate(sources, start=1):
+                    def progress_callback(event, event_source, _index, _total, result, *, _global=global_index) -> None:
+                        self.queue.put(
+                            (
+                                "online_progress",
+                                {
+                                    "event": event,
+                                    "source": str(event_source),
+                                    "index": _global,
+                                    "total": len(sources),
+                                    "result": result,
+                                },
+                            )
+                        )
+
+                    options = OnlinePipelineOptions(
+                        provider_mode="vkp_shared",
+                        execute=True,
+                        confirm_data_export=True,
+                        max_estimated_cost_usd=budget_per_source,
+                        start_shared_gateway=start_gateway,
+                        vkp_root=vkp_root,
+                        recursive=False,
+                        include_hidden=self.include_hidden_var.get(),
+                        overwrite=False,
+                        structure_pass=True,
+                        embedded_image_ocr=True,
+                    )
+                    run = run_online_document_pipeline(
+                        source,
+                        output_path,
+                        options=options,
+                        progress_callback=progress_callback,
+                    )
+                    runs.append(run)
+                    run_results = [item for item in (run.get("results") or []) if isinstance(item, dict)]
+                    if not run_results and run.get("status") in {"failed", "partial"}:
+                        run_results = [
+                            {
+                                "source": str(source),
+                                "status": "failed",
+                                "output": "",
+                                "message": str(run.get("message") or run.get("code") or "online conversion failed"),
+                                "artifacts": [],
+                            }
+                        ]
+                    combined_results.extend(run_results)
+                    combined_artifacts.extend(
+                        item for item in (run.get("artifacts") or []) if isinstance(item, dict)
+                    )
+                    run_root = str(run.get("run_root") or "")
+                    if run_root:
+                        manifest = Path(run_root) / "manifest.json"
+                        if manifest.is_file():
+                            combined_artifacts.append(
+                                {"type": "manifest", "path": str(manifest), "label": manifest.name}
+                            )
+
+                failed_count = sum(item.get("status") == "failed" for item in combined_results)
+                ok_count = sum(item.get("status") in {"ok", "skipped"} for item in combined_results)
+                status = "ok" if failed_count == 0 else ("partial" if ok_count else "failed")
+                seen_paths: set[str] = set()
+                artifacts = []
+                for item in combined_artifacts:
+                    path = str(item.get("path") or "")
+                    if not path or path in seen_paths:
+                        continue
+                    seen_paths.add(path)
+                    artifacts.append(item)
+                payload = {
+                    "schema_version": "ebook-online-ui-batch-v1",
+                    "status": status,
+                    "mode": "online_only",
+                    "provider_mode": "vkp_shared",
+                    "input": str(input_root),
+                    "output": str(output_path),
+                    "runs": runs,
+                    "results": combined_results,
+                    "artifacts": artifacts,
+                    "quality_summary": {
+                        "status": "review"
+                        if any((item.get("quality") or {}).get("level") in {"review", "poor"} for item in combined_results)
+                        else status,
+                        "total": len(combined_results),
+                        "ok": ok_count,
+                        "failed": failed_count,
+                        "review": sum((item.get("quality") or {}).get("level") == "review" for item in combined_results),
+                        "poor": sum((item.get("quality") or {}).get("level") == "poor" for item in combined_results),
+                    },
+                    "remote_requests_confirmed": True,
+                    "max_estimated_cost_usd": cost_limit,
+                }
+                self.queue.put(("online_done", payload))
+            except Exception as exc:  # noqa: BLE001
+                self.queue.put(("error", f"{type(exc).__name__}: {exc}"))
 
         self.worker = threading.Thread(target=worker, daemon=True)
         self.worker.start()
@@ -1960,6 +2332,53 @@ class BookConverterUI:
                 kind, payload = self.queue.get_nowait()
                 if kind == "progress":
                     self.handle_progress(payload)
+                elif kind == "online_progress":
+                    self.handle_online_progress(payload)
+                elif kind == "online_done":
+                    results = payload.get("results") or []
+                    quality = payload.get("quality_summary") or {}
+                    ok_count = int(quality.get("ok") or 0)
+                    failed_count = int(quality.get("failed") or 0)
+                    self.latest_results = results
+                    self.progress.configure(value=self.total_files)
+                    self.status_var.set(
+                        f"纯在线完成 / Online finished，成功 {ok_count}/{len(results)}"
+                    )
+                    self.current_stage_var.set("请检查版本化 Markdown 和 run summary / Review artifacts")
+                    self.set_running_state(False)
+                    self.worker = None
+                    self.latest_artifacts = self.artifact_paths_from_payload(payload)
+                    self.apply_online_results_to_tree(payload)
+                    problem_count = (
+                        failed_count
+                        + int(quality.get("review") or 0)
+                        + int(quality.get("poor") or 0)
+                    )
+                    output_text = self.output_var.get().strip()
+                    if output_text:
+                        self.remember_history_batch(
+                            Path(output_text),
+                            item_count=len(results),
+                            problem_count=problem_count,
+                            source_label="online-only",
+                        )
+                    self.write_log(
+                        f"纯在线转换完成 / Online-only finished: status={payload.get('status')}, "
+                        f"ok={ok_count}, failed={failed_count}"
+                    )
+                    for result in results:
+                        self.write_log(
+                            f"[{result.get('status')}] {result.get('source')} -> "
+                            f"{result.get('output') or '-'}"
+                        )
+                        if result.get("message"):
+                            self.write_log(str(result.get("message")))
+                    self.notify_task_finished(
+                        "纯在线转换完成 / Online conversion finished",
+                        f"成功 / Success: {ok_count}/{len(results)}\n"
+                        f"输出 / Output: {self.output_var.get().strip()}\n"
+                        "结果使用版本化文件名，未覆盖原文件。",
+                    )
                 elif kind == "done":
                     self.latest_results = payload
                     ok_count = 0
@@ -2078,6 +2497,77 @@ class BookConverterUI:
                 messagebox.showinfo(title, message, parent=self.root)
         except Exception:
             self.write_log(f"{title}: {message}")
+
+    def handle_online_progress(self, payload: dict) -> None:
+        event = str(payload.get("event") or "")
+        source = str(payload.get("source") or "")
+        index = int(payload.get("index") or 1)
+        total = int(payload.get("total") or self.total_files or 1)
+        source_name = Path(source).name
+        result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+        if event == "start":
+            self.file_start_times[source] = time.monotonic()
+            self.progress.configure(value=max(index - 0.8, 0.1))
+            self.status_var.set(f"纯在线处理中 / Online {index}/{total}: {source_name}")
+            self.current_stage_var.set("准备版本化 artifact / Preparing versioned artifacts")
+            self.write_log(f"纯在线处理中 / Online processing {index}/{total}: {source}")
+            return
+        if event == "stage":
+            stage = str(result.get("stage") or "")
+            labels = {
+                "render_pages": "本地分页渲染（无模型）/ Local page rendering",
+                "deterministic_baseline": "确定性格式解包（无模型）/ Deterministic decode",
+                "remote_structure": "远程标题与结构修复 / Remote structure repair",
+            }
+            detail = labels.get(stage, stage or "远程处理 / Remote processing")
+            self.progress.configure(value=min(index - 0.35, total))
+            self.status_var.set(f"纯在线处理中 / Online {index}/{total}: {source_name}")
+            self.current_stage_var.set(detail)
+            self.write_log(f"  - {detail}")
+            return
+        status = str(result.get("status") or "done")
+        self.progress.configure(value=min(index, total))
+        self.status_var.set(f"纯在线已完成 / Online done {index}/{total}: {source_name}")
+        self.current_stage_var.set(f"当前文件状态 / Current status: {status}")
+        if result.get("output"):
+            self.write_log(f"[{status}] {source} -> {result.get('output')}")
+        elif result.get("message"):
+            self.write_log(f"[{status}] {source}: {result.get('message')}")
+
+    def apply_online_results_to_tree(self, payload: dict) -> None:
+        results = {
+            str(item.get("source") or ""): item
+            for item in (payload.get("results") or [])
+            if isinstance(item, dict)
+        }
+        for item_id in self.tree.get_children(""):
+            values = list(self.tree.item(item_id, "values"))
+            if len(values) < 8:
+                continue
+            result = results.get(str(values[0]))
+            if not result:
+                continue
+            status = str(result.get("status") or "")
+            level = str((result.get("quality") or {}).get("level") or "")
+            if status == "failed":
+                quality = "failed"
+                action = "检查 manifest 后安全续跑 / Review and resume"
+            elif level in {"review", "poor"}:
+                quality = level
+                action = "打开输出和 run summary 复查 / Review artifacts"
+            else:
+                quality = level or "good"
+                action = "打开版本化输出 / Open versioned output"
+            values[3] = quality
+            values[4] = action
+            if result.get("output"):
+                values[7] = str(result.get("output"))
+            self.tree.item(
+                item_id,
+                values=values,
+                tags=(self.quality_tag_for_label(quality),),
+            )
+        self.apply_review_filter()
 
     def handle_progress(self, payload) -> None:
         event = payload["event"]
@@ -3035,6 +3525,9 @@ class BookConverterUI:
         for key, variable in {
             "input": self.input_var,
             "output_format": self.output_format_var,
+            "processing_mode": self.processing_mode_var,
+            "online_cost_limit": self.online_cost_limit_var,
+            "online_vkp_root": self.online_vkp_root_var,
             "document_mode": self.document_mode_var,
             "pdf_mode": self.pdf_mode_var,
             "pandoc": self.pandoc_var,
@@ -3059,6 +3552,7 @@ class BookConverterUI:
             "overwrite": self.overwrite_var,
             "resume": self.resume_var,
             "show_pipeline": self.show_pipeline_var,
+            "online_start_gateway": self.online_start_gateway_var,
         }.items():
             if key in data:
                 variable.set(bool(data[key]))
@@ -3073,6 +3567,10 @@ class BookConverterUI:
         data = {
             "input": self.input_var.get(),
             "output_format": self.output_format_var.get(),
+            "processing_mode": self.processing_mode_var.get(),
+            "online_cost_limit": self.online_cost_limit_var.get(),
+            "online_vkp_root": self.online_vkp_root_var.get(),
+            "online_start_gateway": self.online_start_gateway_var.get(),
             "document_mode": self.document_mode_var.get(),
             "pdf_mode": self.pdf_mode_var.get(),
             "recursive": self.recursive_var.get(),

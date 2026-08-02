@@ -1,7 +1,7 @@
 # Durable Goal 07 Completion Report
 
 Date: 2026-07-10
-Project: `D:\used-by-codex\ebook_markdown_pipeline`
+Project: repository root
 Goal status: complete
 
 ## Scope and boundaries
@@ -19,7 +19,7 @@ No dependency or model was installed or upgraded. No external OCR/VLM API was ca
 | CP3 fallback/resume | Passed | `scripts/test_batch_control_flow.py`; `scripts/test_delimited_text_fallback.py`; PDF fixture reports preserve `pymupdf-text(fallback from pymupdf4llm)` diagnostics. |
 | CP4 deterministic quality risks | Passed | `scripts/test_deterministic_quality_risks.py`; `benchmarks/runs/durable-goal-07-fixtures/cp4-20260710/baseline-summary.json` |
 | CP5 agent contracts | Passed | `benchmarks/runs/durable-goal-07-fixtures/cp5-20260710/baseline-summary.json`; `handoff-bundle.json`; `scripts/test_job_artifact_schema.py`; service/HTTP/MCP/handoff tests. |
-| CP6 docs and registry | Passed | `docs/AGENT_INTEGRATION.md`; `docs/SERVICE_CONTRACT.md`; `docs/RELEASE_CHECKLIST.md`; `D:\used-by-codex\tool-registry.json`. |
+| CP6 docs and registry | Passed | `docs/AGENT_INTEGRATION.md`; `docs/SERVICE_CONTRACT.md`; `docs/RELEASE_CHECKLIST.md`; `<workspace>/tool-registry.json`. |
 
 ## Five-class baseline
 
@@ -56,7 +56,7 @@ The handoff bundle uses `material-consumer-handoff-v1`, supports `bookwiki` and 
 - Full pytest compatibility run: 80 passed and one stale Docling assertion failed; the assertion was corrected to test auto fallback and forced Docling separately, then its direct and pytest-targeted tests passed.
 - Post-fix full pytest run: 80 passed; `test_agent_contract.py` was terminated by Windows with return code `0xFFFFFFFF` and no assertion output while another unrelated process was under high memory load. The same agent contract was immediately rerun alone and passed, including automatic shutdown of its short-lived local HTTP server. Final coverage evidence is therefore 80 suite tests plus the isolated agent contract pass; there is no single-run 81/81 result.
 
-JUnit evidence is stored under `C:\Users\lightcolor\Documents\Codex\2026-07-04\ebook-markdown-pipeline-continuation\outputs`.
+JUnit evidence was stored in a local untracked Codex output directory and is not part of the public repository.
 
 ## Optional backend state
 
@@ -65,3 +65,5 @@ Available core and local paths include Pandoc, Calibre, PyMuPDF/PyMuPDF4LLM fall
 ## Repository state
 
 Changes are left uncommitted and unpushed for user review. Generated private material, model downloads, external uploads, and persistent services are absent from this goal run.
+
+<!-- Documentation update: 2026-08-02 02:07:18 | Codex (GPT-5) | Replaced private absolute paths with portable repository/workspace references; historical conclusions unchanged. -->

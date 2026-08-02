@@ -1,5 +1,7 @@
 # Architecture
 
+<!-- Documentation update: 2026-08-01 23:35:28 | Codex (GPT-5) | Added and synchronized the explicit online-only/shared-VKP mode. -->
+
 This project is an orchestration layer for converting mixed graphic/text materials into Markdown-oriented artifacts. It does not try to replace specialist parsers, OCR engines, or document AI models. Instead, it inspects inputs, routes them to the best available backend, records diagnostics, falls back safely, and exposes the same workflow through UI, CLI, HTTP, and MCP.
 
 ## System Overview
@@ -43,21 +45,21 @@ flowchart LR
 
 ## Online Provider Boundary
 
-Online model APIs are optional enhancement tools, not default conversion paths. Agents and UI code should call the project-level provider abstraction instead of wiring vendor APIs into MinerU, PaddleOCR, structure repair, or screenshot-book logic directly.
+Online model APIs are optional and never replace the default local-first route silently. Agents and UI code call one of two project-level boundaries instead of wiring vendor APIs into MinerU, PaddleOCR, structure repair, or screenshot-book logic directly.
 
 ```mermaid
 flowchart LR
-    caller["UI / CLI / MCP / HTTP"] --> explicit["Explicit opt-in\nrun_online_enhancement"]
-    explicit --> safety["Safety gate\nmodel_mode + allow_remote + env key"]
-    safety --> registry["Provider registry\nonline_providers.py + config"]
-
-    registry --> fake["Fake providers\ntests and dry runs"]
-    registry --> openai["OpenAI-compatible providers\nVLM / text / table / embedding"]
-
-    fake --> artifact["Enhanced artifact\nMarkdown fragment / layout notes / repaired table"]
-    openai --> artifact
-
-    artifact --> report["Report evidence\nprovider name, route, status, no secret logging"]
+    caller["UI / CLI / MCP / HTTP"] --> choice{"Explicit online intent"}
+    choice --> enhance["Second pass\nrun_online_enhancement"]
+    choice --> full["Full material\nonline_document_pipeline"]
+    enhance --> direct["Provider registry\nonline_providers.py"]
+    full --> safety["Data-export consent\npositive cost ceiling"]
+    safety --> shared["Shared VKP gateway\nroute registry + DPAPI refs"]
+    shared --> proxy["Loopback LiteLLM gateway"]
+    direct --> artifact["Versioned enhancement artifact"]
+    proxy --> output["Versioned Markdown + manifest"]
+    artifact --> report["Provider/status evidence\nno secret logging"]
+    output --> report
 ```
 
 Current provider interfaces are:
@@ -68,7 +70,7 @@ Current provider interfaces are:
 - `TableRepairProvider`: table-only repair without forcing card/step layouts into tables.
 - `EmbeddingProvider`: optional embeddings for future semantic location/search support, available through the explicit online/fake enhancement entrypoint.
 
-The default conversion path remains local-first. Real remote calls require explicit `provider_mode=openai_compatible`, non-local `model_mode`, and `allow_remote=true`.
+The default conversion path remains local-first. Direct second-pass providers require `allow_remote=true`. Full `online_only` execution requires `provider_mode=vkp_shared`, `execute=true`, `confirm_data_export=true`, and a positive cost ceiling; the shared adapter never returns or copies an API key.
 
 ## PDF And Image Routing
 
@@ -152,6 +154,8 @@ This keeps the default path local and rule-first while leaving a clear future ho
 | Scanned-book pdf-craft backend | `pdfcraft_backend.py` |
 | VLM OCR olmOCR backend | `olmocr_backend.py` |
 | Online model provider abstraction | `online_providers.py`, `config/online_providers.example.json`, legacy `config/online_models.example.json` |
+| Full online document pipeline | `online_document_pipeline.py`, `scripts/run_online_document_pipeline.py` |
+| Shared VKP provider/credential gateway | `shared_vkp_gateway.py` |
 | Web archive visual check | `process_web_archive.py`, `process-web-archive.cmd` |
 | Structure repair | `structure_repair.py` |
 | Artifact schema | `artifact_schema.py` |

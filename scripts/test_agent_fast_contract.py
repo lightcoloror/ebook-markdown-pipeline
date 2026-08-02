@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
+from uuid import uuid4
 
 import fitz
 
@@ -24,9 +27,22 @@ from test_agent_contract import (  # noqa: E402
 from ebook_markdown_pipeline.artifact_schema import SCHEMA_VERSION  # noqa: E402
 
 
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+
+
+@contextmanager
+def writable_test_directory(prefix: str):
+    path = PROJECT_DIR / f"{prefix}{uuid4().hex[:10]}"
+    path.mkdir(parents=True, exist_ok=False)
+    try:
+        yield str(path)
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def main() -> int:
     assert_tools()
-    with tempfile.TemporaryDirectory(prefix="ebook-agent-fast-contract-") as tmp:
+    with writable_test_directory(".tmp-agent-fast-contract-") as tmp:
         tmpdir = Path(tmp)
         image_dir = tmpdir / "images"
         output_dir = tmpdir / "out"

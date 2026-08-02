@@ -1,15 +1,17 @@
 # 在线大模型 API 接入设计
 
-本项目后续会支持把部分本地大模型能力替换为在线大模型 API。接入原则是：统一 provider 抽象优先，不在 MinerU、PaddleOCR、截图成书、`structure_repair` 等具体管道里分别写供应商 API 调用。
+<!-- Documentation update: 2026-08-01 23:35:28 | Codex (GPT-5) | Added and synchronized the explicit online-only/shared-VKP mode. -->
 
-当前状态：`online_providers.py` 已提供 provider 抽象、fake provider、OpenAI-compatible adapter、配置健康检查和离线契约测试。MCP/HTTP 侧已提供显式 `run_online_enhancement` 工具。默认转换流程仍然 local-first，不会自动调用远程 API。
+本项目现在同时支持两类在线能力：`run_online_enhancement` 对既有结果做显式二次补强；`online_only` 把整份材料的 OCR、视觉理解和结构推理交给远程模型。接入原则仍是统一 provider/gateway 抽象，不在 MinerU、PaddleOCR、截图成书、`structure_repair` 等具体管道里分别写供应商 API 调用。
+
+当前状态：`online_providers.py` 保留 fake/OpenAI-compatible 的独立增强接口；`online_document_pipeline.py` 提供完整纯在线主管道；`shared_vkp_gateway.py` 复用同机 VKP 的供应商路由、LiteLLM gateway、DPAPI 凭据库、数据导出 consent 和费用上限。CLI、MCP、HTTP 和桌面 UI 已共用这套核心逻辑。默认仍为 `local_first`，不会自动调用远程 API。完整架构和源码复用证据见 [ONLINE_ONLY_MODE_ARCHITECTURE_AND_SOURCE_REUSE_2026-08-01.md](ONLINE_ONLY_MODE_ARCHITECTURE_AND_SOURCE_REUSE_2026-08-01.md)。
 
 ## 核心原则
 
 - 本项目继续作为调度层、复查层、artifact 管理层和 agent 接口层。
 - 在线模型只能通过统一 provider adapter 接入，不能让 UI、MCP、HTTP 或具体管道直接绑定某个供应商 SDK。
 - 所有在线模型输出必须先归一化为项目内部 artifact，再交给后续转换、复查、索引或 agent 读取；显式 `run_online_enhancement` 可通过 `output` 写出 `online-enhancement-<task>.json/md`。
-- 本地工具仍然是默认基础能力；在线 API 用于扫描页、复杂图文页、信息图、低置信度结构、表格/公式等疑难区域。
+- 本地工具仍然是默认基础能力；用户可选择 hybrid 疑难区域补强，也可显式选择 `online_only` 让所有模型推理都走远程 API。
 - API key 只通过环境变量或本地未提交配置读取，不写入文档、report、manifest、agent contract 或 Git 提交。
 
 ## Provider 抽象
@@ -104,8 +106,11 @@
 - `model_mode=online`：优先使用在线 provider，但仍保留本地 fallback。
 - `model_mode=hybrid`：本地预检和轻量解析优先，只把疑难页/疑难块发给在线 provider。
 - `model_mode=auto`：根据依赖健康检查、隐私风险、成本风险、文档类型和质量评分自动选择。
+- `model_mode=online_only`：本地只做无模型的格式解包、分页渲染、哈希、分块和 artifact 管理；OCR/VLM/文本结构推理全部通过 VKP 共享远程路由。真实执行必须确认数据外发并设置正数费用上限。
 
-默认推荐 `hybrid`：本地先做文件类型、页数、文本层、扫描比例、图片比例、目录/书签、疑难页比例预检；只有扫描页、复杂图文页、信息图、表格页、公式页、低置信度结构页才调用在线 API。
+`online_only` 的视觉默认是 `vlm_mode=auto`：单张图片进入 VKP semantic-frame route；PDF 只选择 OCR 字符过少、短块碎片化或疑似表格/网格页，默认最多 12 页。`always` 强制所有视觉页进入 VLM，`never` 关闭该附加阶段。VLM 输出与 OCR 重叠不足时保留 OCR 并追加视觉解释，避免模型概括导致文字丢失。
+
+默认推荐 `local` 或 `hybrid`；`online_only` 只在用户明确选择时启用。默认 `hybrid` 策略是：本地先做文件类型、页数、文本层、扫描比例、图片比例、目录/书签、疑难页比例预检；只有扫描页、复杂图文页、信息图、表格页、公式页、低置信度结构页才调用在线 API。
 
 ## 远程 OCR/VLM 替换评测
 
@@ -129,21 +134,22 @@ python scripts\run_remote_ocr_vlm_eval.py --execute --fake --output benchmarks\r
 
 - Agent 仍然优先调用 `process_material`。
 - Agent 不直接调用 OpenAI、Qwen、Claude、Gemini、Paddle 官方 API 或其他供应商 API。
-- Agent 只能通过 `run_online_enhancement` 触发显式在线增强；真实远程调用必须传 `provider_mode=openai_compatible`、`model_mode=hybrid|online|auto` 和 `allow_remote=true`。
-- Agent 需要跨会话交接时应传 `output`，让增强结果落成 `online-enhancement-<task>.json/md` artifact，而不是只依赖一次性 tool 响应。
-- `process_material` 和 `inspect_document` 已接受 `model_mode=local|online|hybrid|auto`。当前只影响 `online_enhancement` 推荐/风险字段，不会自动调用在线 API。
-- `health_check` 已暴露 online provider 配置健康和缺失密钥状态；真实连通性、预算和隐私确认仍待接入。
+- Agent 可通过 `run_online_enhancement` 做显式二次增强；真实 OpenAI-compatible 调用仍要求 `allow_remote=true`。
+- 整份材料纯在线识别使用 `start_online_conversion`，或调用 `process_material(model_mode=online_only)`。真实执行必须传 `execute=true`、`confirm_data_export=true` 和正数 `max_estimated_cost_usd`。
+- `provider_mode=vkp_shared` 不读取或复制 key；它只引用 VKP 已配置的 route revision 和 DPAPI secret store，并通过 loopback LiteLLM gateway 执行。
+- Agent 需要跨会话交接时应轮询 `get_job_status`，再读取版本化 Markdown、manifest 和 run summary artifact。
+- `health_check` 已暴露 `shared_vkp_gateway` 与 `online_only_mode`；HTTP 未监听不影响 MCP/CLI 规划，VKP gateway 未监听时按 `on_demand` 处理。
 - `inspect_document` 已返回 `online_enhancement`，包括 `recommended`、`enabled_by_model_mode`、`remote_call_enabled=false`、`recommended_routes`、`estimated_pages`、`estimated_items`、`estimated_cost_risk` 和 `privacy_risk`。
 
-## 开发顺序
+## 当前完成度与下一步
 
-1. 已完成：provider 抽象、fake provider 测试、OpenAI-compatible adapter、配置健康检查。
-2. 已完成：`inspect_document` / `process_material` 的 `model_mode` 推荐层和 `online_enhancement` 风险字段。
-3. 已完成：显式 `run_online_enhancement` 入口，支持 fake / OpenAI-compatible 的 `ocr_layout`、`vlm_layout`、`text_structure`、`table_repair`、`embedding`。
-4. 已完成：`enhance_markdown_structure` 可对已有 Markdown 先跑本地 `structure_repair`，再显式调用可选 `TextStructureProvider`，并写入版本化 Markdown 与 report。
-5. 下一步：把 `structure_repair` 低置信度片段接入默认转换后的建议动作，而不是自动远程调用。
-6. 下一步：把信息图、PPT PDF、截图书疑难页接到可选 `VlmLayoutProvider`，并写入增强 artifact。
-7. 下一步：把 `OcrLayoutProvider` 接入实际 OCR fallback/疑难页流程，用于云 OCR/layout 替代本地 OCR。
-8. 下一步：把 `EmbeddingProvider` 接入定位索引和语义检索 sidecar。
-9. 下一步：加入预算、并发、重试、超时、隐私确认和 report 记录。
-10. 候选暂缓：Unlimited-OCR 可作为 `VlmLayoutProvider` 或远程 OpenAI-compatible VLM 服务候选，但当前不接入。先用 scorecard 比较信息图、截图书和复杂多页 PDF 输出；只有明显提升质量并能替换现有重型模块时再实施。
+1. 已完成：provider 抽象、fake/OpenAI-compatible 二次增强、结构增强 artifact。
+2. 已完成：`online_only` 整份材料主管道，覆盖现有文档、电子书、PDF 和图片输入。
+3. 已完成：VKP 共享 route/DPAPI/LiteLLM gateway adapter；两个项目只维护一份供应商和 key。
+4. 已完成：数据导出确认、费用上限、版本化输出、stage/source manifest、失败续跑和无网络 fake 回归。
+5. 已完成：CLI、MCP、HTTP、`process_material` 和桌面 UI 入口。
+6. 已完成：在线 OCR、自动疑难页 VLM 和文本结构三阶段；真实 VKP connector 与真实 LiteLLM 本地闭环均验证三条独立共享路由。
+7. 待显式人工验证：用非敏感小样本做一次真实供应商 smoke，核对 Mistral OCR、视觉 route 和 text route 的实际响应形状与粗略费用。
+8. 待优化：VKP 增加专门的 `document_structure` task 后，替换当前封装在 adapter 内的通用 text task 映射。
+9. 待评测：根据公开 fixture 比较 hybrid 与 online-only 的结构质量、速度和成本，不把纯在线模式自动提升为默认。
+10. 候选暂缓：Unlimited-OCR 等新重后端继续按 scorecard 决策；没有明显质量替代证据就不增加本地模型空间。

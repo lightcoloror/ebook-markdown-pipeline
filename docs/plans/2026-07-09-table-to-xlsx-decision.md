@@ -2,7 +2,7 @@
 
 Date: 2026-07-09
 Status: accepted for local personal pipeline planning
-Project: `D:\used-by-codex\ebook_markdown_pipeline`
+Project: repository root
 
 ## Decision
 
@@ -130,7 +130,7 @@ Create a first patch that adds the candidate-only worker and tests without insta
 
 2026-07-09 continued execution:
 
-- Added `scripts/table_to_xlsx_worker.py` in `D:\used-by-codex\ebook_markdown_pipeline`.
+- Added `scripts/table_to_xlsx_worker.py` in the repository root.
 - Added `scripts/test_table_to_xlsx_worker.py`.
 - Registered `table_to_xlsx` in `candidate_backend_registry.py`.
 - Added `table_to_xlsx` to `docs/BACKENDS.md`.
@@ -158,3 +158,5 @@ Current boundary:
 - Real image/table recognition has an adapter path but was not executed.
 - `img2table`, PaddleOCR, RapidTable, and model weights were not installed.
 - Next real experiment should use non-private fixture images and compare `img2table` vs PaddleOCR TableRecognitionPipelineV2 output quality before promotion.
+
+<!-- Documentation update: 2026-08-02 02:07:18 | Codex (GPT-5) | Replaced private absolute paths with portable repository/workspace references; historical conclusions unchanged. -->

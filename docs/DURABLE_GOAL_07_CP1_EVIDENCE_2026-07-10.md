@@ -1,7 +1,7 @@
 # 耐久目标 07 - CP1 Health CLI 证据
 
 日期：2026-07-10
-项目：`D:\used-by-codex\ebook_markdown_pipeline`
+项目：repository root
 Checkpoint：CP1 - health CLI 修复
 
 ## 结论
@@ -82,3 +82,5 @@ git diff --check
 - 未处理用户私有书籍。
 - 未启动持久 HTTP/UI，未修改端口。
 - 缺失与 planned-only 后端保持原状态。
+
+<!-- Documentation update: 2026-08-02 02:07:18 | Codex (GPT-5) | Replaced private absolute paths with portable repository/workspace references; historical conclusions unchanged. -->

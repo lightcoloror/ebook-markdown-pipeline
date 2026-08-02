@@ -109,7 +109,7 @@
 
 ## 给 Local Tools 的 registry/discovery 提案
 
-以下是精确 proposal，不直接修改 `D:\used-by-codex\tool-registry.json`：
+以下是精确 proposal，不直接修改 `<workspace>/tool-registry.json`：
 
 ```json
 {
@@ -172,3 +172,5 @@
 - Surya：https://github.com/datalab-to/surya
 - GLM-OCR：https://github.com/zai-org/GLM-OCR
 - Chandra：https://github.com/datalab-to/chandra
+
+<!-- Documentation update: 2026-08-02 02:07:18 | Codex (GPT-5) | Replaced private absolute paths with portable repository/workspace references; historical conclusions unchanged. -->

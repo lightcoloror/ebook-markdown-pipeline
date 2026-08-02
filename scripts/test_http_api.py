@@ -95,7 +95,7 @@ def run_http_smoke(url: str, args: argparse.Namespace) -> None:
         raise RuntimeError(f"HTTP contract response has wrong schema: {contract}")
     if contract.get("display_name") != "图文材料转换器":
         raise RuntimeError(f"HTTP contract has wrong display name: {contract}")
-    if contract.get("entrypoints")[:3] != ["process_material", "get_job_status", "read_artifact"]:
+    if contract.get("entrypoints")[:4] != ["process_material", "start_online_conversion", "get_job_status", "read_artifact"]:
         raise RuntimeError(f"HTTP contract entrypoints are wrong: {contract}")
     specialist_tools = set(contract.get("specialist_tools") or [])
     if not {"show_latest_quality_gate", "list_candidate_backends"}.issubset(specialist_tools):
