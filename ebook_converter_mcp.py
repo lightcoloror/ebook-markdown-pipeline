@@ -28,6 +28,10 @@ from ebook_markdown_pipeline import (  # noqa: E402
     write_batch_summary,
 )
 from ebook_markdown_pipeline.artifact_registry import JSON_ARTIFACT_TYPES, READABLE_ARTIFACT_TYPES, infer_artifact_type  # noqa: E402
+from ebook_markdown_pipeline.adaptive_probe import (
+    build_adaptive_pdf_probe_plan,
+    execute_adaptive_pdf_probe_plan,
+)  # noqa: E402
 from ebook_markdown_pipeline.artifact_schema import artifact, job_payload, material_consumer_contract  # noqa: E402
 from ebook_markdown_pipeline.candidate_backend_registry import candidate_backend_registry_payload  # noqa: E402
 from ebook_markdown_pipeline.diagnostic_artifact_schema import (  # noqa: E402
@@ -320,12 +324,46 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "recursive": {"type": "boolean", "default": True},
                     "include_hidden": {"type": "boolean", "default": False},
                     "sample_pages": {"type": "integer", "default": 8},
+                    "routing_profile": {"type": "string", "enum": ["fast", "balanced", "best_quality"], "default": "balanced"},
+                    "output": {"type": "string"},
                     "model_mode": {"type": "string", "enum": ["local", "online", "hybrid", "auto", "online_only"], "default": "local"},
                     "use_tika": {"type": "boolean", "default": False},
                     "use_grobid": {"type": "boolean", "default": False},
                 },
                 "required": ["input"],
             },
+        },
+        {
+            "name": "prepare_adaptive_pdf_probe",
+            "description": "Build a non-executing representative-page PDF pipeline comparison plan from adaptive preflight evidence.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"},
+                    "output": {"type": "string"},
+                    "routing_profile": {"type": "string", "enum": ["fast", "balanced", "best_quality"], "default": "best_quality"},
+                    "pipeline_timeout": {"type": "number", "default": 120},
+                    "max_pipelines": {"type": "integer", "minimum": 1, "maximum": 6, "default": 4},
+                    "pipelines": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["input", "output"]
+            }
+        },
+        {
+            "name": "start_adaptive_pdf_probe",
+            "description": "Run local candidate pipelines on representative PDF pages, score outputs, and return a safe whole-document winner action.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string"},
+                    "output": {"type": "string"},
+                    "routing_profile": {"type": "string", "enum": ["fast", "balanced", "best_quality"], "default": "best_quality"},
+                    "pipeline_timeout": {"type": "number", "default": 120},
+                    "max_pipelines": {"type": "integer", "minimum": 1, "maximum": 6, "default": 4},
+                    "pipelines": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["input", "output"]
+            }
         },
         {
             "name": "process_material",
@@ -352,6 +390,9 @@ def tool_schemas() -> list[dict[str, Any]]:
                     "use_grobid": {"type": "boolean", "default": False},
                     "image_book_threshold": {"type": "integer", "default": 8},
                     "sample_pages": {"type": "integer", "default": 8},
+                    "routing_profile": {"type": "string", "enum": ["fast", "balanced", "best_quality"], "default": "balanced"},
+                    "adaptive_probe_timeout": {"type": "number", "default": 120},
+                    "adaptive_probe_max_pipelines": {"type": "integer", "minimum": 1, "maximum": 6, "default": 4},
                     "ocr": {"type": "string", "enum": ["auto", "always", "never"], "default": "auto"},
                     "ocr_provider": {"type": "string", "enum": ["auto", "umi", "rapidocr"], "default": "auto"},
                     "pdf_tool_idle_timeout": {"type": "number"},
@@ -784,6 +825,10 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return compare_environment_lock_tool(arguments)
     if name == "inspect_document":
         return inspect_document_tool(arguments)
+    if name == "prepare_adaptive_pdf_probe":
+        return prepare_adaptive_pdf_probe(arguments)
+    if name == "start_adaptive_pdf_probe":
+        return start_adaptive_pdf_probe(arguments)
     if name == "process_material":
         return process_material(arguments)
     if name == "process_web_archive":
@@ -1028,6 +1073,7 @@ def agent_operating_context(capabilities: dict[str, Any] | None = None) -> dict[
             "online_only": "start_online_conversion",
             "documents": "start_conversion",
             "pdf": "start_conversion",
+            "pdf_best_quality": "start_adaptive_pdf_probe",
             "images": "start_image_book_rebuild",
             "image_folders": "start_image_book_rebuild",
             "location_index": "requires intent=locate or query",
@@ -1036,7 +1082,7 @@ def agent_operating_context(capabilities: dict[str, Any] | None = None) -> dict[
         "long_task_guidance": {
             "prefer_async_tools": True,
             "poll_tool": "get_job_status",
-            "heavy_routes": ["mineru", "marker", "umi", "docling", "pdfcraft", "olmocr", "pix2text", "surya", "got-ocr", "deepseek-ocr", "paddleocr-vl", "qwen-vl", "online_only"],
+            "heavy_routes": ["adaptive_pdf_probe", "mineru", "marker", "umi", "docling", "pdfcraft", "olmocr", "pix2text", "surya", "got-ocr", "deepseek-ocr", "paddleocr-vl", "qwen-vl", "online_only"],
             "baseline_routes": ["markitdown"],
             "safe_pdf_default": "auto preflight, fallback diagnostics, versioned outputs",
             "large_pdf_advice": "Use page ranges or pipeline comparison before forcing whole-document heavy OCR/VLM.",
@@ -1395,9 +1441,104 @@ def inspect_document_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         include_hidden=bool(arguments.get("include_hidden", False)),
         sample_pages=int(arguments.get("sample_pages") or 8),
         model_mode=str(arguments.get("model_mode") or "local"),
+        routing_profile=str(arguments.get("routing_profile") or "balanced"),
+        output=Path(arguments["output"]) if arguments.get("output") else None,
         use_tika=bool(arguments.get("use_tika", False)),
         use_grobid=bool(arguments.get("use_grobid", False)),
     )
+
+
+def prepare_adaptive_pdf_probe(arguments: dict[str, Any]) -> dict[str, Any]:
+    pipelines = arguments.get("pipelines") if isinstance(arguments.get("pipelines"), list) else None
+    return build_adaptive_pdf_probe_plan(
+        Path(arguments["input"]),
+        Path(arguments["output"]),
+        routing_profile=str(arguments.get("routing_profile") or "best_quality"),
+        pipeline_timeout=float(arguments.get("pipeline_timeout") or 120.0),
+        max_pipelines=max(1, min(6, int(arguments.get("max_pipelines") or 4))),
+        pipelines=[str(value) for value in pipelines] if pipelines else None,
+    )
+
+
+def start_adaptive_pdf_probe(arguments: dict[str, Any]) -> dict[str, Any]:
+    plan = prepare_adaptive_pdf_probe(arguments)
+    if plan.get("status") != "ready":
+        return {
+            "error": True,
+            "schema_version": "adaptive-pdf-probe-result-v1",
+            "status": "failed",
+            "message": str(plan.get("message") or "Adaptive PDF probe is not ready."),
+            "plan": plan,
+            "artifacts": [],
+            "next_actions": normalize_agent_next_actions(plan.get("next_actions") or []),
+        }
+
+    input_path = Path(str(plan["input"]))
+    run_dir = Path(str(plan["run_dir"]))
+    job_id = create_job("adaptive_pdf_probe", input_path=input_path, output_path=run_dir, total=len(plan.get("pipelines") or []))
+    update_job(job_id, plan=plan)
+
+    def worker() -> None:
+        append_job_event(
+            job_id,
+            {
+                "event": "adaptive_probe_started",
+                "pages": plan.get("representative_pages") or [],
+                "pipelines": plan.get("pipelines") or [],
+            },
+        )
+        try:
+            result = execute_adaptive_pdf_probe_plan(plan)
+            artifact_rows = []
+            for item in result.get("artifacts") or []:
+                if not isinstance(item, dict):
+                    continue
+                path = Path(str(item.get("path") or ""))
+                if path.is_file():
+                    artifact_rows.append(artifact(str(item.get("type") or infer_artifact_type(path)), path))
+            selection = result.get("selection") if isinstance(result.get("selection"), dict) else {}
+            status = "done" if result.get("status") == "ok" else "failed"
+            append_job_event(
+                job_id,
+                {
+                    "event": "adaptive_probe_finished",
+                    "winner_pipeline": selection.get("winner_pipeline"),
+                    "auto_accept": bool(selection.get("auto_accept")),
+                    "confidence": selection.get("confidence"),
+                },
+            )
+            update_job(
+                job_id,
+                status=status,
+                finished_at=timestamp(),
+                completed=len(plan.get("pipelines") or []),
+                result=result,
+                artifacts=artifact_rows,
+                warnings=[] if selection.get("auto_accept") else [str(selection.get("reason") or "Representative-page winner requires review.")],
+                errors=[] if status == "done" else [str(result.get("message") or "Adaptive PDF probe failed.")],
+                quality_summary={
+                    "status": str(selection.get("status") or result.get("status") or "failed"),
+                    "winner_pipeline": selection.get("winner_pipeline"),
+                    "winner_score": selection.get("winner_score"),
+                    "score_delta": selection.get("score_delta"),
+                    "confidence": selection.get("confidence"),
+                    "auto_accept": bool(selection.get("auto_accept")),
+                    "representative_pages": plan.get("representative_pages") or [],
+                },
+                next_actions=normalize_agent_next_actions(result.get("next_actions") or []),
+            )
+        except Exception as exc:  # noqa: BLE001
+            update_job(
+                job_id,
+                status="failed",
+                finished_at=timestamp(),
+                errors=[str(exc)],
+                error=str(exc),
+                traceback=traceback.format_exc(),
+            )
+
+    threading.Thread(target=worker, daemon=True).start()
+    return get_job_status({"job_id": job_id})
 
 
 def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1414,6 +1555,8 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
         include_hidden=include_hidden,
         sample_pages=int(arguments.get("sample_pages") or 8),
         model_mode=str(arguments.get("model_mode") or "local"),
+        routing_profile=str(arguments.get("routing_profile") or "balanced"),
+        output=output_path,
         use_grobid=bool(arguments.get("use_grobid", False)),
     )
 
@@ -1463,11 +1606,19 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
         }
 
     route = choose_material_route(inspection, intent=intent, query=query, image_book_threshold=image_book_threshold)
+    if (
+        str(arguments.get("routing_profile") or "balanced") == "best_quality"
+        and inspection.get("kind") == "pdf"
+        and str(arguments.get("pdf_pipeline_mode") or "auto") == "auto"
+        and route == "start_conversion"
+    ):
+        route = "start_adaptive_pdf_probe"
     delegated_arguments = dict(arguments)
     delegated_arguments.pop("intent", None)
     delegated_arguments.pop("query", None)
     delegated_arguments.pop("image_book_threshold", None)
     delegated_arguments.pop("model_mode", None)
+    delegated_arguments.pop("routing_profile", None)
     delegated_arguments.pop("provider_mode", None)
     delegated_arguments.pop("provider", None)
     delegated_arguments.pop("online_providers_config", None)
@@ -1500,9 +1651,22 @@ def process_material(arguments: dict[str, Any]) -> dict[str, Any]:
             {"after_job_status": "done", "tool": "read_artifact", "artifact_type": "structure_report"},
             {"after_job_status": "done", "tool": "read_artifact", "artifact_type": "review_report"},
         ]
+    elif route == "start_adaptive_pdf_probe":
+        delegated = start_adaptive_pdf_probe(
+            {
+                "input": str(input_path),
+                "output": str(output_path),
+                "routing_profile": "best_quality",
+                "pipeline_timeout": float(arguments.get("adaptive_probe_timeout") or 120.0),
+                "max_pipelines": int(arguments.get("adaptive_probe_max_pipelines") or 4),
+            }
+        )
+        next_actions = [
+            {"after_job_status": "done", "tool": "get_job_status", "arguments": {"job_id": delegated.get("job_id")}, "purpose": "read sampled winner and confidence"},
+        ]
     elif route == "start_conversion":
         conversion_arguments = dict(delegated_arguments)
-        conversion_arguments["pdf_pipeline_mode"] = choose_pdf_pipeline_mode(inspection, str(arguments.get("pdf_pipeline_mode") or "auto"))
+        conversion_arguments["pdf_pipeline_mode"] = choose_pdf_pipeline_mode(inspection, str(arguments.get("pdf_pipeline_mode") or "auto"), routing_profile=str(arguments.get("routing_profile") or "balanced"))
         delegated = start_conversion(conversion_arguments)
         output_format = str(arguments.get("output_format") or "markdown")
         next_actions = [
@@ -2195,14 +2359,20 @@ def choose_material_route(inspection: dict[str, Any], *, intent: str, query: str
     return "unsupported"
 
 
-def choose_pdf_pipeline_mode(inspection: dict[str, Any], requested: str) -> str:
+def choose_pdf_pipeline_mode(inspection: dict[str, Any], requested: str, *, routing_profile: str = "balanced") -> str:
     if requested and requested != "auto":
         return requested
     if inspection.get("kind") != "pdf":
         return requested or "auto"
+    plan = inspection.get("adaptive_routing") if isinstance(inspection.get("adaptive_routing"), dict) else {}
+    primary = plan.get("primary") if isinstance(plan.get("primary"), dict) else {}
+    primary_arguments = primary.get("arguments") if isinstance(primary.get("arguments"), dict) else {}
+    planned = str(primary_arguments.get("pdf_pipeline_mode") or "")
+    if planned in {"marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown", "ocrmypdf", "pdfcraft", "olmocr"}:
+        return planned
     preflight = inspection.get("preflight") or {}
     if preflight.get("scanned_likely"):
-        return "mineru"
+        return "umi" if routing_profile == "fast" else "mineru"
     recommended = str(preflight.get("recommended_pipeline") or "auto")
     return recommended if recommended in {"marker", "mineru", "umi", "pymupdf4llm", "docling", "markitdown", "ocrmypdf", "pdfcraft", "olmocr"} else "auto"
 
@@ -3072,6 +3242,17 @@ def read_artifact(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def summarize_known_artifact_json(value: dict[str, Any], artifact_type: str) -> dict[str, Any]:
     schema = str(value.get("schema_version") or "")
+    if artifact_type == "pdf_pipeline_comparison_json" or schema == "pdf-pipeline-compare-v1":
+        comparisons = [item for item in value.get("comparisons") or [] if isinstance(item, dict)]
+        return {
+            "kind": "pdf_pipeline_comparison",
+            "status": (value.get("selection") or {}).get("status"),
+            "selection": value.get("selection") or {},
+            "page_ranges": value.get("page_ranges"),
+            "candidate_count": len(comparisons),
+            "successful_candidates": len([item for item in comparisons if item.get("status") == "ok"]),
+            "pipelines": [item.get("pipeline") for item in comparisons],
+        }
     if artifact_type == "external_wrapper_result_json" or schema == "external-wrapper-result-v1":
         artifacts = [item for item in value.get("artifacts") or [] if isinstance(item, dict)]
         warnings = [str(item) for item in value.get("warnings") or []]

@@ -37,6 +37,8 @@ REQUIRED_TOOLS = {
     "list_agent_batch_results",
     "build_agent_handoff_bundle",
     "inspect_document",
+    "prepare_adaptive_pdf_probe",
+    "start_adaptive_pdf_probe",
     "scan_books",
     "health_check",
     "show_latest_quality_gate",
@@ -84,7 +86,7 @@ HEALTH_FIELDS = {
     "degraded_capabilities",
     "missing_capabilities",
 }
-INSPECTION_FIELDS = {"status", "input", "kind", "recommendation", "structure_strategy", "online_enhancement", "baseline_recommendations", "candidate_enhancements", "next_actions", "warnings"}
+INSPECTION_FIELDS = {"status", "input", "kind", "recommendation", "structure_strategy", "online_enhancement", "baseline_recommendations", "candidate_enhancements", "adaptive_routing", "next_actions", "warnings"}
 JOB_FIELDS = {
     "job_id",
     "kind",
@@ -182,7 +184,11 @@ def main() -> int:
         assert_candidate_backend_registry(contract.get("candidate_backend_registry") or {})
         assert_candidate_artifact_schemas(contract.get("candidate_artifact_schemas") or {})
         assert_diagnostic_artifact_schemas(contract.get("diagnostic_artifact_schemas") or {})
-        operating_registry = ((contract.get("operating_context") or {}).get("candidate_backend_registry") or {})
+        operating_context = contract.get("operating_context") or {}
+        route_defaults = operating_context.get("route_defaults") or {}
+        if route_defaults.get("pdf_best_quality") != "start_adaptive_pdf_probe":
+            raise AssertionError(f"Agent contract must expose the best-quality PDF probe route: {route_defaults}")
+        operating_registry = operating_context.get("candidate_backend_registry") or {}
         assert_candidate_backend_registry(operating_registry)
         operating_schemas = ((contract.get("operating_context") or {}).get("candidate_artifact_schemas") or {})
         assert_candidate_artifact_schemas(operating_schemas)

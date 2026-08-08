@@ -1,6 +1,8 @@
 # Architecture
 
 <!-- Documentation update: 2026-08-01 23:35:28 | Codex (GPT-5) | Added and synchronized the explicit online-only/shared-VKP mode. -->
+<!-- Documentation update: 2026-08-02 12:42:38 | Codex (GPT-5) | Added adaptive preflight/portfolio/quality-gate routing architecture. -->
+<!-- Documentation update: 2026-08-02 13:24:15 | Codex (GPT-5) | Connected best-quality routing to representative-page probe execution. -->
 
 This project is an orchestration layer for converting mixed graphic/text materials into Markdown-oriented artifacts. It does not try to replace specialist parsers, OCR engines, or document AI models. Instead, it inspects inputs, routes them to the best available backend, records diagnostics, falls back safely, and exposes the same workflow through UI, CLI, HTTP, and MCP.
 
@@ -76,6 +78,10 @@ The default conversion path remains local-first. Direct second-pass providers re
 
 PDFs and image-heavy inputs are routed through preflight instead of blindly launching the heaviest model. The goal is stable completion first, then targeted quality improvement when the report says the output needs review.
 
+`adaptive_router.py` turns inspection evidence into `adaptive-routing-plan-v1`. Profiles `fast`, `balanced`, and `best_quality` adjust quality/time/resource weights, while the shared safety contract remains local-first, non-overwriting, and non-remote by default. The plan separates a provisional primary route from alternate baselines, defines representative pages and independent quality dimensions, and records escalation/stop rules. This is the decision layer; it does not pretend that heuristic preflight alone proves a globally best backend.
+
+For best-quality PDFs, `adaptive_probe.py` reuses `scripts/compare_pipelines.py --page-ranges` rather than creating another converter. It runs bounded local candidates on representative pages, preserves requested versus actual/fallback pipeline evidence, ranks successful Markdown artifacts, and emits a versioned full-document action only after the acceptance gate. One successful candidate, a score below threshold, a margin under three points, or a fallback winner remains `review_required`.
+
 ```mermaid
 flowchart TD
     input["Input PDF / image / screenshot folder"] --> preflight["Preflight\npage count / text layer / image ratio / OCR need / layout-heavy signals"]
@@ -146,6 +152,8 @@ This keeps the default path local and rule-first while leaving a clear future ho
 | Agent HTTP bridge | `ebook_converter_http.py` |
 | HTTP config | `http_config.py`, `config/http.env` |
 | Document inspection | `document_inspector.py` |
+| Adaptive route planning | `adaptive_router.py` |
+| Representative-page PDF probe | `adaptive_probe.py`, `scripts/compare_pipelines.py`, `scripts/run_adaptive_pdf_probe.py` |
 | Optional Tika inspection | `tika_backend.py` |
 | Optional GROBID academic inspection | `grobid_backend.py` |
 | Location index | `document_locator.py` |

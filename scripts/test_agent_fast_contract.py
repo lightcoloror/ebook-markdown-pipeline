@@ -121,17 +121,31 @@ def main() -> int:
             raise AssertionError(f"Image folder next action should prefer recognition: {inspection}")
         if "online_enhancement" not in inspection:
             raise AssertionError(f"inspect_document must expose online enhancement guidance: {inspection}")
+        adaptive = inspection.get("adaptive_routing") or {}
+        if adaptive.get("schema_version") != "adaptive-routing-plan-v1":
+            raise AssertionError(f"inspect_document must expose the adaptive routing contract: {inspection}")
+        if adaptive.get("primary", {}).get("tool") != "start_image_book_rebuild":
+            raise AssertionError(f"Image folders should get an image-book primary route: {adaptive}")
+        if adaptive.get("safety", {}).get("remote_calls_made") is not False:
+            raise AssertionError(f"Inspection must never execute remote candidates: {adaptive}")
 
         wide_image = tmpdir / "wide-infographic.png"
         wide_pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 2000, 900), 0)
         wide_pixmap.clear_with(255)
         wide_pixmap.save(str(wide_image))
-        wide_inspection = call_tool("inspect_document", {"input": str(wide_image), "model_mode": "hybrid"})
+        wide_inspection = call_tool(
+            "inspect_document",
+            {"input": str(wide_image), "model_mode": "hybrid", "routing_profile": "best_quality"},
+        )
         online = wide_inspection.get("online_enhancement") or {}
         if online.get("recommended") is not True or online.get("enabled_by_model_mode") is not True:
             raise AssertionError(f"Wide images should recommend optional hybrid VLM enhancement: {wide_inspection}")
         if online.get("remote_call_enabled") is not False:
             raise AssertionError(f"Inspection must not call remote providers: {wide_inspection}")
+        wide_plan = wide_inspection.get("adaptive_routing") or {}
+        remote_candidates = [item for item in wide_plan.get("portfolio") or [] if item.get("remote")]
+        if not remote_candidates or any(item.get("safe_default") for item in remote_candidates):
+            raise AssertionError(f"Best-quality planning should expose but not authorize remote candidates: {wide_plan}")
 
         candidate_list = call_tool("list_candidate_backends", {"sample_class": "scanned_pdf"})
         if candidate_list.get("schema_version") != "candidate-backend-list-v1" or candidate_list.get("model_install_enabled"):

@@ -31,6 +31,8 @@ def main() -> int:
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--skip-missing", action="store_true", default=True)
     parser.add_argument("--pipeline-timeout", type=float, default=0, help="Maximum seconds per pipeline. 0 disables timeout.")
+    parser.add_argument("--minimum-score", type=float, default=70, help="Minimum sampled Markdown quality score for automatic acceptance.")
+    parser.add_argument("--selection-profile", choices=["fast", "balanced", "best_quality"], default="balanced")
     parser.add_argument(
         "--page-ranges",
         default="",
@@ -79,7 +81,108 @@ def build_payload(
         "final": final,
         "preflight": preflight,
         "comparisons": comparisons,
+        "selection": select_comparison_winner(
+            comparisons,
+            minimum_score=float(args.minimum_score),
+            selection_profile=str(args.selection_profile),
+        ),
     }
+
+
+def select_comparison_winner(
+    comparisons: list[dict],
+    *,
+    minimum_score: float,
+    selection_profile: str,
+) -> dict:
+    ranked = []
+    for item in comparisons:
+        metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+        if item.get("status") != "ok" or not isinstance(metrics.get("score"), (int, float)):
+            continue
+        requested = str(item.get("pipeline") or "")
+        actual = str(item.get("actual_pipeline") or requested)
+        ranked.append(
+            {
+                "pipeline": requested,
+                "actual_pipeline": actual,
+                "effective_pipeline": effective_pipeline(actual, requested),
+                "output": item.get("output"),
+                "score": float(metrics.get("score") or 0),
+                "headings": int(metrics.get("headings") or 0),
+                "characters": int(metrics.get("characters") or 0),
+                "table_like_lines": int(metrics.get("table_like_lines") or 0),
+                "page_number_lines": int(metrics.get("page_number_lines") or 0),
+                "duration_seconds": float(item.get("duration_seconds") or 0),
+            }
+        )
+    ranked.sort(
+        key=lambda item: (
+            item["score"],
+            item["headings"],
+            -item["page_number_lines"],
+            item["table_like_lines"],
+            item["characters"],
+            -item["duration_seconds"],
+        ),
+        reverse=True,
+    )
+    if not ranked:
+        return {
+            "status": "no_successful_candidate",
+            "selection_profile": selection_profile,
+            "minimum_score": minimum_score,
+            "winner_pipeline": None,
+            "auto_accept": False,
+            "confidence": "low",
+            "reason": "No candidate produced a successful scored Markdown artifact.",
+            "ranking": [],
+        }
+    winner = ranked[0]
+    runner_up_score = ranked[1]["score"] if len(ranked) > 1 else None
+    score_delta = round(winner["score"] - runner_up_score, 3) if runner_up_score is not None else None
+    clears_gate = winner["score"] >= minimum_score
+    clear_margin = score_delta is None or score_delta >= 3
+    native_result = winner["effective_pipeline"] == winner["pipeline"]
+    enough_comparison = selection_profile != "best_quality" or len(ranked) >= 2
+    auto_accept = bool(clears_gate and clear_margin and native_result and enough_comparison)
+    if not enough_comparison:
+        reason = "Best-quality selection needs at least two successful sampled candidates."
+    elif not clears_gate:
+        reason = f"Winning sample score {winner['score']:.1f} is below the {minimum_score:.1f} quality gate."
+    elif not native_result:
+        reason = f"Requested {winner['pipeline']} won through fallback to {winner['effective_pipeline']}; review before a full run."
+    elif not clear_margin:
+        reason = f"Winner margin {score_delta:.1f} is too small for automatic acceptance."
+    else:
+        reason = f"{winner['effective_pipeline']} cleared the sampled quality gate with sufficient margin."
+    confidence = "low"
+    if auto_accept:
+        confidence = "high" if score_delta is None or score_delta >= 8 else "medium"
+    return {
+        "status": "selected" if auto_accept else "review_required",
+        "selection_profile": selection_profile,
+        "minimum_score": minimum_score,
+        "winner_pipeline": winner["effective_pipeline"],
+        "winner_requested_pipeline": winner["pipeline"],
+        "winner_actual_pipeline": winner["actual_pipeline"],
+        "winner_output": winner["output"],
+        "winner_score": winner["score"],
+        "runner_up_score": runner_up_score,
+        "score_delta": score_delta,
+        "auto_accept": auto_accept,
+        "confidence": confidence,
+        "reason": reason,
+        "ranking": ranked,
+    }
+
+
+def effective_pipeline(actual: str, requested: str) -> str:
+    lowered = str(actual or "").strip().lower()
+    for pipeline in ("pymupdf4llm", "mineru", "marker", "umi", "docling", "markitdown", "ocrmypdf", "pdfcraft", "olmocr"):
+        if lowered.startswith(pipeline):
+            return pipeline
+    return requested
 
 
 def prepare_comparison_source(source: Path, output_root: Path, page_ranges: str) -> Path:
@@ -232,6 +335,21 @@ def render_comparison_markdown(payload: dict) -> str:
             f"{metrics.get('table_like_lines', '')} | {metrics.get('page_number_lines', '')} | "
             f"`{item.get('output') or ''}` | {escape_table(str(item.get('message') or ''))[:120]} |  |  |"
         )
+    selection = payload.get("selection") or {}
+    lines.extend(
+        [
+            "",
+            "## Automatic Selection",
+            "",
+            f"- Status: `{selection.get('status', 'unknown')}`",
+            f"- Winner: `{selection.get('winner_pipeline') or '(none)'}`",
+            f"- Score: {selection.get('winner_score', '')}",
+            f"- Confidence: `{selection.get('confidence', 'low')}`",
+            f"- Auto accept: `{selection.get('auto_accept', False)}`",
+            f"- Reason: {selection.get('reason', '')}",
+            "",
+        ]
+    )
     return "\n".join(lines).rstrip() + "\n"
 
 

@@ -2,6 +2,8 @@
 
 <!-- Documentation update: 2026-08-01 23:35:28 | Codex (GPT-5) | Added and synchronized the explicit online-only/shared-VKP mode. -->
 <!-- Documentation update: 2026-08-02 09:37:26 | Codex (GPT-5) | Replaced placeholder HTTP credentials with generated random-token guidance. -->
+<!-- Documentation update: 2026-08-02 12:42:38 | Codex (GPT-5) | Documented adaptive routing profiles and provisional quality selection. -->
+<!-- Documentation update: 2026-08-02 13:24:15 | Codex (GPT-5) | Added representative-page best-quality PDF probes. -->
 
 Graphic-Text Material Converter is a local-first converter for ebooks, PDFs, Office documents, screenshots, image sets, and web archives. It turns mixed graphic/text materials into Markdown and reviewable artifacts, with automatic routing, fallback, quality reports, and agent-friendly APIs.
 
@@ -17,7 +19,7 @@ Current development roadmap: [docs/plans/2026-06-11-next-stage-development-plan.
 flowchart LR
     input["Input materials\nEPUB / AZW3 / MOBI / PDF / Office / images / web archives"]
     entry["Entry points\nDesktop UI / CLI / HTTP API / MCP"]
-    route["Auto inspection and routing\nformat, PDF preflight, OCR/layout risk"]
+    route["Adaptive inspection and routing\npreflight, candidate portfolio, quality gate"]
     backends["Existing specialist tools\nPandoc / Calibre / PyMuPDF4LLM / MinerU / Marker / Docling / Umi-OCR / VLM wrappers"]
     output["Outputs\nMarkdown / HTML / text\n.reports / logs / review checklist"]
     agent["Agent handoff\nartifacts + next_actions + run_summary"]
@@ -313,6 +315,8 @@ python batch_convert_books.py .\samples\book.azw3 .\out --overwrite
 
 Agent 默认优先调用 `process_material`。它会先做轻量预检，再按输入和意图自动分流到转换、定位索引或截图成书重建；只有需要强制管道、排错或复查时，才直接调用更底层的工具。
 
+需要控制质量/速度取舍时，可传 `routing_profile=fast|balanced|best_quality`。预检结果会附带 `adaptive-routing-plan-v1`：暂定主路线、候选组合、代表页、质量门槛和安全升级条件。PDF 使用 `best_quality` 时会自动启动代表页多管道探针，而不是立即整本运行暂定路线；至少两个候选成功、胜者达到门槛并领先 3 分、且没有通过 fallback 取胜时，才允许安全接受。远程候选仍必须显式授权。
+
 MCP 配置示例：
 
 ```json
@@ -334,7 +338,9 @@ MCP 工具包括：
 - `process_material`：高层路由入口，自动识别输入并启动合适的异步任务。
 - `scan_books`：扫描输入并返回每本书的转换计划。
 - `health_check`：检查 Pandoc、Calibre、MinerU、Marker、Umi-OCR、PyMuPDF4LLM、CUDA 和模型缓存。
-- `inspect_document`：预检文件/目录类型、PDF 风险和推荐管道。
+- `inspect_document`：预检文件/目录类型、PDF 风险，并返回 `fast|balanced|best_quality` 自适应路由计划。
+- prepare_adaptive_pdf_probe：只生成代表页、候选管道和质量门槛计划，不执行模型。
+- start_adaptive_pdf_probe：异步运行本地代表页比较，返回胜者、置信度和安全的整本重跑动作。
 - `start_conversion`：启动后台转换任务。
 - `start_location_index`：后台建立 PDF/图片页级或图级定位索引。
 - `query_location_index`：查询关键词出现在哪份 PDF 的哪一页或哪张图片。

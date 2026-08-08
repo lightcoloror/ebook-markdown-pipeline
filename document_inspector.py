@@ -11,6 +11,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ebook_markdown_pipeline import default_options, normalize_command_options  # noqa: E402
+from ebook_markdown_pipeline.adaptive_router import build_adaptive_routing_plan, normalize_routing_profile  # noqa: E402
 from ebook_markdown_pipeline.candidate_backend_registry import candidate_backend_for_display  # noqa: E402
 from ebook_markdown_pipeline.batch_convert_books import (  # noqa: E402
     CALIBRE_INTERMEDIATE_FORMATS,
@@ -35,6 +36,8 @@ def main() -> int:
     parser.add_argument("--include-hidden", action="store_true")
     parser.add_argument("--sample-pages", type=int, default=8)
     parser.add_argument("--model-mode", choices=["local", "online", "hybrid", "auto"], default="local")
+    parser.add_argument("--routing-profile", choices=["fast", "balanced", "best_quality"], default="balanced")
+    parser.add_argument("--output", type=Path, help="Optional output directory used to bind executable route actions.")
     parser.add_argument("--use-tika", action="store_true", help="Use configured Apache Tika as an explicit inspect/metadata enhancement.")
     parser.add_argument("--use-grobid", action="store_true", help="Use configured GROBID Server for explicit academic PDF/TEI inspection.")
     args = parser.parse_args()
@@ -44,6 +47,8 @@ def main() -> int:
         include_hidden=args.include_hidden,
         sample_pages=args.sample_pages,
         model_mode=args.model_mode,
+        routing_profile=args.routing_profile,
+        output=args.output,
         use_tika=args.use_tika,
         use_grobid=args.use_grobid,
     )
@@ -58,15 +63,19 @@ def inspect_document(
     include_hidden: bool = False,
     sample_pages: int = 8,
     model_mode: str = "local",
+    routing_profile: str = "balanced",
+    output: Path | None = None,
     use_tika: bool = False,
     use_grobid: bool = False,
 ) -> dict[str, Any]:
+    payload: dict[str, Any]
     if input_path.is_dir():
         if is_web_content_archive(input_path):
-            return inspect_web_content_archive(input_path, model_mode=model_mode)
-        return inspect_directory(input_path, recursive=recursive, include_hidden=include_hidden, sample_pages=sample_pages, model_mode=model_mode, use_tika=use_tika, use_grobid=use_grobid)
-    if not input_path.exists():
-        return {
+            payload = inspect_web_content_archive(input_path, model_mode=model_mode)
+        else:
+            payload = inspect_directory(input_path, recursive=recursive, include_hidden=include_hidden, sample_pages=sample_pages, model_mode=model_mode, use_tika=use_tika, use_grobid=use_grobid)
+    elif not input_path.exists():
+        payload = {
             "status": "missing",
             "input": str(input_path),
             "kind": "missing",
@@ -78,7 +87,14 @@ def inspect_document(
             "next_actions": [],
             "warnings": [f"Input does not exist: {input_path}"],
         }
-    return inspect_file(input_path, sample_pages=sample_pages, model_mode=model_mode, use_tika=use_tika, use_grobid=use_grobid)
+    else:
+        payload = inspect_file(input_path, sample_pages=sample_pages, model_mode=model_mode, use_tika=use_tika, use_grobid=use_grobid)
+    payload["adaptive_routing"] = build_adaptive_routing_plan(
+        payload,
+        routing_profile=normalize_routing_profile(routing_profile),
+        output=str(output) if output else "",
+    )
+    return payload
 
 
 def is_web_content_archive(input_path: Path) -> bool:

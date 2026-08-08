@@ -2,6 +2,8 @@
 
 <!-- Documentation update: 2026-08-01 23:35:28 | Codex (GPT-5) | Added and synchronized the explicit online-only/shared-VKP mode. -->
 <!-- Documentation update: 2026-08-02 09:37:26 | Codex (GPT-5) | Synchronized the HTTP online-conversion entrypoint example. -->
+<!-- Documentation update: 2026-08-02 12:42:38 | Codex (GPT-5) | Added the adaptive routing plan contract and best-quality safety boundary. -->
+<!-- Documentation update: 2026-08-02 13:24:15 | Codex (GPT-5) | Added executable representative-page PDF probes and sampled winner selection. -->
 
 This document defines the stable calling contract for AI agents using 图文材料转换器 as a general document/image material recognition tool.
 
@@ -47,6 +49,19 @@ Optional:
 - `image_book_threshold`: retained for compatibility; auto routing now recognizes image folders by default.
 - `ocr`: `auto`, `always`, or `never`.
 - `model_mode`: `local`, `online`, `hybrid`, `auto`, or `online_only`. Default conversion remains local-first. `online_only` routes recognition to the full remote-inference job rather than silently changing the local pipeline.
+- `routing_profile`: `fast`, `balanced`, or `best_quality`. The default is `balanced`; it changes the recommendation portfolio, not remote-consent or overwrite policy.
+
+### Adaptive routing plan
+
+`inspect_document` and the nested `process_material.inspection` expose `adaptive_routing` with `schema_version=adaptive-routing-plan-v1`. Its selection policy is `preflight_probe_compare_escalate`: inspect cheaply, rank local candidates, compare evidence when quality matters, then escalate only when local evidence remains weak.
+
+The plan includes `primary`, `portfolio`, representative `sample_strategy.pages`, a weighted `quality_gate`, `escalation_rules`, `stop_conditions`, safety state, and machine-shaped `next_actions`. `primary` is provisional whenever multiple candidates exist; no current response claims a globally proven winner from preflight alone.
+
+`best_quality` may list a remote VLM candidate, but inspection never calls it. Remote candidates always have `safe_default=false`, require explicit data-export consent and a positive cost ceiling, and never permit source overwrite.
+
+For PDFs, `sample_strategy.executor_status=available_via_prepare_adaptive_pdf_probe`. `prepare_adaptive_pdf_probe` returns an `adaptive-pdf-probe-plan-v1` without running models. `start_adaptive_pdf_probe` asynchronously extracts the selected pages through the existing `compare_pipelines.py --page-ranges` path, runs isolated local candidates, and writes `pipeline-comparison.json/md`. Agents poll it with `get_job_status`.
+
+`process_material(routing_profile=best_quality, pdf_pipeline_mode=auto)` starts this sampled probe instead of committing the whole PDF to a provisional route. The comparison only sets `auto_accept=true` when at least two candidates succeed, the winner clears the quality gate by at least three points, and the winning result is native rather than a fallback. Otherwise it returns a winner suggestion plus a required review action. The full-document action is versioned and keeps `overwrite=false`.
 
 Online-model options:
 
@@ -402,6 +417,8 @@ HTTP `/health` returns the transport contract plus lightweight operating status:
   "local_env_loaded_keys": [],
   "route_defaults": {
     "process_material": "recognize_or_convert",
+    "pdf": "start_conversion",
+    "pdf_best_quality": "start_adaptive_pdf_probe",
     "images": "start_image_book_rebuild",
     "location_index": "requires intent=locate or query"
   },

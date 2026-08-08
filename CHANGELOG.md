@@ -14,12 +14,18 @@
 <!-- Documentation update: 2026-08-02 08:28:42 | Codex (GPT-5) | Recorded the authorized synthetic real-supplier smoke and bounded shared-gateway startup readiness fix. -->
 <!-- Documentation update: 2026-08-02 08:40:28 | Codex (GPT-5) | Normalized provider-added outer Markdown fences found by the real supplier smoke. -->
 <!-- Documentation update: 2026-08-02 09:37:26 | Codex (GPT-5) | Closed external-review HTTP, Docker, credential-artifact, and evidence-boundary findings. -->
+<!-- Documentation update: 2026-08-02 12:42:38 | Codex (GPT-5) | Recorded the adaptive routing plan and its provisional-winner boundary. -->
+<!-- Documentation update: 2026-08-02 13:24:15 | Codex (GPT-5) | Recorded executable representative-page probes and conservative winner acceptance. -->
 
 All notable public-facing changes should be recorded here. This project keeps optional heavy backends separate from the minimal local workflow, so release notes should distinguish core behavior from optional enhancements.
 
 ## Unreleased
 
 ### Added
+
+- `adaptive-routing-plan-v1` for `inspect_document` and `process_material`, with fast/balanced/best-quality profiles, candidate portfolios, representative pages, weighted quality gates, escalation rules, and safe executable route actions.
+- `prepare_adaptive_pdf_probe` and `start_adaptive_pdf_probe` MCP/HTTP tools plus `scripts/run_adaptive_pdf_probe.py` for bounded representative-page PDF comparisons.
+- Automatic sampled winner selection with native/fallback evidence, minimum-score and margin gates, confidence, and versioned non-overwriting full-document actions.
 
 - Full `online_only` document pipeline for PDFs, images, ebooks, and Office/text formats, with remote OCR/structure inference, versioned Markdown, stage manifests, and resume support.
 - Shared VKP gateway adapter that reuses VKP provider routes, LiteLLM gateway, consent/cost policy, and Windows DPAPI credential references without copying API keys.
@@ -41,6 +47,9 @@ All notable public-facing changes should be recorded here. This project keeps op
 - `build_quality_improvement_queue` MCP/HTTP tool and desktop UI advanced action for opening quality queues as review workbenches.
 
 ### Changed
+
+- Routing recommendations now distinguish a provisional preflight winner from an evidence-backed winner; remote candidates remain planned-only and require explicit permission.
+- `process_material(routing_profile=best_quality)` now starts a representative-page PDF probe when `pdf_pipeline_mode=auto`; balanced and explicit pipeline behavior is unchanged.
 
 - HTTP/Docker remote binds now fail closed on missing, short, or placeholder API tokens; authentication uses constant-time comparison, the image runs non-root, and local secrets/caches are excluded from the build context.
 - Shared VKP catalog, health, and execution payloads now receive runtime credential-field scans before return or persistence, with fail-closed tests for common token/key/secret variants.
